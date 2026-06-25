@@ -1,0 +1,24 @@
+{
+  "name": "parkly-cdk",
+  "version": "1.0.0",
+  "description": "Parkly AWS CDK Infrastructure",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy:dev": "cdk deploy --all --context env=dev --require-approval never",
+    "deploy:prod": "cdk deploy --all --context env=prod",
+    "destroy:dev": "cdk destroy --all --context env=dev --force"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.147.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "aws-cdk": "^2.147.0",
+    "typescript": "^5.3.3"
+  }
+}

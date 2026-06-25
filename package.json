@@ -1,0 +1,57 @@
+{
+  "name": "parkly",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parkly — Smart City Parking Marketplace (Monorepo)",
+  "workspaces": [
+    "shared",
+    "services/*",
+    "apps/host-dashboard",
+    "apps/admin-portal"
+  ],
+  "scripts": {
+    "postinstall": "npx prisma generate --schema=infra/prisma/schema.prisma",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev": "concurrently --names \"GW,AUTH,BOOK,PAY,SRCH,HOST,OCC,PRICE,NOTIF,ADMIN,PRED\" --prefix-colors \"blue,green,yellow,magenta,cyan,white,red,gray,blueBright,greenBright,yellowBright\" \"npm run dev -w services/api-gateway\" \"npm run dev -w services/auth-service\" \"npm run dev -w services/booking-service\" \"npm run dev -w services/payment-service\" \"npm run dev -w services/search-service\" \"npm run dev -w services/host-service\" \"npm run dev -w services/occupancy-service\" \"npm run dev -w services/pricing-service\" \"npm run dev -w services/notification-service\" \"npm run dev -w services/admin-service\" \"npm run dev -w services/prediction-service\"",
+    "dev:infra": "docker compose up postgres dynamodb-local dynamodb-setup -d",
+    "dev:core": "concurrently --names \"GW,AUTH,BOOK,SRCH\" \"npm run dev -w services/api-gateway\" \"npm run dev -w services/auth-service\" \"npm run dev -w services/booking-service\" \"npm run dev -w services/search-service\"",
+    "dev:gateway": "npm run dev -w services/api-gateway",
+    "dev:auth": "npm run dev -w services/auth-service",
+    "dev:booking": "npm run dev -w services/booking-service",
+    "dev:search": "npm run dev -w services/search-service",
+    "dev:host": "npm run dev -w services/host-service",
+    "dev:payment": "npm run dev -w services/payment-service",
+    "dev:occupancy": "npm run dev -w services/occupancy-service",
+    "dev:pricing": "npm run dev -w services/pricing-service",
+    "dev:notification": "npm run dev -w services/notification-service",
+    "dev:admin": "npm run dev -w services/admin-service",
+    "dev:prediction": "npm run dev -w services/prediction-service",
+    "dev:host-dashboard": "npm run dev -w apps/host-dashboard",
+    "dev:admin-portal": "npm run dev -w apps/admin-portal",
+    "migrate": "npx prisma migrate dev --schema=infra/prisma/schema.prisma",
+    "migrate:deploy": "npx prisma migrate deploy --schema=infra/prisma/schema.prisma",
+    "prisma:generate": "npx prisma generate --schema=infra/prisma/schema.prisma",
+    "prisma:studio": "npx prisma studio --schema=infra/prisma/schema.prisma",
+    "seed": "ts-node infra/prisma/seed.ts",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "cdk:synth": "npm run synth -w infra/cdk",
+    "cdk:deploy": "npm run deploy:dev -w infra/cdk",
+    "clean": "rimraf \"**/dist\" \"**/.tsbuildinfo\" \"**/node_modules\" --glob"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.7",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "expo": "^54.0.35"
+  }
+}

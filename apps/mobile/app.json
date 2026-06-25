@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Parkly",
+    "slug": "parkly",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.zeustechnologies.parkly",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Parkly needs your location to find nearby parking spaces.",
+        "NSLocationAlwaysUsageDescription": "Parkly uses your location to find parking near you."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.zeustechnologies.parkly",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow Parkly to use Face ID for secure login."
+        }
+      ]
+    ],
+    "scheme": "parkly"
+  }
+}
