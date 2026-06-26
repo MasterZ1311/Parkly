@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { adminApi } from '../utils/api';
 
 const users = [
   { id: 'u1', name: 'Arjun Kumar', phone: '+91 98765 43210', role: 'driver', bookings: 12, status: 'active', joined: '2024-01-15' },
@@ -9,6 +10,35 @@ const users = [
 ];
 
 export default function UsersPage() {
+  const [loading, setLoading] = useState(false);
+
+  const handleView = async (userId: string) => {
+    setLoading(true);
+    try {
+      const res = await adminApi.getUserDetail(userId);
+      alert('User Details:\n' + JSON.stringify(res.data, null, 2).substring(0, 200));
+    } catch (err: any) {
+      alert('Error loading user: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuspend = async (userId: string) => {
+    const reason = prompt('Reason for suspension:');
+    if (!reason) return;
+    setLoading(true);
+    try {
+      await adminApi.suspendUser(userId, reason);
+      alert('User suspended successfully');
+      // Reload users table
+    } catch (err: any) {
+      alert('Error suspending user: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -60,10 +90,21 @@ export default function UsersPage() {
                   <td>{u.joined}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: 11 }}>View</button>
+                      <button
+                        className="btn btn-outline"
+                        style={{ padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => handleView(u.id)}
+                        disabled={loading}
+                      >
+                        {loading ? '...' : 'View'}
+                      </button>
                       {u.status === 'active' && (
-                        <button style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--red)', borderRadius: 6, background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>
-                          Suspend
+                        <button
+                          style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--red)', borderRadius: 6, background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}
+                          onClick={() => handleSuspend(u.id)}
+                          disabled={loading}
+                        >
+                          {loading ? '...' : 'Suspend'}
                         </button>
                       )}
                     </div>

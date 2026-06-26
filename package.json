@@ -51,7 +51,8 @@
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
   },
-  "dependencies": {
-    "expo": "^54.0.35"
+  "overrides": {
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7"
   }
 }

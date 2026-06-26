@@ -17,6 +17,7 @@ import {
   errorHandler,
   notFoundHandler,
   requestLogger,
+  responseTimer,
   securityHeaders,
   logger,
   getConfig,
@@ -241,6 +242,7 @@ hostRouter.post('/listings/:id/upload-url', requireRole('host', 'admin'), async 
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
+app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(requestLogger);

@@ -1,11 +1,30 @@
-import React from 'react';
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { initializeApiClient } from './utils/api';
+import { useAuthStore } from './utils/authStore';
 import Overview from './pages/Overview';
 import Verifications from './pages/Verifications';
 import UsersPage from './pages/UsersPage';
 import BookingsAdmin from './pages/BookingsAdmin';
 
 export default function App() {
+  const navigate = useNavigate();
+  const { logout, loadUserFromStorage } = useAuthStore();
+
+  useEffect(() => {
+    initializeApiClient();
+    loadUserFromStorage();
+  }, [loadUserFromStorage]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
+
   return (
     <div className="layout">
       <nav className="sidebar">
@@ -37,18 +56,26 @@ export default function App() {
 
         <div className="nav-section-title" style={{ marginTop: 16 }}>System</div>
         {[
-          { icon: '⚙️', label: 'Settings' },
-          { icon: '📋', label: 'Audit Logs' },
-          { icon: '🔔', label: 'Alerts' },
+          { path: '/settings', icon: '⚙️', label: 'Settings' },
+          { path: '/audit-logs', icon: '📋', label: 'Audit Logs' },
+          { path: '/alerts', icon: '🔔', label: 'Alerts' },
         ].map(item => (
-          <button key={item.label} className="nav-link">
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+          >
             <span className="icon">{item.icon}</span>
             {item.label}
-          </button>
+          </NavLink>
         ))}
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-          <button className="nav-link" style={{ color: 'var(--red)' }}>
+          <button
+            className="nav-link"
+            style={{ color: 'var(--red)', width: '100%', textAlign: 'left', background: 'none', border: 'none' }}
+            onClick={handleLogout}
+          >
             <span className="icon">🚪</span>
             Logout
           </button>

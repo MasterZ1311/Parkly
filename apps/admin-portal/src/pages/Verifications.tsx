@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { adminApi } from '../utils/api';
 
 const pendingVerifications = [
   {
@@ -44,6 +45,50 @@ const pendingVerifications = [
 
 export default function Verifications() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleApprove = async (v: typeof pendingVerifications[0]) => {
+    setLoading(true);
+    try {
+      await adminApi.approveVerification('host-' + v.id, v.id);
+      alert('Space approved and activated!');
+      // Reload verifications
+    } catch (err: any) {
+      alert('Error approving space: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async (v: typeof pendingVerifications[0]) => {
+    const reason = prompt('Reason for rejection:');
+    if (!reason) return;
+    setLoading(true);
+    try {
+      await adminApi.rejectVerification('host-' + v.id, v.id, reason);
+      alert('Space rejected');
+      // Reload verifications
+    } catch (err: any) {
+      alert('Error rejecting space: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestInfo = async (v: typeof pendingVerifications[0]) => {
+    const fields = prompt('Comma-separated field names (e.g., parking_photos,zone_approval):');
+    if (!fields) return;
+    setLoading(true);
+    try {
+      await adminApi.requestVerificationInfo('host-' + v.id, v.id, fields.split(','));
+      alert('Info request sent to host');
+      // Reload verifications
+    } catch (err: any) {
+      alert('Error sending request: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -103,14 +148,29 @@ export default function Verifications() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 12 }}>
-                  <button className="btn btn-success" style={{ fontSize: 13, padding: '8px 20px' }}>
-                    ✅ Approve & Activate
+                  <button
+                    className="btn btn-success"
+                    style={{ fontSize: 13, padding: '8px 20px' }}
+                    onClick={() => handleApprove(v)}
+                    disabled={loading}
+                  >
+                    {loading ? '...' : '✅ Approve & Activate'}
                   </button>
-                  <button className="btn btn-danger" style={{ fontSize: 13, padding: '8px 20px', background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)' }}>
-                    ❌ Reject
+                  <button
+                    className="btn btn-danger"
+                    style={{ fontSize: 13, padding: '8px 20px', background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)' }}
+                    onClick={() => handleReject(v)}
+                    disabled={loading}
+                  >
+                    {loading ? '...' : '❌ Reject'}
                   </button>
-                  <button className="btn btn-outline" style={{ fontSize: 13, padding: '8px 20px' }}>
-                    💬 Request Info
+                  <button
+                    className="btn btn-outline"
+                    style={{ fontSize: 13, padding: '8px 20px' }}
+                    onClick={() => handleRequestInfo(v)}
+                    disabled={loading}
+                  >
+                    {loading ? '...' : '💬 Request Info'}
                   </button>
                 </div>
               </div>

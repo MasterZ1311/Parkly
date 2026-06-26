@@ -8,13 +8,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import {
   authenticate,
   requireRole,
   errorHandler,
   notFoundHandler,
   requestLogger,
+  responseTimer,
   securityHeaders,
   logger,
   getConfig,
@@ -96,15 +97,21 @@ const occupancyService = {
   },
 
   async getCurrentOccupancy(spaceId: string): Promise<CurrentOccupancy | null> {
-    // Get the latest record (DynamoDB query by PK, sort by SK desc)
+    // The occupancy table uses a composite key (spaceId HASH + timestamp RANGE),
+    // so we must Query (not Get) and take the most recent record by sorting the
+    // range key descending.
     const result = await getDocClient().send(
-      new GetCommand({
+      new QueryCommand({
         TableName: getConfig().dynamoTableOccupancy,
-        Key: { spaceId },
+        KeyConditionExpression: 'spaceId = :sid',
+        ExpressionAttributeValues: { ':sid': spaceId },
+        ScanIndexForward: false, // latest timestamp first
+        Limit: 1,
       }),
     );
 
-    return result.Item ? (result.Item as CurrentOccupancy) : null;
+    const item = result.Items && result.Items[0];
+    return item ? (item as CurrentOccupancy) : null;
   },
 };
 
@@ -173,6 +180,7 @@ occupancyRouter.post('/simulate', requireRole('admin'), (_req: Request, res: Res
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
+app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);

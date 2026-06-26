@@ -97,10 +97,10 @@ export function getGeohashNeighbors(geohash: string): string[] {
   // Returns 8 neighbors + self
   const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
   const NEIGHBOR: Record<string, Record<string, string>> = {
-    right: { even: 'bc01fg45teleheijklmnopqrstuvwxyz', odd: 'p0r21436x8zb9dcf5h7kjnmqesgutwvy' },
-    left: { even: '238967debc01teleheijklmnopqrstuvwxyz', odd: '14365h7k9dcfesgujnmqp0r2twvyx8zb' },
-    top: { even: 'p0r21436x8zb9dcf5h7kjnmqesgutwvy', odd: 'bc01fg45teleheijklmnopqrstuvwxyz' },
-    bottom: { even: '14365h7k9dcfesgujnmqp0r2twvyx8zb', odd: '238967debc01teleheijklmnopqrstuvwxyz' },
+    right: { even: 'bc01fg45238967deuvhjyznpkmstqrwx', odd: 'p0r21436x8zb9dcf5h7kjnmqesgutwvy' },
+    left: { even: '238967debc01fg45kmstqrwxuvhjyznp', odd: '14365h7k9dcfesgujnmqp0r2twvyx8zb' },
+    top: { even: 'p0r21436x8zb9dcf5h7kjnmqesgutwvy', odd: 'bc01fg45238967deuvhjyznpkmstqrwx' },
+    bottom: { even: '14365h7k9dcfesgujnmqp0r2twvyx8zb', odd: '238967debc01fg45kmstqrwxuvhjyznp' },
   };
   const BORDER: Record<string, Record<string, string>> = {
     right: { even: 'bcfguvyz', odd: 'prxz' },

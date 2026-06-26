@@ -13,10 +13,12 @@ import {
   errorHandler,
   notFoundHandler,
   requestLogger,
+  responseTimer,
   securityHeaders,
   logger,
   ApiResponse,
   AvailabilityPrediction,
+  registerGracefulShutdown,
 } from '@parkly/shared';
 
 const PORT = process.env['PREDICTION_PORT'] || 4005;
@@ -125,6 +127,7 @@ predictionRouter.get('/', async (req: Request, res: Response, next: NextFunction
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
+app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
@@ -140,8 +143,6 @@ const server = app.listen(PORT, () => {
   logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
 });
 
-process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
-});
+registerGracefulShutdown({ server, serviceName: SERVICE_NAME });
 
 export default app;

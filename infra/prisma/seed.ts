@@ -4,6 +4,7 @@
 // ============================================================
 
 import { PrismaClient } from '@prisma/client';
+import { encodeGeohash } from '@parkly/shared';
 
 const prisma = new PrismaClient();
 
@@ -184,7 +185,7 @@ async function main() {
         description: spaceData.description,
         latitude: spaceData.latitude,
         longitude: spaceData.longitude,
-        geohash: spaceData.geohash,
+        geohash: encodeGeohash(spaceData.latitude, spaceData.longitude, 6),
         address: spaceData.address,
         city: spaceData.city,
         state: spaceData.state,

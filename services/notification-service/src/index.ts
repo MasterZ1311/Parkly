@@ -20,6 +20,7 @@ import {
   errorHandler,
   notFoundHandler,
   requestLogger,
+  responseTimer,
   securityHeaders,
   logger,
   getConfig,
@@ -202,6 +203,31 @@ const notificationService = {
   },
 
   async markRead(userId: string, notificationId: string): Promise<void> {
+    const config = getConfig();
+    // Query for the notification to find its sort key
+    const result = await getDocClient().send(
+      new QueryCommand({
+        TableName: config.dynamoTableNotifications,
+        KeyConditionExpression: 'pk = :uid AND begins_with(sk, :prefix)',
+        FilterExpression: 'id = :nid',
+        ExpressionAttributeValues: { ':uid': userId, ':prefix': 'NOTIF#', ':nid': notificationId },
+        Limit: 1,
+      }),
+    );
+
+    const item = result.Items?.[0];
+    if (item) {
+      await getDocClient().send(
+        new UpdateCommand({
+          TableName: config.dynamoTableNotifications,
+          Key: { pk: userId, sk: item['sk'] },
+          UpdateExpression: 'SET #r = :val, readAt = :now',
+          ExpressionAttributeNames: { '#r': 'read' },
+          ExpressionAttributeValues: { ':val': true, ':now': new Date().toISOString() },
+        }),
+      );
+    }
+
     logger.info({ userId, notificationId }, 'Notification marked as read');
   },
 };
@@ -250,6 +276,7 @@ notificationRouter.post('/send', async (req: Request, res: Response, next: NextF
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
+app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);

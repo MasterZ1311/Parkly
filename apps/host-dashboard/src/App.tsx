@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { initializeApiClient } from './utils/api';
+import { useAuthStore } from './utils/authStore';
 import Dashboard from './pages/Dashboard';
 import Listings from './pages/Listings';
 import BookingsPage from './pages/BookingsPage';
@@ -19,6 +21,24 @@ const navItems: NavItem[] = [
 ];
 
 export default function App() {
+  const navigate = useNavigate();
+  const { logout, loadUserFromStorage } = useAuthStore();
+
+  // Initialize API client and load auth on mount
+  useEffect(() => {
+    initializeApiClient();
+    loadUserFromStorage();
+  }, [loadUserFromStorage]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
+
   return (
     <div className="layout">
       {/* Sidebar */}
@@ -45,14 +65,21 @@ export default function App() {
         ))}
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-          <div className="nav-link">
+          <NavLink
+            to="/settings"
+            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+          >
             <span className="icon">⚙️</span>
             Settings
-          </div>
-          <div className="nav-link" style={{ color: 'var(--red)' }}>
+          </NavLink>
+          <button
+            className="nav-link"
+            style={{ color: 'var(--red)', width: '100%', textAlign: 'left', background: 'none', border: 'none' }}
+            onClick={handleLogout}
+          >
             <span className="icon">🚪</span>
             Logout
-          </div>
+          </button>
         </div>
       </nav>
 

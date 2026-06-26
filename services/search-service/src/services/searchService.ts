@@ -17,6 +17,7 @@ import {
   getGeohashNeighbors,
   ValidationError,
   GeoError,
+  getServiceClient,
 } from '@parkly/shared';
 import axios from 'axios';
 import { getConfig } from '@parkly/shared';
@@ -81,13 +82,16 @@ export class SearchService {
     const pageSize = Math.min(Math.max(query.pageSize ?? DEFAULT_PAGE_SIZE, 5), 100);
 
     // --- Spatial query using geohash ---
+    // Stored geohashes are precision-6; we prefilter on the 5-char prefix
+    // cell plus its 8 neighbours so candidates near a cell boundary are not
+    // missed. The haversine distance filter below is the authoritative gate.
     const centerGeohash = encodeGeohash(coords.lat, coords.lng, GEOHASH_PRECISION);
-    const geohashCells = getGeohashNeighbors(centerGeohash.slice(0, 5)); // 5-char prefix = ~5km cells
+    const prefixCells = getGeohashNeighbors(centerGeohash.slice(0, 5)); // ~5km cells
 
     const spaces = await prisma.parkingSpace.findMany({
       where: {
         status: 'active',
-        geohash: { in: geohashCells.map(h => ({ startsWith: h })).flatMap(() => geohashCells) },
+        OR: prefixCells.map((cell) => ({ geohash: { startsWith: cell } })),
       },
       take: 500, // max candidates before filtering
     });
@@ -105,7 +109,7 @@ export class SearchService {
     // --- Apply filters ---
     const filtered = this.applyFilters(candidates, query.filters);
 
-    // --- Get predictions (graceful degradation if unavailable) ---
+    // --- Get predictions (graceful degradation with circuit breaker) ---
     let predictions: Map<string, {
       probabilityPercent: number;
       estimatedVacancies: number;
@@ -115,18 +119,22 @@ export class SearchService {
     let predictionStatus: 'available' | 'unavailable' | 'degraded' = 'unavailable';
 
     try {
-      const predictionResponse = await axios.get(
-        `${process.env['PREDICTION_URL'] || 'http://localhost:4005'}/predict`,
+      const predictionClient = getServiceClient(
+        'prediction-service',
+        process.env['PREDICTION_URL'] || 'http://localhost:4005',
+        { requestTimeout: 2000, failureThreshold: 3, resetTimeout: 15000 },
+      );
+
+      const response = await predictionClient.get<{ success: boolean; data: { predictions: Record<string, unknown> } }>(
+        '/predict',
         {
-          params: {
-            spaceIds: filtered.map(s => s.id).join(','),
-            arrivalTime: arrivalTime.toISOString(),
-            duration,
-          },
-          timeout: 500, // fast fail
+          spaceIds: filtered.map(s => s.id).join(','),
+          arrivalTime: arrivalTime.toISOString(),
+          duration,
         },
       );
-      const data = predictionResponse.data?.data?.predictions || {};
+
+      const data = response.data?.data?.predictions || {};
       Object.entries(data).forEach(([spaceId, pred]) => {
         predictions.set(spaceId, pred as typeof predictions extends Map<string, infer V> ? V : never);
       });
@@ -204,36 +212,44 @@ export class SearchService {
 
   private async geocode(text: string): Promise<Coordinates> {
     const config = getConfig();
+    const key = text.toLowerCase().trim();
+    // Known Chennai areas — also used as a dev fallback when no/invalid Maps key.
+    const mockLocations: Record<string, Coordinates> = {
+      default: { lat: 13.0827, lng: 80.2707 }, // Chennai
+      't nagar': { lat: 13.0418, lng: 80.2341 },
+      'anna nagar': { lat: 13.0849, lng: 80.2101 },
+      'adyar': { lat: 13.0067, lng: 80.2566 },
+      'velachery': { lat: 12.9791, lng: 80.2204 },
+    };
+
     if (!config.googleMapsApiKey || config.googleMapsApiKey === 'replace-with-google-maps-api-key') {
-      // Mock geocoder for dev: return Chennai city center
-      const mockLocations: Record<string, Coordinates> = {
-        default: { lat: 13.0827, lng: 80.2707 }, // Chennai
-        't nagar': { lat: 13.0418, lng: 80.2341 },
-        'anna nagar': { lat: 13.0849, lng: 80.2101 },
-        'adyar': { lat: 13.0067, lng: 80.2566 },
-        'velachery': { lat: 12.9791, lng: 80.2204 },
-      };
-      const key = text.toLowerCase();
       return mockLocations[key] || mockLocations['default']!;
     }
 
-    const response = await axios.get(
-      'https://maps.googleapis.com/maps/api/geocode/json',
-      {
-        params: { address: text, key: config.googleMapsApiKey },
-        timeout: 3000,
-      },
-    );
+    try {
+      const response = await axios.get(
+        'https://maps.googleapis.com/maps/api/geocode/json',
+        {
+          params: { address: text, key: config.googleMapsApiKey },
+          timeout: 3000,
+        },
+      );
 
-    const results = response.data?.results;
-    if (!results || results.length === 0) {
-      throw new GeoError(`Could not resolve location: "${text}"`, [
-        { text: 'Chennai, Tamil Nadu', coordinates: { lat: 13.0827, lng: 80.2707 } },
-      ]);
+      const results = response.data?.results;
+      if (results && results.length > 0) {
+        const location = results[0].geometry.location;
+        return { lat: location.lat, lng: location.lng };
+      }
+    } catch (_err) {
+      // Fall through to local fallback below if the external API is unreachable.
     }
 
-    const location = results[0].geometry.location;
-    return { lat: location.lat, lng: location.lng };
+    // Graceful degradation: use a known local area if we recognise it, otherwise
+    // surface a GeoError with a helpful suggestion.
+    if (mockLocations[key]) return mockLocations[key]!;
+    throw new GeoError(`Could not resolve location: "${text}"`, [
+      { text: 'Chennai, Tamil Nadu', coordinates: { lat: 13.0827, lng: 80.2707 } },
+    ]);
   }
 
   private applyFilters(spaces: ParkingSpace[], filters?: FilterSet): ParkingSpace[] {

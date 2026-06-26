@@ -13,6 +13,7 @@ import {
   errorHandler,
   notFoundHandler,
   requestLogger,
+  responseTimer,
   securityHeaders,
   logger,
   ApiResponse,
@@ -124,6 +125,7 @@ pricingRouter.get('/:spaceId', async (req: Request, res: Response, next: NextFun
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
+app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);

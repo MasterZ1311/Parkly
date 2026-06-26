@@ -6,8 +6,11 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-// Load root .env file regardless of which service is importing this
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+// Load root .env file regardless of which service is importing this.
+// At runtime this file lives at shared/dist/config/index.js, so the repo
+// root is three levels up (config -> dist -> shared -> <root>). The same
+// relative depth also holds for shared/src/config when run via ts-node.
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 export interface AppConfig {
   // General

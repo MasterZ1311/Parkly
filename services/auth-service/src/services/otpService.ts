@@ -4,8 +4,10 @@
 // ============================================================
 
 import { PutCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { PublishCommand } from '@aws-sdk/client-sns';
 import {
   getDocClient,
+  getSNSClient,
   getConfig,
   generateOtp,
   logger,
@@ -45,9 +47,26 @@ export class OtpService {
 
     logger.info({ phone: phone.slice(0, 4) + '***' }, 'OTP generated');
 
-    // In production: send via SNS SMS / SMS provider
-    // For dev/mock: log the OTP
-    if (getConfig().smsProvider === 'mock') {
+    // Send OTP via configured SMS provider
+    const config = getConfig();
+    if (config.smsProvider === 'sns') {
+      try {
+        await getSNSClient().send(
+          new PublishCommand({
+            PhoneNumber: phone,
+            Message: `Your Parkly verification code is: ${otp}. Valid for 5 minutes.`,
+            MessageAttributes: {
+              'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: config.snsSmsSenderId },
+              'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+            },
+          }),
+        );
+        logger.info({ phone: phone.slice(0, 4) + '***' }, 'OTP sent via SNS SMS');
+      } catch (err) {
+        logger.error({ err, phone: phone.slice(0, 4) + '***' }, 'Failed to send OTP via SNS');
+        // Still return the OTP so it's stored — caller can retry or fallback
+      }
+    } else {
       logger.info({ otp, phone: phone.slice(0, 4) + '***' }, '[MOCK] OTP generated — use this in dev');
     }
 

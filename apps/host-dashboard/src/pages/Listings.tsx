@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { hostApi } from '../utils/api';
 
 const mockListings = [
   {
@@ -38,6 +39,76 @@ const mockListings = [
 
 export default function Listings() {
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    address: '',
+    latitude: '',
+    longitude: '',
+    slots: '',
+    hourlyRate: '',
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddListing = async () => {
+    if (!formData.name || !formData.address || !formData.slots || !formData.hourlyRate) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await hostApi.createListing({
+        name: formData.name,
+        address: formData.address,
+        coordinates: {
+          latitude: parseFloat(formData.latitude) || 0,
+          longitude: parseFloat(formData.longitude) || 0,
+        },
+        totalSlots: parseInt(formData.slots),
+        hourlyRate: parseInt(formData.hourlyRate),
+      });
+      alert('Space added successfully! Pending verification.');
+      setShowModal(false);
+      setFormData({ name: '', address: '', latitude: '', longitude: '', slots: '', hourlyRate: '' });
+      // Reload listings (in real app, would refetch)
+    } catch (err: any) {
+      alert('Error adding space: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditClick = (listing: typeof mockListings[0]) => {
+    setEditingId(listing.id);
+    setFormData({
+      name: listing.name,
+      address: listing.address,
+      latitude: '',
+      longitude: '',
+      slots: listing.capacity.toString(),
+      hourlyRate: listing.hourlyRate.toString(),
+    });
+    setShowModal(true);
+  };
+
+  const handlePauseListing = async (spaceId: string) => {
+    setLoading(true);
+    try {
+      await hostApi.updateListing(spaceId, { status: 'inactive' });
+      alert('Space paused successfully');
+      // Reload listings
+    } catch (err: any) {
+      alert('Error pausing space: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -46,7 +117,15 @@ export default function Listings() {
           <h1 className="page-title">My Listings</h1>
           <p className="page-subtitle">Manage your parking spaces</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            setEditingId(null);
+            setFormData({ name: '', address: '', latitude: '', longitude: '', slots: '', hourlyRate: '' });
+            setShowModal(true);
+          }}
+          disabled={loading}
+        >
           + Add New Space
         </button>
       </div>
@@ -106,9 +185,23 @@ export default function Listings() {
                   </text>
                 </svg>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }}>Edit</button>
+                  <button
+                    className="btn btn-outline"
+                    style={{ padding: '6px 12px', fontSize: 12 }}
+                    onClick={() => handleEditClick(listing)}
+                    disabled={loading}
+                  >
+                    Edit
+                  </button>
                   {listing.status === 'active' && (
-                    <button className="btn btn-danger" style={{ padding: '6px 12px', fontSize: 12 }}>Pause</button>
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '6px 12px', fontSize: 12 }}
+                      onClick={() => handlePauseListing(listing.id)}
+                      disabled={loading}
+                    >
+                      {loading ? '...' : 'Pause'}
+                    </button>
                   )}
                 </div>
               </div>
@@ -117,45 +210,105 @@ export default function Listings() {
         ))}
       </div>
 
-      {/* Add Listing Modal */}
+      {/* Add/Edit Listing Modal */}
       {showModal && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
         }}>
           <div className="card" style={{ width: 500, maxHeight: '80vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>Add New Parking Space</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 20 }}>
+              {editingId ? 'Edit' : 'Add New'} Parking Space
+            </h2>
             <div className="form-group">
-              <label className="form-label">Space Name</label>
-              <input className="form-input" placeholder="e.g. My Apartment Parking" />
+              <label className="form-label">Space Name *</label>
+              <input
+                className="form-input"
+                placeholder="e.g. My Apartment Parking"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                disabled={loading}
+              />
             </div>
             <div className="form-group">
-              <label className="form-label">Address</label>
-              <input className="form-input" placeholder="Full address" />
+              <label className="form-label">Address *</label>
+              <input
+                className="form-input"
+                placeholder="Full address"
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                disabled={loading}
+              />
             </div>
             <div className="grid-2">
               <div className="form-group">
                 <label className="form-label">Latitude</label>
-                <input className="form-input" placeholder="13.0827" type="number" />
+                <input
+                  className="form-input"
+                  placeholder="13.0827"
+                  type="number"
+                  name="latitude"
+                  value={formData.latitude}
+                  onChange={handleInputChange}
+                  disabled={loading}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Longitude</label>
-                <input className="form-input" placeholder="80.2707" type="number" />
+                <input
+                  className="form-input"
+                  placeholder="80.2707"
+                  type="number"
+                  name="longitude"
+                  value={formData.longitude}
+                  onChange={handleInputChange}
+                  disabled={loading}
+                />
               </div>
             </div>
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">Total Slots</label>
-                <input className="form-input" placeholder="5" type="number" />
+                <label className="form-label">Total Slots *</label>
+                <input
+                  className="form-input"
+                  placeholder="5"
+                  type="number"
+                  name="slots"
+                  value={formData.slots}
+                  onChange={handleInputChange}
+                  disabled={loading}
+                />
               </div>
               <div className="form-group">
-                <label className="form-label">Hourly Rate (₹)</label>
-                <input className="form-input" placeholder="50" type="number" />
+                <label className="form-label">Hourly Rate (₹) *</label>
+                <input
+                  className="form-input"
+                  placeholder="50"
+                  type="number"
+                  name="hourlyRate"
+                  value={formData.hourlyRate}
+                  onChange={handleInputChange}
+                  disabled={loading}
+                />
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
-              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary">Submit for Review</button>
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowModal(false)}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleAddListing}
+                disabled={loading}
+              >
+                {loading ? 'Submitting...' : editingId ? 'Update' : 'Submit for Review'}
+              </button>
             </div>
           </div>
         </div>
