@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/store/auth.store';
@@ -40,6 +40,28 @@ export default function ProfileScreen() {
     ]);
   };
 
+  // Open an external link, with a graceful fallback if it can't be handled.
+  const openLink = async (url: string, label: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert(label, `Unable to open ${url} on this device.`);
+      }
+    } catch {
+      Alert.alert(label, `Something went wrong opening ${label}.`);
+    }
+  };
+
+  // Features planned for an upcoming release. Each gives clear, specific feedback
+  // instead of a silent dead tap.
+  const comingSoon = (feature: string, description: string) => {
+    Alert.alert(feature, `${description}\n\nThis is coming in an upcoming Parkly update.`, [
+      { text: 'Got it' },
+    ]);
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile Header */}
@@ -72,10 +94,26 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.menuCard}>
-          <MenuItem icon="car-outline" label="My Vehicles" onPress={() => {}} />
-          <MenuItem icon="notifications-outline" label="Notifications" onPress={() => {}} />
-          <MenuItem icon="card-outline" label="Payment Methods" onPress={() => {}} />
-          <MenuItem icon="location-outline" label="Saved Places" onPress={() => {}} />
+          <MenuItem
+            icon="car-outline"
+            label="My Vehicles"
+            onPress={() => comingSoon('My Vehicles', 'Save your vehicles and number plates for faster booking.')}
+          />
+          <MenuItem
+            icon="notifications-outline"
+            label="Notifications"
+            onPress={() => comingSoon('Notifications', 'Manage booking reminders and alert preferences.')}
+          />
+          <MenuItem
+            icon="card-outline"
+            label="Payment Methods"
+            onPress={() => comingSoon('Payment Methods', 'Add and manage cards, UPI, and wallets.')}
+          />
+          <MenuItem
+            icon="location-outline"
+            label="Saved Places"
+            onPress={() => comingSoon('Saved Places', 'Save home, work, and favourite spots for quick search.')}
+          />
         </View>
       </View>
 
@@ -83,8 +121,18 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Host</Text>
           <View style={styles.menuCard}>
-            <MenuItem icon="business-outline" label="My Listings" onPress={() => {}} color="#22C55E" />
-            <MenuItem icon="cash-outline" label="Earnings" onPress={() => {}} color="#22C55E" />
+            <MenuItem
+              icon="business-outline"
+              label="My Listings"
+              color="#22C55E"
+              onPress={() => comingSoon('My Listings', 'Manage your parking spaces from the Parkly Host Dashboard at host.parkly.app.')}
+            />
+            <MenuItem
+              icon="cash-outline"
+              label="Earnings"
+              color="#22C55E"
+              onPress={() => comingSoon('Earnings', 'Track revenue and payouts from the Parkly Host Dashboard at host.parkly.app.')}
+            />
           </View>
         </View>
       )}
@@ -92,9 +140,24 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Support</Text>
         <View style={styles.menuCard}>
-          <MenuItem icon="help-circle-outline" label="Help Center" onPress={() => {}} color="#F59E0B" />
-          <MenuItem icon="chatbubble-outline" label="Contact Support" onPress={() => {}} color="#F59E0B" />
-          <MenuItem icon="document-text-outline" label="Terms & Privacy" onPress={() => {}} color="#F59E0B" />
+          <MenuItem
+            icon="help-circle-outline"
+            label="Help Center"
+            color="#F59E0B"
+            onPress={() => openLink('https://parkly.app/help', 'Help Center')}
+          />
+          <MenuItem
+            icon="chatbubble-outline"
+            label="Contact Support"
+            color="#F59E0B"
+            onPress={() => openLink('mailto:support@parkly.app?subject=Parkly%20Support%20Request', 'Contact Support')}
+          />
+          <MenuItem
+            icon="document-text-outline"
+            label="Terms & Privacy"
+            color="#F59E0B"
+            onPress={() => openLink('https://parkly.app/legal', 'Terms & Privacy')}
+          />
         </View>
       </View>
 

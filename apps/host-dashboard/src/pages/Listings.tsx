@@ -63,7 +63,7 @@ export default function Listings() {
 
     setLoading(true);
     try {
-      await hostApi.createListing({
+      const payload = {
         name: formData.name,
         address: formData.address,
         coordinates: {
@@ -72,13 +72,22 @@ export default function Listings() {
         },
         totalSlots: parseInt(formData.slots),
         hourlyRate: parseInt(formData.hourlyRate),
-      });
-      alert('Space added successfully! Pending verification.');
+      };
+
+      if (editingId) {
+        await hostApi.updateListing(editingId, payload);
+        alert('Space updated successfully.');
+      } else {
+        await hostApi.createListing(payload);
+        alert('Space added successfully! Pending verification.');
+      }
+
       setShowModal(false);
+      setEditingId(null);
       setFormData({ name: '', address: '', latitude: '', longitude: '', slots: '', hourlyRate: '' });
       // Reload listings (in real app, would refetch)
     } catch (err: any) {
-      alert('Error adding space: ' + (err.response?.data?.message || 'Unknown error'));
+      alert('Error saving space: ' + (err.response?.data?.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }

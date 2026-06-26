@@ -23,11 +23,32 @@ interface SpaceResult {
   amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
 }
 
+const FILTERS = ['All', '⚡ EV', '🏠 Covered', '🔒 Secure'] as const;
+type Filter = (typeof FILTERS)[number];
+
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SpaceResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<Filter>('All');
+
+  const matchesFilter = (item: SpaceResult): boolean => {
+    switch (activeFilter) {
+      case '⚡ EV':
+        return item.amenities.evCharging;
+      case '🏠 Covered':
+        return item.amenities.covered;
+      case '🔒 Secure': {
+        const level = (item.amenities.securityLevel || '').toLowerCase();
+        return level !== '' && level !== 'none' && level !== 'low';
+      }
+      default:
+        return true;
+    }
+  };
+
+  const visibleResults = results.filter(matchesFilter);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
@@ -117,11 +138,19 @@ export default function HomeScreen() {
 
       {/* Quick Filters */}
       <View style={styles.quickFilters}>
-        {['All', '⚡ EV', '🏠 Covered', '🔒 Secure'].map(filter => (
-          <TouchableOpacity key={filter} style={styles.filterChip}>
-            <Text style={styles.filterText}>{filter}</Text>
-          </TouchableOpacity>
-        ))}
+        {FILTERS.map(filter => {
+          const active = activeFilter === filter;
+          return (
+            <TouchableOpacity
+              key={filter}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              onPress={() => setActiveFilter(filter)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterText, active && styles.filterTextActive]}>{filter}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Results */}
@@ -156,15 +185,26 @@ export default function HomeScreen() {
           <Text style={styles.emptyTitle}>No Spaces Found</Text>
           <Text style={styles.emptySubtitle}>Try a different location or expand your search radius.</Text>
         </View>
+      ) : visibleResults.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="filter-outline" size={64} color="#334155" />
+          <Text style={styles.emptyTitle}>No Matches for "{activeFilter}"</Text>
+          <Text style={styles.emptySubtitle}>
+            {results.length} space{results.length === 1 ? '' : 's'} found nearby. Tap "All" to see them.
+          </Text>
+        </View>
       ) : (
         <FlatList
-          data={results}
+          data={visibleResults}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            <Text style={styles.resultCount}>{results.length} spaces found</Text>
+            <Text style={styles.resultCount}>
+              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} found
+              {activeFilter !== 'All' ? ` · ${activeFilter}` : ''}
+            </Text>
           }
         />
       )}
@@ -216,6 +256,8 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   filterText: { color: '#CBD5E1', fontSize: 12 },
+  filterChipActive: { backgroundColor: '#38BDF8', borderColor: '#38BDF8' },
+  filterTextActive: { color: '#0F172A', fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#94A3B8', fontSize: 14 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 12 },
