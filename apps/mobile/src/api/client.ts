@@ -6,19 +6,23 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const BASE_URL = process.env['EXPO_PUBLIC_API_URL'] || 'http://localhost:4000/api/v1';
+const BASE_URL = process.env['EXPO_PUBLIC_API_URL'] || 'http://100.116.89.14:4000/api/v1';
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000,
+  timeout: 5000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 // Inject JWT on every request
 api.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync('access_token');
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`;
+  try {
+    const token = await SecureStore.getItemAsync('access_token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+  } catch {
+    // Silently fail if SecureStore is not available
   }
   return config;
 });
@@ -38,8 +42,12 @@ api.interceptors.response.use(
         original.headers['Authorization'] = `Bearer ${newToken}`;
         return api(original);
       } catch {
-        await SecureStore.deleteItemAsync('access_token');
-        await SecureStore.deleteItemAsync('refresh_token');
+        try {
+          await SecureStore.deleteItemAsync('access_token');
+          await SecureStore.deleteItemAsync('refresh_token');
+        } catch {
+          // Silently fail if cleanup fails
+        }
       }
     }
     return Promise.reject(error);

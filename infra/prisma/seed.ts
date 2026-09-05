@@ -177,7 +177,13 @@ async function main() {
   for (const spaceData of spaces) {
     const space = await prisma.parkingSpace.upsert({
       where: { id: spaceData.id },
-      update: {},
+      update: {
+        // Keep the spatial index consistent with encodeGeohash on re-seed.
+        geohash: encodeGeohash(spaceData.latitude, spaceData.longitude, 6),
+        latitude: spaceData.latitude,
+        longitude: spaceData.longitude,
+        status: spaceData.status,
+      },
       create: {
         id: spaceData.id,
         hostId: host.id,

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="adminGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#adminGrad)"/>
+  <!-- Admin Shield Accent -->
+  <path d="M32 10 L44 15 V26 C44 34 39 41 32 44 C25 41 20 34 20 26 V15 Z" fill="#FFFFFF" opacity="0.2"/>
+  <!-- Letterform 'P' -->
+  <path d="M24 16 H36 C42 16 46 20 46 26 C46 32 42 36 36 36 H31 V48 H24 Z M31 23 V29 H36 C38 29 40 27.5 40 26 C40 24.5 38 23 36 23 Z" fill="#FFFFFF" filter="url(#shadow)"/>
+</svg>

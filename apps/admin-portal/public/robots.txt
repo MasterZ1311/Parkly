@@ -1,0 +1,4 @@
+# Parkly Admin Portal — Administrative Command Center
+# Disallow web crawlers from indexing administrative routes
+User-agent: *
+Disallow: /

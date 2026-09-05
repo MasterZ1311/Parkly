@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="parklyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="50%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#parklyGrad)"/>
+  <!-- Location Pin Accent -->
+  <circle cx="32" cy="18" r="4" fill="#FFFFFF" opacity="0.9"/>
+  <!-- Parking 'P' Letterform -->
+  <path d="M22 14 H35 C42 14 47 18 47 25 C47 32 42 36 35 36 H30 V50 H22 Z M30 21 V29 H35 C38 29 40 27.5 40 25 C40 22.5 38 21 35 21 Z" fill="#FFFFFF" filter="url(#shadow)"/>
+</svg>

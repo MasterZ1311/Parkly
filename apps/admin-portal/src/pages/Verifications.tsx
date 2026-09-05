@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { adminApi } from '../utils/api';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const pendingVerifications = [
   {
@@ -44,6 +46,7 @@ const pendingVerifications = [
 ];
 
 export default function Verifications() {
+  useDocumentTitle('Host & Space Verifications');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -90,11 +93,16 @@ export default function Verifications() {
     }
   };
 
+  const handleViewDoc = (v: typeof pendingVerifications[0], doc: string) => {
+    alert(`Opening document: ${doc}\nHost: ${v.host}\nSpace: ${v.name}\n\n(In production this opens the secure document viewer.)`);
+  };
+
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Verifications' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Pending Verifications</h1>
+          <h1 className="page-title">Host &amp; Space Verifications</h1>
           <p className="page-subtitle">{pendingVerifications.length} spaces awaiting review</p>
         </div>
       </div>
@@ -140,7 +148,7 @@ export default function Verifications() {
                   <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>SUBMITTED DOCUMENTS</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {v.docs.map(doc => (
-                      <button key={doc} className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }}>
+                      <button key={doc} className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => handleViewDoc(v, doc)}>
                         📄 {doc}
                       </button>
                     ))}

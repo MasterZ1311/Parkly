@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { hostApi } from '../utils/api';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const mockListings = [
   {
@@ -38,6 +40,7 @@ const mockListings = [
 ];
 
 export default function Listings() {
+  useDocumentTitle('My Parking Spaces');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,23 +66,28 @@ export default function Listings() {
 
     setLoading(true);
     try {
-      const payload = {
-        name: formData.name,
-        address: formData.address,
-        coordinates: {
-          latitude: parseFloat(formData.latitude) || 0,
-          longitude: parseFloat(formData.longitude) || 0,
-        },
-        totalSlots: parseInt(formData.slots),
-        hourlyRate: parseInt(formData.hourlyRate),
-      };
-
       if (editingId) {
-        await hostApi.updateListing(editingId, payload);
-        alert('Space updated successfully.');
+        await hostApi.updateListing(editingId, {
+          name: formData.name,
+          address: formData.address,
+          totalCapacity: parseInt(formData.slots),
+          hourlyRate: parseFloat(formData.hourlyRate),
+        });
+        alert('Listing updated successfully');
       } else {
-        await hostApi.createListing(payload);
-        alert('Space added successfully! Pending verification.');
+        await hostApi.createListing({
+          name: formData.name,
+          address: formData.address,
+          latitude: parseFloat(formData.latitude) || 13.0827,
+          longitude: parseFloat(formData.longitude) || 80.2707,
+          totalCapacity: parseInt(formData.slots),
+          hourlyRate: parseFloat(formData.hourlyRate),
+          city: 'Chennai',
+          state: 'Tamil Nadu',
+          pincode: '600001',
+          vehicleTypes: ['sedan', 'suv'],
+        });
+        alert('Space created successfully and submitted for AI verification');
       }
 
       setShowModal(false);
@@ -87,13 +95,13 @@ export default function Listings() {
       setFormData({ name: '', address: '', latitude: '', longitude: '', slots: '', hourlyRate: '' });
       // Reload listings (in real app, would refetch)
     } catch (err: any) {
-      alert('Error saving space: ' + (err.response?.data?.message || 'Unknown error'));
+      alert('Error saving listing: ' + (err.response?.data?.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEditClick = (listing: typeof mockListings[0]) => {
+  const handleEdit = (listing: any) => {
     setEditingId(listing.id);
     setFormData({
       name: listing.name,
@@ -106,7 +114,8 @@ export default function Listings() {
     setShowModal(true);
   };
 
-  const handlePauseListing = async (spaceId: string) => {
+  const handlePause = async (spaceId: string) => {
+    if (!confirm('Are you sure you want to pause this space?')) return;
     setLoading(true);
     try {
       await hostApi.updateListing(spaceId, { status: 'inactive' });
@@ -121,10 +130,11 @@ export default function Listings() {
 
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'My Listings' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">My Listings</h1>
-          <p className="page-subtitle">Manage your parking spaces</p>
+          <h1 className="page-title">My Parking Spaces</h1>
+          <p className="page-subtitle">Configure pricing tiers, EV charging availability, and manage parking slots.</p>
         </div>
         <button
           className="btn btn-primary"
@@ -197,7 +207,7 @@ export default function Listings() {
                   <button
                     className="btn btn-outline"
                     style={{ padding: '6px 12px', fontSize: 12 }}
-                    onClick={() => handleEditClick(listing)}
+                    onClick={() => handleEdit(listing)}
                     disabled={loading}
                   >
                     Edit
@@ -206,7 +216,7 @@ export default function Listings() {
                     <button
                       className="btn btn-danger"
                       style={{ padding: '6px 12px', fontSize: 12 }}
-                      onClick={() => handlePauseListing(listing.id)}
+                      onClick={() => handlePause(listing.id)}
                       disabled={loading}
                     >
                       {loading ? '...' : 'Pause'}

@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const data = [
   { day: 'Mon', bookings: 48, revenue: 3840 },
@@ -31,16 +33,41 @@ const recentActivity = [
 ];
 
 export default function Overview() {
+  useDocumentTitle('City Operations Overview');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleExport = () => {
+    const headers = ['Day', 'Bookings', 'Revenue'];
+    const rows = data.map(d => [d.day, d.bookings, d.revenue].join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'parkly-operations-summary.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    // Simulate refetch of dashboard metrics
+    setTimeout(() => setRefreshing(false), 800);
+  };
+
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Platform Overview' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Platform Overview</h1>
-          <p className="page-subtitle">Real-time operations dashboard · Chennai, Tamil Nadu</p>
+          <h1 className="page-title">City Operations Command Overview</h1>
+          <p className="page-subtitle">Real-time Chennai smart city parking telemetry, booking throughput, and system health.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-outline" style={{ fontSize: 12, padding: '8px 16px' }}>📥 Export</button>
-          <button className="btn btn-primary" style={{ fontSize: 12, padding: '8px 16px' }}>🔄 Refresh</button>
+          <button className="btn btn-outline" style={{ fontSize: 12, padding: '8px 16px' }} onClick={handleExport}>📥 Export</button>
+          <button className="btn btn-primary" style={{ fontSize: 12, padding: '8px 16px' }} onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
+          </button>
         </div>
       </div>
 

@@ -20,6 +20,11 @@ import {
   PricingResult,
   NotFoundError,
 } from '@parkly/shared';
+import {
+  DynamicPricingAgent,
+  MockPricingEngineProvider,
+  ExecutionContext,
+} from '@parkly/ai-agents';
 
 const PORT = process.env['PRICING_PORT'] || 4008;
 const SERVICE_NAME = 'pricing-service';
@@ -113,6 +118,60 @@ pricingRouter.get('/:spaceId', async (req: Request, res: Response, next: NextFun
 
     const result = await pricingService.calculatePrice(req.params['spaceId']!, arrivalTime);
     res.json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autonomous Dynamic Pricing Agent
+const dynamicPricingAgent = new DynamicPricingAgent({
+  pricingEngineTool: new MockPricingEngineProvider(),
+});
+
+// POST /pricing/ai-quote — Real-time AI dynamic pricing with surge evaluation
+pricingRouter.post('/ai-quote', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { spaceId, currentOccupancyRate, demandForecastTier } = req.body;
+    if (!spaceId) throw new NotFoundError('spaceId is required');
+
+    const space = await prisma.parkingSpace.findUnique({
+      where: { id: spaceId },
+    });
+    if (!space) throw new NotFoundError('Parking space not found');
+
+    const ctx = ExecutionContext.create({
+      correlationId: (req.headers['x-correlation-id'] as string) || `pricing-${Date.now()}`,
+      metadata: { service: 'pricing-service' },
+    });
+
+    const agentResult = await dynamicPricingAgent.execute({
+      spaceId,
+      baseHourlyRate: Number(space.hourlyRate),
+      currentOccupancyRate: typeof currentOccupancyRate === 'number' ? currentOccupancyRate : 0.75,
+      demandForecastTier: demandForecastTier || 'HIGH_DEMAND',
+      hostPricingPreferences: {
+        allowDynamic: space.dynamicPricing,
+        maxMultiplier: 2.5,
+      },
+    }, ctx);
+
+    if (!agentResult.success) {
+      return next(new Error(agentResult.error.message));
+    }
+
+    res.json({
+      success: true,
+      data: {
+        spaceId,
+        baseHourlyRate: Number(space.hourlyRate),
+        calculatedHourlyRate: agentResult.data.calculatedHourlyRate,
+        appliedMultiplier: agentResult.data.appliedMultiplier,
+        surgeReason: agentResult.data.surgeReason,
+        effectiveFrom: agentResult.data.effectiveFrom,
+        effectiveUntil: agentResult.data.effectiveUntil,
+        currency: 'INR',
+      },
+    } as ApiResponse);
   } catch (err) {
     next(err);
   }

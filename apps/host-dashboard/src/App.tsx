@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Listings from './pages/Listings';
 import BookingsPage from './pages/BookingsPage';
 import Revenue from './pages/Revenue';
+import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
 
 interface NavItem {
   path: string;
@@ -90,7 +92,8 @@ export default function App() {
           <Route path="/listings" element={<Listings />} />
           <Route path="/bookings" element={<BookingsPage />} />
           <Route path="/revenue" element={<Revenue />} />
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>

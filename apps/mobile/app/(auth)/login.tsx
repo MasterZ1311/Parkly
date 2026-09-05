@@ -26,8 +26,8 @@ export default function LoginScreen() {
     clearError();
     try {
       const formattedPhone = phone.startsWith('+91') ? phone : `+91${phone}`;
-      await requestOtp(formattedPhone);
-      router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone } });
+      const devOtp = await requestOtp(formattedPhone);
+      router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone, devOtp: devOtp ?? '' } });
     } catch {
       // Error is shown via store
     }

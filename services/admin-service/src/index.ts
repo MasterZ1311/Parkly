@@ -22,6 +22,15 @@ import {
   NotFoundError,
   ApiResponse,
 } from '@parkly/shared';
+import {
+  DisputeMediationAgent,
+  CityAnalyticsAgent,
+  MockSensorVerificationProvider,
+  MockPaymentLedgerProvider,
+  MockNotificationProvider,
+  MockAnalyticsLakeProvider,
+  ExecutionContext,
+} from '@parkly/ai-agents';
 
 const PORT = process.env['ADMIN_PORT'] || 4011;
 const SERVICE_NAME = 'admin-service';
@@ -81,7 +90,7 @@ adminRouter.get('/bookings', async (req: Request, res: Response, next: NextFunct
 });
 
 // GET /admin/verifications — pending host verifications
-adminRouter.get('/verifications', async (req: Request, res: Response, next: NextFunction) => {
+adminRouter.get('/verifications', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const spaces = await prisma.parkingSpace.findMany({
       where: { status: 'pending_verification' },
@@ -153,7 +162,7 @@ adminRouter.post('/verifications/:spaceId/reject', async (req: Request, res: Res
 });
 
 // GET /admin/metrics — basic platform metrics
-adminRouter.get('/metrics', async (req: Request, res: Response, next: NextFunction) => {
+adminRouter.get('/metrics', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const [
       totalUsers, activeSpaces, totalBookings, completedBookings, pendingVerifications,
@@ -171,6 +180,82 @@ adminRouter.get('/metrics', async (req: Request, res: Response, next: NextFuncti
         totalUsers, activeSpaces, totalBookings, completedBookings, pendingVerifications,
         timestamp: new Date().toISOString(),
       },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autonomous AI Agents
+const disputeMediationAgent = new DisputeMediationAgent({
+  sensorTool: new MockSensorVerificationProvider(),
+  ledgerTool: new MockPaymentLedgerProvider(),
+  notificationTool: new MockNotificationProvider(),
+});
+
+const cityAnalyticsAgent = new CityAnalyticsAgent({
+  analyticsLakeTool: new MockAnalyticsLakeProvider(),
+});
+
+// POST /admin/disputes/:id/mediate — Autonomous dispute mediation
+adminRouter.post('/disputes/:id/mediate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const disputeId = req.params['id']!;
+    const { bookingId, incidentType, evidence } = req.body;
+
+    const ctx = ExecutionContext.create({
+      correlationId: (req.headers['x-correlation-id'] as string) || `dispute-${Date.now()}`,
+      initiatorUserId: req.user!.sub,
+      metadata: { role: 'admin' },
+    });
+
+    const agentResult = await disputeMediationAgent.execute({
+      disputeId,
+      bookingId: bookingId || 'b_sample_01',
+      incidentType: incidentType || 'OVERSTAY',
+      reportedBy: req.user!.sub,
+      evidence: evidence || {},
+    }, ctx);
+
+    if (!agentResult.success) {
+      return next(new Error(agentResult.error.message));
+    }
+
+    res.json({
+      success: true,
+      data: agentResult.data,
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /admin/analytics/city — Autonomous city-scale mobility & carbon metrics
+adminRouter.get('/analytics/city', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const cityId = (req.query['cityId'] as string) || 'chennai';
+    const period = (req.query['period'] as string) || '2026-W36';
+    const zones = req.query['zones'] ? (req.query['zones'] as string).split(',') : ['t-nagar', 'anna-nagar', 'omr'];
+
+    const ctx = ExecutionContext.create({
+      correlationId: (req.headers['x-correlation-id'] as string) || `analytics-${Date.now()}`,
+      initiatorUserId: req.user!.sub,
+      metadata: { role: 'admin' },
+    });
+
+    const agentResult = await cityAnalyticsAgent.execute({
+      cityId,
+      period,
+      zones,
+    }, ctx);
+
+    if (!agentResult.success) {
+      return next(new Error(agentResult.error.message));
+    }
+
+    res.json({
+      success: true,
+      data: agentResult.data,
     } as ApiResponse);
   } catch (err) {
     next(err);

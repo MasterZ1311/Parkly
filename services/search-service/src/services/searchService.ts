@@ -26,7 +26,6 @@ const prisma = new PrismaClient();
 
 const DEFAULT_RADIUS_KM = 2;
 const DEFAULT_PAGE_SIZE = 20;
-const DEFAULT_ARRIVAL_OFFSET = 0; // use current time
 const DEFAULT_DURATION_MINUTES = 60;
 const GEOHASH_PRECISION = 6; // ~1.2km cells
 
@@ -82,11 +81,14 @@ export class SearchService {
     const pageSize = Math.min(Math.max(query.pageSize ?? DEFAULT_PAGE_SIZE, 5), 100);
 
     // --- Spatial query using geohash ---
-    // Stored geohashes are precision-6; we prefilter on the 5-char prefix
-    // cell plus its 8 neighbours so candidates near a cell boundary are not
-    // missed. The haversine distance filter below is the authoritative gate.
+    // Stored geohashes are precision-6. We prefilter on a prefix cell plus its
+    // 8 neighbours. The prefix length adapts to the radius so the 3x3 candidate
+    // grid always covers the requested area (a 5-char cell is ~4.9km, a 4-char
+    // cell is ~39km). The haversine distance filter below is the authoritative
+    // gate — the geohash step is only a coarse candidate prefilter.
+    const prefixLen = radius <= 5 ? 5 : 4;
     const centerGeohash = encodeGeohash(coords.lat, coords.lng, GEOHASH_PRECISION);
-    const prefixCells = getGeohashNeighbors(centerGeohash.slice(0, 5)); // ~5km cells
+    const prefixCells = getGeohashNeighbors(centerGeohash.slice(0, prefixLen));
 
     const spaces = await prisma.parkingSpace.findMany({
       where: {

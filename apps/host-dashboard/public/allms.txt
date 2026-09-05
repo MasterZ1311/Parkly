@@ -1,0 +1,7 @@
+# Parkly Host Portal — Autonomous Multi-Agent AI Manifest (allms.txt)
+Domain: https://host.parkly.in
+API: https://api.parkly.in/api/v1
+Service: parkly-host-portal
+City: Chennai, India (T. Nagar, Anna Nagar, OMR, Guindy, Marina)
+Platform: Autonomous Multi-Agent Smart City Parking Marketplace
+Sitemap: https://host.parkly.in/sitemap.xml

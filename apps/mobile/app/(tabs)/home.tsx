@@ -64,7 +64,9 @@ export default function HomeScreen() {
         pageSize: 20,
       });
       setResults(data.data.results || []);
-    } catch {
+    } catch (error) {
+      // Gracefully handle connection errors
+      console.error('Search failed:', error);
       setResults([]);
     } finally {
       setLoading(false);

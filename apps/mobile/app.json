@@ -12,6 +12,9 @@
       "backgroundColor": "#0F172A"
     },
     "assetBundlePatterns": ["**/*"],
+    "updates": {
+      "enabled": false
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.zeustechnologies.parkly",

@@ -21,7 +21,6 @@ import {
   getConfig,
   getDocClient,
   publishEvent,
-  generateId,
   ValidationError,
   ApiResponse,
   OccupancyRecord,

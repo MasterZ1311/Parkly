@@ -1,0 +1,11 @@
+# Parkly Admin Portal — System Overview & Architecture Context (llms.txt)
+> https://admin.parkly.in
+
+## Operational Role
+The Parkly Admin Portal is the central operational command center for the Parkly Smart City platform in Chennai.
+
+## Core Modules
+- **Overview & Telemetry**: Platform-wide booking volume, GMV, and microservice health probes.
+- **Host Verifications**: Autonomous OCR and computer vision adjudication with manual review overrides.
+- **User & RBAC Governance**: Driver, Host, and Operations Staff access control.
+- **Audit & Security**: Immutable DynamoDB audit log trail and sensor-verified dispute resolution.

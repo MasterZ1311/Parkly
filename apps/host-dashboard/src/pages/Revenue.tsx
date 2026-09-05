@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { hostApi } from '../utils/api';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const monthlyData = [
   { month: 'Jan', gross: 12400, payout: 9920, platform: 2480 },
@@ -25,14 +28,34 @@ const payouts = [
 ];
 
 export default function Revenue() {
+  useDocumentTitle('Revenue & Payouts');
+  const [loading, setLoading] = useState(false);
+  const pendingAmount = 3960;
+
+  const handleRequestPayout = async () => {
+    if (!confirm(`Request payout of ₹${pendingAmount.toLocaleString()} to your registered bank account?`)) return;
+    setLoading(true);
+    try {
+      await hostApi.requestPayout({ amount: pendingAmount });
+      alert('Payout request submitted successfully!');
+    } catch (err: any) {
+      alert('Error requesting payout: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Revenue' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Revenue</h1>
-          <p className="page-subtitle">Earnings and payout overview</p>
+          <h1 className="page-title">Revenue &amp; Payouts</h1>
+          <p className="page-subtitle">Monthly earnings breakdown, platform commission audit, and instant bank payouts.</p>
         </div>
-        <button className="btn btn-primary">Request Payout</button>
+        <button className="btn btn-primary" onClick={handleRequestPayout} disabled={loading}>
+          {loading ? 'Processing...' : 'Request Payout'}
+        </button>
       </div>
 
       {/* Summary Cards */}

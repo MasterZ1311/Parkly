@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { adminApi } from '../utils/api';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const users = [
   { id: 'u1', name: 'Arjun Kumar', phone: '+91 98765 43210', role: 'driver', bookings: 12, status: 'active', joined: '2024-01-15' },
@@ -10,7 +12,18 @@ const users = [
 ];
 
 export default function UsersPage() {
+  useDocumentTitle('Platform Users & Roles');
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+
+  const filteredUsers = users.filter(u => {
+    const matchesSearch =
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.phone.toLowerCase().includes(search.toLowerCase());
+    const matchesRole = roleFilter === 'All Roles' || u.role === roleFilter.toLowerCase();
+    return matchesSearch && matchesRole;
+  });
 
   const handleView = async (userId: string) => {
     setLoading(true);
@@ -41,14 +54,26 @@ export default function UsersPage() {
 
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Users' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">User Management</h1>
+          <h1 className="page-title">Platform Users &amp; Role Management</h1>
           <p className="page-subtitle">12,847 total registered users</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input className="form-input" placeholder="Search users..." style={{ width: 220 }} />
-          <select className="form-input" style={{ width: 120 }}>
+          <input
+            className="form-input"
+            placeholder="Search users..."
+            style={{ width: 220 }}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <select
+            className="form-input"
+            style={{ width: 120 }}
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value)}
+          >
             <option>All Roles</option>
             <option>Driver</option>
             <option>Host</option>
@@ -72,7 +97,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users.map(u => (
+              {filteredUsers.map(u => (
                 <tr key={u.id}>
                   <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{u.name}</td>
                   <td>{u.phone}</td>
@@ -111,6 +136,13 @@ export default function UsersPage() {
                   </td>
                 </tr>
               ))}
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>
+                    No users match your search.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

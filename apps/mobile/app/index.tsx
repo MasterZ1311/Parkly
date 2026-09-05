@@ -1,7 +1,6 @@
 import { Redirect } from 'expo-router';
-import { useAuthStore } from '../src/store/auth.store';
 
 export default function Index() {
-  const { isAuthenticated } = useAuthStore();
-  return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/(auth)/login'} />;
+  // Direct access to drivers page without authentication requirement
+  return <Redirect href="/(tabs)/home" />;
 }

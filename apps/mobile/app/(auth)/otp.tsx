@@ -14,12 +14,19 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth.store';
 
 export default function OtpScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, devOtp } = useLocalSearchParams<{ phone: string; devOtp?: string }>();
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [name, setName] = useState('');
   const [showName, setShowName] = useState(false);
   const inputs = useRef<TextInput[]>([]);
   const { verifyOtp, requestOtp, isLoading, error, clearError } = useAuthStore();
+
+  // Dev convenience: prefill the OTP digits when the backend returned one.
+  React.useEffect(() => {
+    if (devOtp && devOtp.length === 6) {
+      setOtp(devOtp.split(''));
+    }
+  }, [devOtp]);
 
   const handleOtpChange = (value: string, index: number) => {
     const newOtp = [...otp];
@@ -47,7 +54,10 @@ export default function OtpScreen() {
 
   const handleResend = async () => {
     setOtp(['', '', '', '', '', '']);
-    await requestOtp(phone!);
+    const newOtp = await requestOtp(phone!);
+    if (newOtp && newOtp.length === 6) {
+      setOtp(newOtp.split(''));
+    }
   };
 
   return (
@@ -84,6 +94,12 @@ export default function OtpScreen() {
       </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
+
+      {devOtp ? (
+        <View style={styles.devHint}>
+          <Text style={styles.devHintText}>🔑 Dev mode: OTP is {devOtp} (auto-filled)</Text>
+        </View>
+      ) : null}
 
       {/* Name input for new users */}
       <View style={styles.nameSection}>
@@ -139,6 +155,16 @@ const styles = StyleSheet.create({
   },
   otpInputFilled: { borderColor: '#38BDF8' },
   errorText: { color: '#F87171', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  devHint: {
+    backgroundColor: '#38BDF820',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 20,
+  },
+  devHintText: { color: '#38BDF8', fontSize: 13, fontWeight: '600', textAlign: 'center' },
   nameSection: { marginBottom: 24 },
   nameLabel: { color: '#CBD5E1', fontSize: 13, marginBottom: 8 },
   nameInput: {

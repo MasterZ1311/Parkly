@@ -7,6 +7,13 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { searchService } from '../services/searchService';
 import { authenticate, ValidationError, ApiResponse } from '@parkly/shared';
+import {
+  DriverConciergeAgent,
+  MockSearchServiceProvider,
+  MockBookingServiceProvider,
+  MockTrafficMonitorProvider,
+  ExecutionContext,
+} from '@parkly/ai-agents';
 
 export const searchRouter = Router();
 
@@ -61,6 +68,53 @@ searchRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     res.status(200).json({
       success: true,
       data: searchResult,
+      meta: {
+        requestId: req.requestId || '',
+        timestamp: new Date().toISOString(),
+      },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autonomous Driver Concierge Agent
+const driverConciergeAgent = new DriverConciergeAgent({
+  searchTool: new MockSearchServiceProvider(),
+  bookingTool: new MockBookingServiceProvider(),
+  trafficTool: new MockTrafficMonitorProvider(),
+});
+
+// POST /search/concierge — Conversational/Intent-based AI driver concierge
+searchRouter.post('/concierge', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { query, currentLocation } = req.body;
+    if (!query || typeof query !== 'string') {
+      throw new ValidationError('query is required');
+    }
+
+    const lat = currentLocation?.latitude ?? 13.0827;
+    const lng = currentLocation?.longitude ?? 80.2707;
+
+    const ctx = ExecutionContext.create({
+      correlationId: (req.headers['x-correlation-id'] as string) || req.requestId || `concierge-${Date.now()}`,
+      initiatorUserId: req.user?.sub || 'anonymous',
+      metadata: { city: 'Chennai' },
+    });
+
+    const agentResult = await driverConciergeAgent.execute({
+      driverId: req.user?.sub || 'driver_guest',
+      query,
+      currentLocation: { latitude: lat, longitude: lng },
+    }, ctx);
+
+    if (!agentResult.success) {
+      return next(new Error(agentResult.error.message));
+    }
+
+    res.status(200).json({
+      success: true,
+      data: agentResult.data,
       meta: {
         requestId: req.requestId || '',
         timestamp: new Date().toISOString(),

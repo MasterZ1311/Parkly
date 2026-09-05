@@ -52,11 +52,19 @@ authRouter.post('/otp/request', async (req: Request, res: Response, next: NextFu
     }
 
     const { phone } = result.data;
-    await otpService.requestOtp(phone);
+    const otp = await otpService.requestOtp(phone);
+
+    // Dev convenience: when not running in production, return the OTP in the
+    // response so testers can sign in on web without real SMS delivery.
+    const isProd = process.env['NODE_ENV'] === 'production';
 
     const response: ApiResponse = {
       success: true,
-      data: { message: 'OTP sent successfully', phone },
+      data: {
+        message: 'OTP sent successfully',
+        phone,
+        ...(isProd ? {} : { devOtp: otp }),
+      },
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     };
 

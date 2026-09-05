@@ -26,11 +26,18 @@ import {
   generateId,
   publishEvent,
   ValidationError,
-  NotFoundError,
-  AuthorizationError,
   ApiResponse,
   ParkingSpace,
 } from '@parkly/shared';
+import {
+  HostOnboardingAgent,
+  VisualInspectionAgent,
+  MockOcrProvider,
+  MockGeocodingProvider,
+  MockZoningProvider,
+  MockVisionProvider,
+  ExecutionContext,
+} from '@parkly/ai-agents';
 
 const PORT = process.env['HOST_PORT'] || 4010;
 const SERVICE_NAME = 'host-service';
@@ -230,6 +237,94 @@ hostRouter.post('/listings/:id/upload-url', requireRole('host', 'admin'), async 
     if (!filename || typeof filename !== 'string') throw new ValidationError('filename is required');
     const url = await hostService.getPresignedUploadUrl(req.params['id']!, filename);
     res.json({ success: true, data: { uploadUrl: url } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autonomous AI Agents
+const hostOnboardingAgent = new HostOnboardingAgent({
+  ocrTool: new MockOcrProvider(),
+  geocodingTool: new MockGeocodingProvider(),
+  zoningTool: new MockZoningProvider(),
+});
+
+const visualInspectionAgent = new VisualInspectionAgent({
+  visionTool: new MockVisionProvider(),
+});
+
+// POST /host/listings/:id/ai-verify — Autonomous multi-agent onboarding verification
+hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const spaceId = req.params['id']!;
+    const space = await prisma.parkingSpace.findUnique({
+      where: { id: spaceId },
+      include: { host: true },
+    });
+    if (!space) throw new ValidationError('Listing not found');
+
+    const documentUrls = (req.body.documentUrls as string[]) || ['https://s3.amazonaws.com/parkly/docs/electricity-bill.pdf'];
+    const photoUrls = (space.photoUrls && space.photoUrls.length > 0)
+      ? space.photoUrls
+      : ((req.body.photoUrls as string[]) || ['https://s3.amazonaws.com/parkly/spaces/sample-space.jpg']);
+
+    const ctx = ExecutionContext.create({
+      correlationId: (req.headers['x-correlation-id'] as string) || generateId(),
+      initiatorUserId: req.user!.sub,
+      metadata: { tenantId: 'chennai-main' },
+    });
+
+    const onboardingResult = await hostOnboardingAgent.execute({
+      userId: req.user!.sub,
+      rawAddress: `${space.address}, ${space.city}, ${space.state} ${space.pincode}`,
+      documentUrls,
+      declaredSlots: space.totalCapacity,
+      vehicleTypes: (space.vehicleTypes && space.vehicleTypes.length > 0
+        ? space.vehicleTypes
+        : ['sedan', 'suv']) as string[],
+    }, ctx);
+
+    const visualResult = await visualInspectionAgent.execute({
+      spaceId: space.id,
+      photoUrls,
+    }, ctx);
+
+    const isApproved = onboardingResult.success && visualResult.success &&
+      onboardingResult.data.kycStatus === 'VERIFIED_AUTO' &&
+      visualResult.data.inspectionResult === 'APPROVED';
+
+    const newStatus = isApproved ? 'active' : 'pending_verification';
+
+    await prisma.parkingSpace.update({
+      where: { id: spaceId },
+      data: { status: newStatus, photoUrls },
+    });
+
+    if (isApproved && space.host) {
+      await prisma.host.update({
+        where: { id: space.hostId },
+        data: { verificationStatus: 'approved', verifiedAt: new Date() },
+      });
+
+      await publishEvent({
+        type: 'HostVerificationCompleted',
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'parkly.host-service',
+        data: { spaceId: space.id, hostId: space.hostId, status: 'approved' },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        spaceId,
+        status: newStatus,
+        aiApproval: isApproved,
+        onboarding: onboardingResult.success ? onboardingResult.data : onboardingResult.error,
+        visualInspection: visualResult.success ? visualResult.data : visualResult.error,
+      },
+    } as ApiResponse);
   } catch (err) {
     next(err);
   }

@@ -50,3 +50,6 @@ apps/mobile/expo-env.d.ts
 
 # Docker volumes
 docker/data/
+
+# Autonomous agent work logs
+.agents/

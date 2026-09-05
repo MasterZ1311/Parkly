@@ -12,7 +12,6 @@ import {
   generateOtp,
   logger,
   AuthenticationError,
-  ValidationError,
 } from '@parkly/shared';
 
 const MAX_ATTEMPTS = 5;

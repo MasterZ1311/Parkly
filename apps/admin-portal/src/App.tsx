@@ -6,6 +6,10 @@ import Overview from './pages/Overview';
 import Verifications from './pages/Verifications';
 import UsersPage from './pages/UsersPage';
 import BookingsAdmin from './pages/BookingsAdmin';
+import Settings from './pages/Settings';
+import AuditLogs from './pages/AuditLogs';
+import Alerts from './pages/Alerts';
+import NotFound from './pages/NotFound';
 
 export default function App() {
   const navigate = useNavigate();
@@ -88,7 +92,10 @@ export default function App() {
           <Route path="/verifications" element={<Verifications />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/bookings" element={<BookingsAdmin />} />
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/audit-logs" element={<AuditLogs />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>

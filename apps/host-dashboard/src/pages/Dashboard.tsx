@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 const revenueData = [
@@ -24,15 +25,20 @@ const statCards = [
   { icon: '⭐', label: 'Avg Occupancy', value: '72%', change: '+5%', color: '#F59E0B', bg: '#F59E0B20' },
 ];
 
+import { useDocumentTitle } from '../utils/useDocumentTitle';
+
 export default function Dashboard() {
+  const navigate = useNavigate();
+  useDocumentTitle('Overview & Performance');
+
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Welcome back! Here's your parking performance.</p>
+          <h1 className="page-title">Host Performance Dashboard</h1>
+          <p className="page-subtitle">Real-time Chennai parking space occupancy, dynamic revenue surges &amp; active reservations.</p>
         </div>
-        <button className="btn btn-primary">+ Add Listing</button>
+        <button className="btn btn-primary" onClick={() => navigate('/listings')}>+ Add Listing</button>
       </div>
 
       {/* Stats */}
@@ -98,7 +104,7 @@ export default function Dashboard() {
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Bookings</h3>
-          <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }}>View All</button>
+          <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => navigate('/bookings')}>View All</button>
         </div>
         <div className="table-wrap">
           <table>

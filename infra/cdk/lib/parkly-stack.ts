@@ -23,6 +23,7 @@ export class ParklyStack extends cdk.Stack {
     // ─── VPC ────────────────────────────────────────────────
     const vpc = new ec2.Vpc(this, 'ParklyVpc', {
       vpcName: `${prefix}-vpc`,
+      cidr: isProd ? '10.10.0.0/16' : '10.20.0.0/16',
       maxAzs: isProd ? 3 : 2,
       natGateways: isProd ? 2 : 1,
       subnetConfiguration: [

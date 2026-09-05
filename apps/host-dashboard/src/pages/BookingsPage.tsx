@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 const bookings = [
   { id: 'B0091', driver: 'Arjun Kumar', space: 'T Nagar Spot A', start: '2024-07-01 09:00', end: '2024-07-01 11:00', amount: 80, status: 'active', type: 'Instant' },
@@ -8,13 +10,19 @@ const bookings = [
   { id: 'B0087', driver: 'Kiran Reddy', space: 'T Nagar Spot B', start: '2024-06-29 09:00', end: '2024-06-29 13:00', amount: 140, status: 'completed', type: 'Scheduled' },
 ];
 
+type Booking = typeof bookings[0];
+
 export default function BookingsPage() {
+  useDocumentTitle('Reservations & Bookings');
+  const [selected, setSelected] = useState<Booking | null>(null);
+
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Bookings' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Bookings</h1>
-          <p className="page-subtitle">All bookings for your spaces</p>
+          <h1 className="page-title">Reservations &amp; Bookings</h1>
+          <p className="page-subtitle">Track active sessions, check-in timestamps, and driver vehicle details.</p>
         </div>
       </div>
 
@@ -54,7 +62,7 @@ export default function BookingsPage() {
             <tbody>
               {bookings.map(b => (
                 <tr key={b.id}>
-                  <td style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>#{b.id}</td>
+                  <td style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelected(b)}>#{b.id}</td>
                   <td style={{ color: 'var(--text-primary)' }}>{b.driver}</td>
                   <td>{b.space}</td>
                   <td>{b.start}</td>
@@ -72,6 +80,44 @@ export default function BookingsPage() {
           </table>
         </div>
       </div>
+
+      {/* Booking Detail Modal */}
+      {selected && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+          }}
+          onClick={() => setSelected(null)}
+        >
+          <div className="card" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800 }}>Booking #{selected.id}</h2>
+              <span className={`badge badge-${selected.status === 'active' ? 'blue' : selected.status === 'completed' ? 'green' : 'red'}`}>
+                {selected.status.charAt(0).toUpperCase() + selected.status.slice(1)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[
+                ['Driver', selected.driver],
+                ['Space', selected.space],
+                ['Type', selected.type],
+                ['Start', selected.start],
+                ['End', selected.end],
+                ['Amount', `₹${selected.amount}`],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
+                  <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+              <button className="btn btn-primary" onClick={() => setSelected(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

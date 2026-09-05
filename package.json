@@ -2,17 +2,22 @@
   "name": "parkly",
   "version": "1.0.0",
   "private": true,
-  "description": "Parkly — Smart City Parking Marketplace (Monorepo)",
+  "description": "Parkly — Autonomous Multi-Agent Smart City Parking Marketplace",
   "workspaces": [
     "shared",
     "services/*",
     "apps/host-dashboard",
-    "apps/admin-portal"
+    "apps/admin-portal",
+    "packages/*"
   ],
   "scripts": {
     "postinstall": "npx prisma generate --schema=infra/prisma/schema.prisma",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:ai": "npm test -w packages/ai-agents",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "dev": "concurrently --names \"GW,AUTH,BOOK,PAY,SRCH,HOST,OCC,PRICE,NOTIF,ADMIN,PRED\" --prefix-colors \"blue,green,yellow,magenta,cyan,white,red,gray,blueBright,greenBright,yellowBright\" \"npm run dev -w services/api-gateway\" \"npm run dev -w services/auth-service\" \"npm run dev -w services/booking-service\" \"npm run dev -w services/payment-service\" \"npm run dev -w services/search-service\" \"npm run dev -w services/host-service\" \"npm run dev -w services/occupancy-service\" \"npm run dev -w services/pricing-service\" \"npm run dev -w services/notification-service\" \"npm run dev -w services/admin-service\" \"npm run dev -w services/prediction-service\"",
     "dev:infra": "docker compose up postgres dynamodb-local dynamodb-setup -d",
@@ -43,9 +48,11 @@
     "clean": "rimraf \"**/dist\" \"**/.tsbuildinfo\" \"**/node_modules\" --glob"
   },
   "devDependencies": {
+    "@prisma/client": "^5.16.1",
     "concurrently": "^8.2.2",
+    "prisma": "^5.16.1",
     "rimraf": "^5.0.7",
-    "typescript": "^5.3.3"
+    "typescript": "^5.4.5"
   },
   "engines": {
     "node": ">=20.0.0",

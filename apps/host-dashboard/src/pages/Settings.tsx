@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../utils/authStore';
 import { commonApi } from '../utils/api';
+import Breadcrumbs from '../components/Breadcrumbs';
+import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 export default function Settings() {
+  useDocumentTitle('Account & Spot Settings');
   const { user, setUser } = useAuthStore();
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -29,7 +32,6 @@ export default function Settings() {
         notifyBookings: form.notifyBookings,
         notifyPayouts: form.notifyPayouts,
       });
-      // Keep the in-memory user in sync with the saved profile.
       if (user) {
         const updated = { ...user, name: form.name, phone: form.phone, email: form.email };
         setUser(updated);
@@ -46,10 +48,11 @@ export default function Settings() {
 
   return (
     <div>
+      <Breadcrumbs items={[{ label: 'Settings' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Settings</h1>
-          <p className="page-subtitle">Manage your account and preferences</p>
+          <h1 className="page-title">Account &amp; Spot Settings</h1>
+          <p className="page-subtitle">Manage host verification profile, registered bank details, and notification channels.</p>
         </div>
       </div>
 

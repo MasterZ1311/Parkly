@@ -19,7 +19,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
-  requestOtp: (phone: string) => Promise<void>;
+  requestOtp: (phone: string) => Promise<string | undefined>;
   verifyOtp: (phone: string, otp: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   loadUser: () => Promise<void>;
@@ -35,7 +35,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   requestOtp: async (phone: string) => {
     set({ isLoading: true, error: null });
     try {
-      await authApi.requestOtp(phone);
+      const { data } = await authApi.requestOtp(phone);
+      // Dev-only: backend returns the OTP when not in production.
+      return data?.data?.devOtp as string | undefined;
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message || 'Failed to send OTP';

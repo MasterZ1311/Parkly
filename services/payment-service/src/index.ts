@@ -5,6 +5,8 @@
 // ============================================================
 
 import 'dotenv/config';
+import crypto from 'crypto';
+import https from 'https';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -75,11 +77,145 @@ class MockPaymentProvider implements PaymentProvider {
   }
 }
 
+class RazorpayPaymentProvider implements PaymentProvider {
+  private keyId: string;
+  private keySecret: string;
+
+  constructor(keyId: string, keySecret: string) {
+    this.keyId = keyId;
+    this.keySecret = keySecret;
+  }
+
+  async createOrder(amount: number, currency: string, bookingId: string) {
+    const authHeader = 'Basic ' + Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
+    const amountInSubunits = Math.round(amount * 100);
+
+    return new Promise<{ orderId: string; upiVpa?: string; upiQrPayload?: string }>((resolve, reject) => {
+      const payload = JSON.stringify({
+        amount: amountInSubunits,
+        currency: currency || 'INR',
+        receipt: `rcpt_${bookingId.substring(0, 20)}`,
+        notes: { bookingId },
+      });
+
+      const req = https.request(
+        {
+          hostname: 'api.razorpay.com',
+          path: '/v1/orders',
+          method: 'POST',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          res.on('end', () => {
+            try {
+              const body = JSON.parse(data);
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                const upiVpa = getConfig().paymentUpiVpa || 'parkly@upi';
+                resolve({
+                  orderId: body.id,
+                  upiVpa,
+                  upiQrPayload: `upi://pay?pa=${upiVpa}&pn=Parkly&am=${amount}&cu=${currency}&tn=Booking-${bookingId}`,
+                });
+              } else {
+                logger.error({ body, statusCode: res.statusCode }, 'Razorpay order creation failed');
+                reject(new PaymentError(`Razorpay order creation failed: ${body.error?.description || 'Unknown error'}`));
+              }
+            } catch (_err) {
+              reject(new PaymentError('Invalid response from Razorpay'));
+            }
+          });
+        }
+      );
+
+      req.on('error', (err) => {
+        logger.error({ err }, 'Razorpay connection error');
+        reject(new PaymentError(`Razorpay connection failure: ${err.message}`));
+      });
+
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  async verifyPayment(orderId: string, paymentId: string, signature: string): Promise<boolean> {
+    const payload = `${orderId}|${paymentId}`;
+    const expectedSignature = crypto
+      .createHmac('sha256', this.keySecret)
+      .update(payload)
+      .digest('hex');
+
+    const expectedBuf = Buffer.from(expectedSignature);
+    const actualBuf = Buffer.from(signature);
+
+    if (expectedBuf.length !== actualBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(expectedBuf, actualBuf);
+  }
+
+  async refund(paymentId: string, amount: number): Promise<{ refundId: string }> {
+    const authHeader = 'Basic ' + Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
+    const amountInSubunits = Math.round(amount * 100);
+
+    return new Promise<{ refundId: string }>((resolve, reject) => {
+      const payload = JSON.stringify({ amount: amountInSubunits });
+
+      const req = https.request(
+        {
+          hostname: 'api.razorpay.com',
+          path: `/v1/payments/${paymentId}/refund`,
+          method: 'POST',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+          res.on('end', () => {
+            try {
+              const body = JSON.parse(data);
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                resolve({ refundId: body.id });
+              } else {
+                reject(new PaymentError(`Razorpay refund failed: ${body.error?.description || 'Unknown error'}`));
+              }
+            } catch (_err) {
+              reject(new PaymentError('Invalid response from Razorpay refund'));
+            }
+          });
+        }
+      );
+
+      req.on('error', (err) => reject(new PaymentError(`Razorpay connection failure: ${err.message}`)));
+      req.write(payload);
+      req.end();
+    });
+  }
+}
+
 function getPaymentProvider(): PaymentProvider {
   const config = getConfig();
-  // In production: return new RazorpayProvider() or CashfreeProvider() based on config
-  if (config.paymentProvider === 'mock') return new MockPaymentProvider();
-  return new MockPaymentProvider(); // fallback
+  if (config.paymentProvider === 'razorpay') {
+    if (!config.paymentApiKey || !config.paymentApiSecret) {
+      logger.warn('PAYMENT_PROVIDER is razorpay but PAYMENT_API_KEY/SECRET are missing, falling back to mock');
+      return new MockPaymentProvider();
+    }
+    return new RazorpayPaymentProvider(config.paymentApiKey, config.paymentApiSecret);
+  }
+  return new MockPaymentProvider();
 }
 
 // ============================================================
@@ -269,6 +405,50 @@ app.use(requestLogger);
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: SERVICE_NAME, version: '1.0.0', timestamp: new Date().toISOString() });
 });
+
+// POST /payments/webhook — Razorpay Webhook listener (verified via HMAC timing-safe comparison)
+app.post('/payments/webhook', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const webhookSecret = getConfig().paymentWebhookSecret;
+    const signature = req.headers['x-razorpay-signature'] as string;
+
+    if (webhookSecret && signature) {
+      const rawBody = JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(rawBody)
+        .digest('hex');
+
+      const expectedBuf = Buffer.from(expectedSignature);
+      const actualBuf = Buffer.from(signature);
+      if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
+        logger.warn('Invalid Razorpay webhook signature');
+        res.status(400).json({ error: 'Invalid webhook signature' });
+        return;
+      }
+    }
+
+    const event = req.body.event;
+    const payload = req.body.payload?.payment?.entity;
+
+    if (event === 'payment.captured' && payload) {
+      const orderId = payload.order_id;
+      const paymentId = payload.id;
+      const payment = await prisma.payment.findFirst({ where: { providerOrderId: orderId } });
+      if (payment && payment.status === 'pending') {
+        await paymentService.confirmPayment(payment.id, paymentId, signature || 'webhook_verified');
+      }
+    }
+
+    res.status(200).json({ status: 'ok' });
+    return;
+  } catch (err: any) {
+    logger.error({ err }, 'Webhook processing error');
+    res.status(500).json({ error: err.message });
+    return;
+  }
+});
+
 app.use('/payments', paymentRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
