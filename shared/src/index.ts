@@ -26,4 +26,5 @@ export * from './http';
 // Lifecycle (graceful shutdown, readiness)
 export * from './lifecycle';
 
-
+// Brand Theme & Palette
+export * from './theme/palette';

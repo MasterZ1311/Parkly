@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,6 +115,17 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Brand Header */}
+      <View style={styles.brandHeader}>
+        <View style={styles.brandLogoCard}>
+          <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+        </View>
+        <View>
+          <Text style={styles.brandTitle}>Parkly</Text>
+          <Text style={styles.brandSubtitle}>Smart City Parking • Chennai</Text>
+        </View>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
@@ -134,7 +146,7 @@ export default function HomeScreen() {
           )}
         </View>
         <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Ionicons name="arrow-forward" size={20} color="#0F172A" />
+          <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -158,7 +170,7 @@ export default function HomeScreen() {
       {/* Results */}
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#38BDF8" />
+          <ActivityIndicator size="large" color="#EF010C" />
           <Text style={styles.loadingText}>Finding parking spaces...</Text>
         </View>
       ) : !searched ? (
@@ -215,29 +227,68 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
+  container: { flex: 1, backgroundColor: '#0A1425' },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 12,
+    backgroundColor: '#0A1425',
+  },
+  brandLogoCard: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+    padding: 3,
+  },
+  brandLogo: {
+    width: 36,
+    height: 36,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    letterSpacing: -0.3,
+  },
+  brandSubtitle: {
+    fontSize: 11,
+    color: '#EF010C',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
   searchContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 8,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0A1425',
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263957',
   },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, color: '#F8FAFC', fontSize: 14 },
   searchButton: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: '#EF010C',
     borderRadius: 12,
     width: 44,
     justifyContent: 'center',
@@ -250,16 +301,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   filterChip: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263957',
   },
   filterText: { color: '#CBD5E1', fontSize: 12 },
-  filterChipActive: { backgroundColor: '#38BDF8', borderColor: '#38BDF8' },
-  filterTextActive: { color: '#0F172A', fontWeight: '700' },
+  filterChipActive: { backgroundColor: '#EF010C', borderColor: '#EF010C' },
+  filterTextActive: { color: '#FFFFFF', fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#94A3B8', fontSize: 14 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 12 },
@@ -267,36 +318,36 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20 },
   areaSuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
   areaSuggestion: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#38BDF8',
+    borderColor: '#EF010C',
   },
-  areaSuggestionText: { color: '#38BDF8', fontSize: 13 },
+  areaSuggestionText: { color: '#EF010C', fontSize: 13, fontWeight: '600' },
   list: { paddingHorizontal: 16, paddingBottom: 16 },
   resultCount: { color: '#64748B', fontSize: 13, marginBottom: 12 },
   card: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263957',
   },
   cardHeader: { marginBottom: 12 },
   cardTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   cardName: { flex: 1, fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginRight: 8 },
-  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#0F172A', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#0A1425', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   availDot: { width: 8, height: 8, borderRadius: 4 },
   availText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
   cardAddress: { color: '#64748B', fontSize: 13 },
   cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   distance: { color: '#64748B', fontSize: 12, flex: 1 },
   amenities: { flexDirection: 'row', gap: 4 },
-  badge: { backgroundColor: '#0F172A', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  badge: { backgroundColor: '#0A1425', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   badgeText: { color: '#94A3B8', fontSize: 10 },
-  price: { color: '#38BDF8', fontSize: 16, fontWeight: '800' },
+  price: { color: '#EF010C', fontSize: 16, fontWeight: '800' },
   priceUnit: { color: '#64748B', fontSize: 11, fontWeight: '400' },
 });

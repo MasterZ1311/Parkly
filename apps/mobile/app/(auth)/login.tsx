@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -42,8 +43,12 @@ export default function LoginScreen() {
 
       {/* Logo */}
       <View style={styles.logoContainer}>
-        <View style={styles.logoCircle}>
-          <Text style={styles.logoText}>P</Text>
+        <View style={styles.logoCard}>
+          <Image
+            source={require('../../assets/logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         <Text style={styles.appName}>Parkly</Text>
         <Text style={styles.tagline}>Smart Parking, Simplified</Text>
@@ -78,7 +83,7 @@ export default function LoginScreen() {
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator color="#0F172A" />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.buttonText}>Get OTP</Text>
           )}
@@ -87,7 +92,7 @@ export default function LoginScreen() {
         <Text style={styles.terms}>
           By continuing, you agree to Parkly's{' '}
           <Text style={styles.link}>Terms of Service</Text> and{' '}
-          <Text style={styles.link}>Privacy Policy</Text>
+          <Text style={styles.link}>Privacy Policy</Text>.
         </Text>
       </View>
     </KeyboardAvoidingView>
@@ -97,33 +102,38 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0A1425',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#38BDF8',
+  logoCard: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+    padding: 6,
   },
-  logoText: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#0F172A',
+  logoImage: {
+    width: 74,
+    height: 74,
   },
   appName: {
     fontSize: 32,
     fontWeight: '800',
     color: '#F8FAFC',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   tagline: {
     fontSize: 14,
@@ -145,12 +155,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   countryCode: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 12,
     paddingHorizontal: 14,
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263957',
   },
   countryCodeText: {
     color: '#F8FAFC',
@@ -158,17 +168,17 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111D33',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     color: '#F8FAFC',
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263957',
   },
   button: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: '#EF010C',
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
@@ -178,7 +188,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   buttonText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -194,7 +204,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   link: {
-    color: '#38BDF8',
+    color: '#EF010C',
     textDecorationLine: 'underline',
   },
 });

@@ -33,7 +33,9 @@ export default function App() {
     <div className="layout">
       <nav className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-mark">P</div>
+          <div className="logo-badge">
+            <img src="/logo.png" alt="Parkly Logo" className="logo-img" />
+          </div>
           <div>
             <div className="logo-name">Parkly</div>
             <div className="logo-sub">Admin Portal</div>
