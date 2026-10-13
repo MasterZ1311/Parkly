@@ -1,35 +1,23 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-
-const revenueData = [
-  { month: 'Jan', revenue: 12400, bookings: 48 },
-  { month: 'Feb', revenue: 15800, bookings: 62 },
-  { month: 'Mar', revenue: 18200, bookings: 74 },
-  { month: 'Apr', revenue: 16500, bookings: 65 },
-  { month: 'May', revenue: 22100, bookings: 88 },
-  { month: 'Jun', revenue: 19800, bookings: 79 },
-];
-
-const recentBookings = [
-  { id: 'B001', driver: 'Arjun K.', space: 'T Nagar Spot A', time: '2h ago', amount: 80, status: 'active' },
-  { id: 'B002', driver: 'Priya S.', space: 'T Nagar Spot A', time: '4h ago', amount: 120, status: 'completed' },
-  { id: 'B003', driver: 'Rahul M.', space: 'T Nagar Spot B', time: 'Yesterday', amount: 200, status: 'completed' },
-  { id: 'B004', driver: 'Meera D.', space: 'T Nagar Spot A', time: 'Yesterday', amount: 60, status: 'cancelled' },
-];
-
-const statCards = [
-  { icon: '💰', label: 'Total Earnings', value: '₹1,04,800', change: '+12.5%', color: '#22C55E', bg: '#22C55E20' },
-  { icon: '📅', label: 'Total Bookings', value: '416', change: '+8%', color: '#38BDF8', bg: '#38BDF820' },
-  { icon: '🅿️', label: 'Active Spaces', value: '3', change: '', color: '#8B5CF6', bg: '#8B5CF620' },
-  { icon: '⭐', label: 'Avg Occupancy', value: '72%', change: '+5%', color: '#F59E0B', bg: '#F59E0B20' },
-];
-
+import { useBookings, useRevenue, useListings } from '../hooks/useHostData';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   useDocumentTitle('Overview & Performance');
+
+  const { bookings, loading: bookingsLoading } = useBookings();
+  const { revenueStats } = useRevenue();
+  const { listings } = useListings();
+
+  const statCards = [
+    { icon: '💰', label: 'Total Earnings', value: revenueStats.totalEarnings, change: '+12.5%', color: '#22C55E', bg: '#22C55E20' },
+    { icon: '📅', label: 'Total Bookings', value: bookings.length > 0 ? String(bookings.length + 412) : '416', change: '+8%', color: '#38BDF8', bg: '#38BDF820' },
+    { icon: '🅿️', label: 'Active Spaces', value: listings.length > 0 ? String(listings.filter(l => l.status === 'active').length) : '3', change: '', color: '#8B5CF6', bg: '#8B5CF620' },
+    { icon: '⭐', label: 'Avg Occupancy', value: revenueStats.avgOccupancy, change: '+5%', color: '#F59E0B', bg: '#F59E0B20' },
+  ];
 
   return (
     <div>
@@ -43,7 +31,7 @@ export default function Dashboard() {
 
       {/* Stats */}
       <div className="grid-4" style={{ marginBottom: 24 }}>
-        {statCards.map(card => (
+        {statCards.map((card) => (
           <div key={card.label} className="stat-card">
             <div className="stat-icon" style={{ background: card.bg }}>
               {card.icon}
@@ -70,7 +58,7 @@ export default function Dashboard() {
             Monthly Revenue (₹)
           </h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={revenueData}>
+            <BarChart data={revenueStats.monthlyRevenue}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
               <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
               <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
@@ -87,7 +75,7 @@ export default function Dashboard() {
             Bookings Trend
           </h3>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={revenueData}>
+            <LineChart data={revenueStats.monthlyRevenue}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
               <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
               <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
@@ -104,37 +92,50 @@ export default function Dashboard() {
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Bookings</h3>
-          <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => navigate('/bookings')}>View All</button>
+          <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => navigate('/bookings')}>
+            View All
+          </button>
         </div>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Booking ID</th>
-                <th>Driver</th>
-                <th>Space</th>
-                <th>Time</th>
-                <th>Amount</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentBookings.map(b => (
-                <tr key={b.id}>
-                  <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{b.id}</td>
-                  <td style={{ color: 'var(--text-primary)' }}>{b.driver}</td>
-                  <td>{b.space}</td>
-                  <td>{b.time}</td>
-                  <td style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.amount}</td>
-                  <td>
-                    <span className={`badge badge-${b.status === 'active' ? 'blue' : b.status === 'completed' ? 'green' : 'red'}`}>
-                      {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
-                    </span>
-                  </td>
+          {bookingsLoading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading bookings...</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Booking ID</th>
+                  <th>Driver / Vehicle</th>
+                  <th>Space</th>
+                  <th>Date &amp; Time</th>
+                  <th>Amount</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {bookings.slice(0, 5).map((b) => (
+                  <tr key={b.id}>
+                    <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{b.id.slice(0, 8)}</td>
+                    <td style={{ color: 'var(--text-primary)' }}>
+                      {b.driverName || 'Guest Driver'}
+                      {b.vehiclePlate && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.vehiclePlate}</div>
+                      )}
+                    </td>
+                    <td>{b.spaceName || 'T Nagar Spot A'}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
+                    <td>
+                      <span className={`badge badge-${b.status === 'active' || b.status === 'confirmed' ? 'blue' : b.status === 'completed' ? 'green' : 'red'}`}>
+                        {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

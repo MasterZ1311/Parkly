@@ -1,17 +1,9 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { hostApi } from '../utils/api';
+import { hostApi } from '../utils/apiClient';
+import { useRevenue } from '../hooks/useHostData';
 import Breadcrumbs from '../components/Breadcrumbs';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
-
-const monthlyData = [
-  { month: 'Jan', gross: 12400, payout: 9920, platform: 2480 },
-  { month: 'Feb', gross: 15800, payout: 12640, platform: 3160 },
-  { month: 'Mar', gross: 18200, payout: 14560, platform: 3640 },
-  { month: 'Apr', gross: 16500, payout: 13200, platform: 3300 },
-  { month: 'May', gross: 22100, payout: 17680, platform: 4420 },
-  { month: 'Jun', gross: 19800, payout: 15840, platform: 3960 },
-];
 
 const spaceBreakdown = [
   { name: 'T Nagar Spot A', value: 65 },
@@ -23,14 +15,22 @@ const COLORS = ['#38BDF8', '#22C55E', '#8B5CF6'];
 
 const payouts = [
   { date: '2024-06-25', amount: 4320, status: 'Processed', bank: 'SBI ***1234' },
-  { date: '2024-05-25', amount: 3960, amount2: 3960, status: 'Processed', bank: 'SBI ***1234' },
+  { date: '2024-05-25', amount: 3960, status: 'Processed', bank: 'SBI ***1234' },
   { date: '2024-04-25', amount: 3300, status: 'Processed', bank: 'SBI ***1234' },
 ];
 
 export default function Revenue() {
   useDocumentTitle('Revenue & Payouts');
+  const { revenueStats } = useRevenue();
   const [loading, setLoading] = useState(false);
   const pendingAmount = 3960;
+
+  const chartData = revenueStats.monthlyRevenue.map((d) => ({
+    month: d.month,
+    gross: d.revenue,
+    payout: Math.round(d.revenue * 0.8),
+    platform: Math.round(d.revenue * 0.2),
+  }));
 
   const handleRequestPayout = async () => {
     if (!confirm(`Request payout of ₹${pendingAmount.toLocaleString()} to your registered bank account?`)) return;
@@ -83,7 +83,7 @@ export default function Revenue() {
             Monthly Earnings Breakdown
           </h3>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={monthlyData}>
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
               <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
               <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />

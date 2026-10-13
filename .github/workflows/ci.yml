@@ -1,0 +1,55 @@
+name: Parkly CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Multi-Agent & Backend Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=infra/prisma/schema.prisma
+
+      - name: Run Autonomous Multi-Agent Tests (333 tests)
+        run: npm test -w packages/ai-agents
+
+      - name: Typecheck Microservices & Libraries
+        run: npm run build
+
+  web-frontends:
+    name: Verify Web Dashboards (Host & Admin)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Host Dashboard (React/Vite)
+        run: npm run build -w apps/host-dashboard
+
+      - name: Build Admin Portal (React/Vite)
+        run: npm run build -w apps/admin-portal

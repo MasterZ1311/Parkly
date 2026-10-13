@@ -6,6 +6,7 @@ import Overview from './pages/Overview';
 import Verifications from './pages/Verifications';
 import UsersPage from './pages/UsersPage';
 import BookingsAdmin from './pages/BookingsAdmin';
+import CityAnalytics from './pages/CityAnalytics';
 import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
 import Alerts from './pages/Alerts';
@@ -48,6 +49,7 @@ export default function App() {
           { path: '/verifications', icon: '✅', label: 'Verifications' },
           { path: '/users', icon: '👥', label: 'Users' },
           { path: '/bookings', icon: '📅', label: 'Bookings' },
+          { path: '/city-analytics', icon: '🏙️', label: 'City Analytics' },
         ].map(item => (
           <NavLink
             key={item.path}
@@ -94,6 +96,7 @@ export default function App() {
           <Route path="/verifications" element={<Verifications />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/bookings" element={<BookingsAdmin />} />
+          <Route path="/city-analytics" element={<CityAnalytics />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit-logs" element={<AuditLogs />} />
           <Route path="/alerts" element={<Alerts />} />

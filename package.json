@@ -8,7 +8,8 @@
     "services/*",
     "apps/host-dashboard",
     "apps/admin-portal",
-    "packages/*"
+    "packages/*",
+    "infra/cdk"
   ],
   "scripts": {
     "postinstall": "npx prisma generate --schema=infra/prisma/schema.prisma",

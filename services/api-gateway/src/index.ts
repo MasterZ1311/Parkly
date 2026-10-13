@@ -34,19 +34,18 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
 app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
-// NOTE: Do NOT add a body parser (express.json) here. The gateway only proxies
-// requests downstream; parsing the body would consume the request stream and
-// http-proxy-middleware would forward an empty body, hanging POST/PUT requests.
+// NOTE: Do NOT add a body parser (express.json) globally here. The gateway proxies
+// raw request streams downstream; pre-parsing consumes the stream and hangs http-proxy-middleware.
 app.use(requestLogger);
 
-// --- Rate Limiting (SECURITY-11) ---
+// --- Rate Limiting: 100 requests per 15 minutes per IP ---
 const rateLimiter = rateLimit({
-  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '60000'),
-  max: parseInt(process.env['RATE_LIMIT_MAX'] || '100'),
+  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 minutes
+  max: parseInt(process.env['RATE_LIMIT_MAX'] || '100', 10),
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    const retryAfter = Math.ceil(parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '60000') / 1000);
+    const retryAfter = Math.ceil(parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10) / 1000);
     res.status(429).json({
       success: false,
       error: {
@@ -66,8 +65,10 @@ const SERVICES = {
   booking: process.env['BOOKING_URL'] || 'http://localhost:4002',
   payment: process.env['PAYMENT_URL'] || 'http://localhost:4003',
   search: process.env['SEARCH_URL'] || 'http://localhost:4004',
+  prediction: process.env['PREDICTION_URL'] || 'http://localhost:4005',
   occupancy: process.env['OCCUPANCY_URL'] || 'http://localhost:4007',
   pricing: process.env['PRICING_URL'] || 'http://localhost:4008',
+  notification: process.env['NOTIFICATION_URL'] || 'http://localhost:4009',
   host: process.env['HOST_URL'] || 'http://localhost:4010',
   admin: process.env['ADMIN_URL'] || 'http://localhost:4011',
 };
@@ -76,9 +77,6 @@ function proxyTo(target: string, basePath: string) {
   return createProxyMiddleware({
     target,
     changeOrigin: true,
-    // Express strips the mount path (e.g. /api/v1/auth) before the proxy runs,
-    // leaving req.url as e.g. /otp/request. Downstream services mount their
-    // routers at /auth, /search, etc., so we prepend that base path here.
     pathRewrite: (path: string) => `${basePath}${path}`,
     on: {
       error: (err, _req, res) => {
@@ -92,23 +90,24 @@ function proxyTo(target: string, basePath: string) {
   });
 }
 
-// --- Health ---
+// --- Health Check Aggregator ---
 const healthHandler = createHealthCheck(SERVICE_NAME, '1.0.0', [
   createHttpCheck('auth-service', `${SERVICES.auth}/health`),
   createHttpCheck('booking-service', `${SERVICES.booking}/health`),
   createHttpCheck('payment-service', `${SERVICES.payment}/health`),
   createHttpCheck('search-service', `${SERVICES.search}/health`),
+  createHttpCheck('prediction-service', `${SERVICES.prediction}/health`),
   createHttpCheck('occupancy-service', `${SERVICES.occupancy}/health`),
   createHttpCheck('pricing-service', `${SERVICES.pricing}/health`),
+  createHttpCheck('notification-service', `${SERVICES.notification}/health`),
   createHttpCheck('host-service', `${SERVICES.host}/health`),
   createHttpCheck('admin-service', `${SERVICES.admin}/health`),
 ]);
 app.get('/health', healthHandler);
 
-// --- Readiness probe (for load balancer / k8s) ---
+// --- Readiness Probe ---
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    // Quick check: just verify auth service is reachable (critical path)
     const response = await fetch(`${SERVICES.auth}/health`, { signal: AbortSignal.timeout(1000) });
     if (response.ok) {
       res.status(200).json({ ready: true });
@@ -120,13 +119,13 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-// --- Service Status Dashboard (for admin panel visibility) ---
+// --- Service Status Dashboard ---
 app.get('/api/v1/status', async (_req: Request, res: Response) => {
   const serviceChecks = Object.entries(SERVICES).map(async ([name, url]) => {
     const start = Date.now();
     try {
       const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
-      const data = await response.json() as Record<string, unknown>;
+      const data = (await response.json()) as Record<string, unknown>;
       return {
         name,
         url,
@@ -153,19 +152,42 @@ app.get('/api/v1/status', async (_req: Request, res: Response) => {
   } as ApiResponse);
 });
 
-// --- Public Routes (no auth) ---
+// --- Public Routes (no auth required) ---
 app.use('/api/v1/auth', proxyTo(SERVICES.auth, '/auth'));
+app.use('/auth', proxyTo(SERVICES.auth, '/auth'));
+
+app.use('/api/v1/search', proxyTo(SERVICES.search, '/search'));
+app.use('/search', proxyTo(SERVICES.search, '/search'));
+
+app.use('/api/v1/pricing', proxyTo(SERVICES.pricing, '/pricing'));
+app.use('/pricing', proxyTo(SERVICES.pricing, '/pricing'));
+
+app.use('/api/v1/predict', proxyTo(SERVICES.prediction, '/predict'));
+app.use('/predict', proxyTo(SERVICES.prediction, '/predict'));
+
+app.use('/api/v1/concierge', proxyTo(SERVICES.prediction, '/concierge'));
+app.use('/concierge', proxyTo(SERVICES.prediction, '/concierge'));
 
 // --- Protected Routes (JWT required at gateway level) ---
-app.use('/api/v1/search', authenticate, proxyTo(SERVICES.search, '/search'));
 app.use('/api/v1/bookings', authenticate, proxyTo(SERVICES.booking, '/bookings'));
-app.use('/api/v1/payments', authenticate, proxyTo(SERVICES.payment, '/payments'));
-app.use('/api/v1/occupancy', authenticate, proxyTo(SERVICES.occupancy, '/occupancy'));
-app.use('/api/v1/pricing', authenticate, proxyTo(SERVICES.pricing, '/pricing'));
-app.use('/api/v1/host', authenticate, proxyTo(SERVICES.host, '/host'));
-app.use('/api/v1/admin', authenticate, proxyTo(SERVICES.admin, '/admin'));
+app.use('/bookings', authenticate, proxyTo(SERVICES.booking, '/bookings'));
 
-// --- Fallback ---
+app.use('/api/v1/payments', authenticate, proxyTo(SERVICES.payment, '/payments'));
+app.use('/payments', authenticate, proxyTo(SERVICES.payment, '/payments'));
+
+app.use('/api/v1/occupancy', authenticate, proxyTo(SERVICES.occupancy, '/occupancy'));
+app.use('/occupancy', authenticate, proxyTo(SERVICES.occupancy, '/occupancy'));
+
+app.use('/api/v1/notifications', authenticate, proxyTo(SERVICES.notification, '/notifications'));
+app.use('/notifications', authenticate, proxyTo(SERVICES.notification, '/notifications'));
+
+app.use('/api/v1/host', authenticate, proxyTo(SERVICES.host, '/host'));
+app.use('/host', authenticate, proxyTo(SERVICES.host, '/host'));
+
+app.use('/api/v1/admin', authenticate, proxyTo(SERVICES.admin, '/admin'));
+app.use('/admin', authenticate, proxyTo(SERVICES.admin, '/admin'));
+
+// --- Fallback Handlers ---
 app.use(notFoundHandler);
 app.use(errorHandler);
 

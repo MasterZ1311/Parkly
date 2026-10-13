@@ -76,6 +76,7 @@ export const searchApi = {
     page?: number;
     pageSize?: number;
   }) => api.post('/search', query),
+  getSpace: (id: string) => api.get(`/search/spaces/${id}`),
 };
 
 export const bookingApi = {
@@ -105,7 +106,15 @@ export const pricingApi = {
     api.get(`/pricing/${spaceId}`, { params: { arrivalTime } }),
 };
 
+export const conciergeApi = {
+  ask: (query: string, currentLocation?: { latitude: number; longitude: number }, driverId?: string) =>
+    api.post('/concierge', { query, currentLocation, driverId }),
+};
+
 export const notificationApi = {
   list: () => api.get('/notifications'),
   markRead: (id: string) => api.put(`/notifications/${id}/read`),
+  registerDevice: (token: string, platform: string = 'expo') =>
+    api.post('/notifications/devices', { token, platform }),
 };
+

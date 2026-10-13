@@ -1,52 +1,53 @@
 import React, { useState } from 'react';
-import { adminApi } from '../utils/api';
+import { adminApi } from '../utils/apiClient';
+import { useUsers, AdminUser } from '../hooks/useAdminData';
 import Breadcrumbs from '../components/Breadcrumbs';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
 
-const users = [
-  { id: 'u1', name: 'Arjun Kumar', phone: '+91 98765 43210', role: 'driver', bookings: 12, status: 'active', joined: '2024-01-15' },
-  { id: 'u2', name: 'Ravi Kumar', phone: '+91 87654 32109', role: 'host', bookings: 0, status: 'active', joined: '2024-02-20' },
-  { id: 'u3', name: 'Priya Sharma', phone: '+91 76543 21098', role: 'driver', bookings: 8, status: 'active', joined: '2024-03-10' },
-  { id: 'u4', name: 'Suresh Raj', phone: '+91 65432 10987', role: 'host', bookings: 0, status: 'pending', joined: '2024-06-28' },
-  { id: 'u5', name: 'Meera Devi', phone: '+91 54321 09876', role: 'driver', bookings: 3, status: 'suspended', joined: '2024-04-05' },
-];
-
 export default function UsersPage() {
   useDocumentTitle('Platform Users & Roles');
-  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [loading, setLoading] = useState(false);
 
-  const filteredUsers = users.filter(u => {
+  const { users, loading: usersLoading, refetch } = useUsers(
+    roleFilter === 'All Roles' ? undefined : roleFilter.toLowerCase()
+  );
+
+  const filteredUsers = users.filter((u: AdminUser) => {
+    const term = search.toLowerCase();
     const matchesSearch =
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.phone.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter === 'All Roles' || u.role === roleFilter.toLowerCase();
-    return matchesSearch && matchesRole;
+      (u.name || '').toLowerCase().includes(term) ||
+      u.phone.toLowerCase().includes(term) ||
+      (u.email || '').toLowerCase().includes(term);
+    return matchesSearch;
   });
 
-  const handleView = async (userId: string) => {
+  const handleSuspend = async (user: AdminUser) => {
+    const reason = prompt(`Reason for suspending user ${user.name || user.phone}:`);
+    if (!reason) return;
     setLoading(true);
     try {
-      const res = await adminApi.getUserDetail(userId);
-      alert('User Details:\n' + JSON.stringify(res.data, null, 2).substring(0, 200));
+      await adminApi.suspendUser(user.id, reason);
+      alert('User suspended successfully');
+      refetch();
     } catch (err: any) {
-      alert('Error loading user: ' + (err.response?.data?.message || 'Unknown error'));
+      alert('Error suspending user: ' + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSuspend = async (userId: string) => {
-    const reason = prompt('Reason for suspension:');
-    if (!reason) return;
+  const handleRoleChange = async (user: AdminUser) => {
+    const newRole = prompt(`Enter new role for ${user.name || user.phone} (driver, host, admin, government):`, user.role);
+    if (!newRole || newRole === user.role) return;
     setLoading(true);
     try {
-      await adminApi.suspendUser(userId, reason);
-      alert('User suspended successfully');
-      // Reload users table
+      await adminApi.updateUserRole(user.id, newRole.toLowerCase());
+      alert(`Role updated to ${newRole}`);
+      refetch();
     } catch (err: any) {
-      alert('Error suspending user: ' + (err.response?.data?.message || 'Unknown error'));
+      alert('Error updating role: ' + (err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -58,98 +59,99 @@ export default function UsersPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Platform Users &amp; Role Management</h1>
-          <p className="page-subtitle">12,847 total registered users</p>
+          <p className="page-subtitle">Governance over drivers, hosts, admin operators, and government nodal viewers.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             className="form-input"
-            placeholder="Search users..."
+            placeholder="Search by name/phone..."
             style={{ width: 220 }}
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
           />
           <select
-            className="form-input"
-            style={{ width: 120 }}
+            className="form-select"
+            style={{ width: 140 }}
             value={roleFilter}
-            onChange={e => setRoleFilter(e.target.value)}
+            onChange={(e) => setRoleFilter(e.target.value)}
           >
             <option>All Roles</option>
             <option>Driver</option>
             <option>Host</option>
             <option>Admin</option>
+            <option>Government</option>
           </select>
         </div>
       </div>
 
       <div className="card">
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Role</th>
-                <th>Bookings</th>
-                <th>Status</th>
-                <th>Joined</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map(u => (
-                <tr key={u.id}>
-                  <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{u.name}</td>
-                  <td>{u.phone}</td>
-                  <td>
-                    <span className={`badge badge-${u.role === 'admin' ? 'red' : u.role === 'host' ? 'blue' : 'green'}`}>
-                      {u.role.toUpperCase()}
-                    </span>
-                  </td>
-                  <td>{u.bookings}</td>
-                  <td>
-                    <span className={`badge badge-${u.status === 'active' ? 'green' : u.status === 'suspended' ? 'red' : 'yellow'}`}>
-                      {u.status}
-                    </span>
-                  </td>
-                  <td>{u.joined}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        className="btn btn-outline"
-                        style={{ padding: '4px 10px', fontSize: 11 }}
-                        onClick={() => handleView(u.id)}
-                        disabled={loading}
+          {usersLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading users...</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Name &amp; Phone</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Joined Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((u) => (
+                  <tr key={u.id}>
+                    <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{u.id.slice(0, 8)}</td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.name || 'Unregistered Name'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.phone}</div>
+                    </td>
+                    <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{u.email || '—'}</td>
+                    <td>
+                      <span
+                        className={`badge badge-${
+                          u.role === 'admin' ? 'red' : u.role === 'host' ? 'blue' : u.role === 'government' ? 'yellow' : 'green'
+                        }`}
                       >
-                        {loading ? '...' : 'View'}
-                      </button>
-                      {u.status === 'active' && (
+                        {u.role.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${u.isActive ? 'green' : 'red'}`}>
+                        {u.isActive ? 'Active' : 'Suspended'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
                         <button
-                          style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--red)', borderRadius: 6, background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}
-                          onClick={() => handleSuspend(u.id)}
+                          className="btn btn-outline"
+                          style={{ padding: '4px 8px', fontSize: 11 }}
+                          onClick={() => handleRoleChange(u)}
                           disabled={loading}
                         >
-                          {loading ? '...' : 'Suspend'}
+                          Change Role
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>
-                    No users match your search.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                        <button
+                          className="btn btn-outline"
+                          style={{ padding: '4px 8px', fontSize: 11, borderColor: 'var(--red)', color: 'var(--red)' }}
+                          onClick={() => handleSuspend(u)}
+                          disabled={loading}
+                        >
+                          {u.isActive ? 'Suspend' : 'Unsuspend'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-// Add this to avoid missing export error
-export const formInputStyle = {};

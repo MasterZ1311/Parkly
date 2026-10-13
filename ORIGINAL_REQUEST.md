@@ -1,4 +1,4 @@
-﻿# Original User Request
+# Original User Request
 
 ## 2026-09-05T04:47:16Z
 
@@ -251,3 +251,92 @@ Deliver comprehensive automated test suites using Vitest or Jest:
 ### Test Coverage & Offline Runnability
 - [ ] 100% of automated unit and integration tests pass via a single command (`npm test`) without requiring internet access or cloud API credentials.
 - [ ] Comprehensive test fixtures cover Chennai sample addresses, mock KYC docs, space photos, and IoT sensor logs.
+
+
+## 2026-10-03T07:22:52Z
+
+Implement and complete the remaining production components of the Parkly smart city parking platform across backend microservices, mobile app, host dashboard, admin portal, and AWS CDK infrastructure, seamlessly connecting to the existing autonomous multi-agent architecture and shared foundation.
+
+Working directory: e:\Github\Parkly
+Integrity mode: development
+
+References:
+- docs/08_AI_AGENT_ARCHITECTURE.md
+- docs/06_CORE_SERVICES_AND_API_SPEC.md
+- docs/05_DATABASE_SCHEMA_AND_MODELS.md
+- docs/03_SYSTEM_ARCHITECTURE.md
+- PARKLY_MASTER_DOCUMENTATION.md
+- PROJECT.md
+- ORIGINAL_REQUEST.md
+- shared/src/index.ts
+- infra/prisma/schema.prisma
+
+## Requirements
+
+### R1. Backend Microservices Completion (api-gateway & prediction-service)
+- **API Gateway (services/api-gateway)**:
+  - Implement full Express reverse proxy routing requests to all 10 downstream microservices (/auth/* -> 4001, /bookings/* -> 4002, /payments/* -> 4003, /search/* -> 4004, /pricing/* -> 4005, /predict/* -> 4006, /occupancy/* -> 4007, /notifications/* -> 4009, /host/* -> 4010, /admin/* -> 4011).
+  - Enforce IP rate limiting (100 req/15min) and JWT header passthrough.
+  - Apply security headers, CORS, request logging, and aggregated /health status endpoint.
+- **Prediction Service (services/prediction-service)**:
+  - Implement prediction endpoints using OccupancyPredictorAgent, MockOccupancyQueryProvider, and ExecutionContext from @parkly/ai-agents.
+  - Expose POST /predict/occupancy and GET /predict/occupancy/:spaceId adhering to standard ApiResponse<T> contract.
+  - Wire authentication, health check, and error handling.
+- **Constraints**: Do not modify packages/ai-agents/ or shared/.
+
+### R2. Mobile Application Live Integration & Concierge Experience (apps/mobile)
+- **Space Details (app/space/[id].tsx)**: Replace static placeholders with real API data fetched via searchApi and pricingApi. Display dynamic pricing, occupancy confidence, and verified amenities.
+- **Booking Creation (app/booking/create.tsx)**: Wire real vehicleId and hostId from active user context. Validate Indian registration plates ([A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}). Render QR code receipt upon confirmed reservation.
+- **Driver Concierge Chat (app/(tabs)/concierge.tsx)**:
+  - Build a natural language conversational screen allowing queries like "Find covered parking near Pothys for 2 hours under 60/hr".
+  - Call the concierge endpoint and render interactive recommendation cards with pricing, ETA, and turn-by-turn navigation triggers.
+  - Register the screen as a 5th tab in app/(tabs)/_layout.tsx.
+- **Push Notification Registration**: Capture Expo push tokens upon login and register them via POST /notifications/devices.
+
+### R3. Host Dashboard Live Data & AI Verification (apps/host-dashboard)
+- **API Client & Data Hooks**: Implement authenticated API client and React data hooks (useListings, useBookings, useRevenue, useOccupancy).
+- **Live Page Wiring**: Replace mock datasets in Dashboard.tsx, Listings.tsx, BookingsPage.tsx, and Revenue.tsx with live API responses, loading states, and error handling.
+- **AI Verification Workflow**: Build an interactive modal/action on Listings.tsx invoking POST /host/listings/:id/ai-verify, visualizing agent KYC validation, visual inspection clearance, OCR scores, and detected amenities.
+
+### R4. Admin Portal Live Operations & City Mobility Analytics (apps/admin-portal)
+- **Live Data & User Governance**: Wire Overview.tsx, UsersPage.tsx, BookingsAdmin.tsx, Verifications.tsx, Alerts.tsx, and AuditLogs.tsx to admin-service APIs with role authorization guards.
+- **Dispute Mediation Console**: Provide an administrative view to inspect open disputes, trigger POST /admin/disputes/:id/mediate (orchestrating DisputeMediationAgent), and review overstay / compensation decisions.
+- **City Mobility Analytics Dashboard (pages/CityAnalytics.tsx)**:
+  - Create interactive analytics view with date/zone pickers executing POST /admin/city-analytics.
+  - Visualize off-street hours supplied, cruising minutes saved, CO2 abated (kg), and congestion choke points via Recharts. Route into App.tsx.
+
+### R5. Cloud Infrastructure (AWS CDK), Seed Automation & CI Pipeline
+- **AWS CDK Architecture (infra/cdk/lib/parkly-stack.ts & database-stack.ts)**:
+  - Modularize infrastructure: VPC (2 AZs), RDS Aurora Serverless v2 PostgreSQL, DynamoDB tables (OccupancyRecords, Notifications, Sessions), S3 photo bucket, and SNS topics.
+  - Configure ECS Fargate task definitions and container services for all 11 microservices behind an Application Load Balancer.
+  - Configure CloudFront distribution for dashboard hosting and Secrets Manager integration.
+- **Local Dev & Seed Automation (scripts/local-seed.sh)**: Script to spin up local docker containers, run Prisma migrations, execute seeds, and report service status.
+- **CI Workflow (.github/workflows/ci.yml)**: Multi-job GitHub Actions workflow for linting, test execution, TypeScript compilation, and Docker container verification.
+
+## Verification Resources
+- Core AI Agents & Invariant Test Suite: npm test (333 passing tests in packages/ai-agents)
+- Prisma Schema & Migrations: infra/prisma/schema.prisma, seed script: infra/prisma/seed.ts
+- Docker Orchestration: docker-compose.yml
+
+## Acceptance Criteria
+### Type Safety & Compilation
+- [ ] TypeScript compiles cleanly across all packages and services without errors (npm run build).
+- [ ] Root npm test continues to pass 333/333 tests in packages/ai-agents with 0 regressions.
+- [ ] apps/mobile exports without bundling errors (npx expo export or typecheck).
+- [ ] apps/host-dashboard and apps/admin-portal build cleanly (npm run build).
+- [ ] AWS CDK synthesizes valid CloudFormation templates (cdk synth).
+
+### Backend Services & API Gateway
+- [ ] api-gateway proxies requests to all 10 downstream services with CORS and security headers intact.
+- [ ] prediction-service returns valid occupancy predictions via OccupancyPredictorAgent.
+- [ ] All 11 microservices respond with HTTP 200 on GET /health.
+
+### Mobile Application
+- [ ] Space detail screen renders real listing details and dynamic rates from the API.
+- [ ] Booking creation captures valid vehicle plates, creates bookings, and displays QR codes.
+- [ ] Driver Concierge tab accepts natural language input and renders structured recommendations.
+- [ ] Device tokens are transmitted to notification-service on sign-in.
+
+### Dashboards & Management
+- [ ] Host dashboard displays dynamic revenue metrics and allows hosts to trigger and inspect AI verification.
+- [ ] Admin portal lists real users/bookings and includes Dispute Mediation and City Analytics pages.

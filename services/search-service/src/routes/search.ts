@@ -7,6 +7,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { searchService } from '../services/searchService';
 import { authenticate, ValidationError, ApiResponse } from '@parkly/shared';
+import { PrismaClient } from '@prisma/client';
 import {
   DriverConciergeAgent,
   MockSearchServiceProvider,
@@ -14,6 +15,8 @@ import {
   MockTrafficMonitorProvider,
   ExecutionContext,
 } from '@parkly/ai-agents';
+
+const prisma = new PrismaClient();
 
 export const searchRouter = Router();
 
@@ -120,6 +123,46 @@ searchRouter.post('/concierge', async (req: Request, res: Response, next: NextFu
         timestamp: new Date().toISOString(),
       },
     } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /search/spaces/:id — Retrieve single parking space details
+searchRouter.get('/spaces/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const space = await prisma.parkingSpace.findUnique({
+      where: { id: req.params['id'] },
+      include: { host: true, availabilitySlots: true },
+    });
+    if (!space) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Parking space not found' },
+      } as ApiResponse);
+      return;
+    }
+    res.json({ success: true, data: space } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /search/:id — Alias for single space lookup
+searchRouter.get('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const space = await prisma.parkingSpace.findUnique({
+      where: { id: req.params['id'] },
+      include: { host: true, availabilitySlots: true },
+    });
+    if (!space) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Parking space not found' },
+      } as ApiResponse);
+      return;
+    }
+    res.json({ success: true, data: space } as ApiResponse);
   } catch (err) {
     next(err);
   }

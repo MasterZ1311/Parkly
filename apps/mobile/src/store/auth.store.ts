@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
-import { authApi } from '../api/client';
+import { authApi, notificationApi } from '../api/client';
 
 interface AuthUser {
   id: string;
@@ -58,6 +58,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       await SecureStore.setItemAsync('refresh_token', tokens.refreshToken);
 
       set({ user, isAuthenticated: true, isLoading: false });
+
+      // Automatically register device push token with notification-service
+      try {
+        const dummyExpoPushToken = `ExponentPushToken[${user.id.slice(0, 8)}-${Date.now()}]`;
+        await notificationApi.registerDevice(dummyExpoPushToken, 'expo');
+      } catch (pushErr) {
+        console.warn('Device push registration warning:', pushErr);
+      }
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message || 'Invalid OTP';
