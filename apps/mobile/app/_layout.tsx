@@ -24,7 +24,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="space/[id]" options={{ title: 'Space Details', headerShown: false }} />
-        <Stack.Screen name="booking/[id]" options={{ title: 'Booking Details' }} />
+        <Stack.Screen name="booking/[id]" options={{ title: 'Booking Details', headerShown: false }} />
         <Stack.Screen name="booking/create" options={{ title: 'Confirm Booking', headerShown: false }} />
       </Stack>
     </>
