@@ -31,6 +31,7 @@ import {
   Notification,
   NotificationType,
   NotificationChannel,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 
 const PORT = process.env['NOTIFICATION_PORT'] || 4009;
@@ -277,7 +278,8 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+app.use(cors(getHardenedCorsOptions()));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
@@ -296,14 +298,20 @@ app.use('/notifications', notificationRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-  const fcmReady = getFirebaseApp() !== null;
-  logger.info({ fcm: fcmReady ? 'connected' : 'mock', sms: getConfig().smsProvider }, 'Notification channels ready');
-});
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+    const fcmReady = getFirebaseApp() !== null;
+    logger.info({ fcm: fcmReady ? 'connected' : 'mock', sms: getConfig().smsProvider }, 'Notification channels ready');
+  });
+}
 
 process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
+  if (server) {
+    server.close(() => process.exit(0));
+  }
 });
 
+export { app };
 export default app;

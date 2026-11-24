@@ -7,6 +7,7 @@ export * from './config';
 export * from './errors';
 export * from './logger';
 export * from './utils';
+export * from './utils/cors';
 export * from './aws/clients';
 export * from './middleware/auth';
 export * from './middleware/errorHandler';
@@ -28,3 +29,6 @@ export * from './lifecycle';
 
 // Brand Theme & Palette
 export * from './theme/palette';
+
+// OpenTelemetry Tracing
+export * from './tracing';

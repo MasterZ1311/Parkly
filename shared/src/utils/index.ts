@@ -156,3 +156,24 @@ export function chunkArray<T>(arr: T[], size: number): T[][] {
   }
   return chunks;
 }
+
+/**
+ * Normalize phone number to E.164 format (defaults to India +91 if 10 digits).
+ */
+export function normalizePhoneNumber(phone: string, defaultCountryCode = '+91'): string {
+  const prefix = defaultCountryCode.startsWith('+') ? defaultCountryCode : `+${defaultCountryCode}`;
+  const cleaned = phone.replace(/[\s\-.()]/g, '');
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('0') && cleaned.length === 11) {
+    return `${prefix}${cleaned.slice(1)}`;
+  }
+  if (/^\d{10}$/.test(cleaned)) {
+    return `${prefix}${cleaned}`;
+  }
+  return `+${cleaned}`;
+}
+
+export * from './cors';
+

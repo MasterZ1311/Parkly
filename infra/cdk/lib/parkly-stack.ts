@@ -195,6 +195,34 @@ export class ParklyStack extends cdk.Stack {
       interval: cdk.Duration.seconds(30),
     });
 
+    // ─── ECS Auto-Scaling Policies ───────────────────────────
+    const scaling = fargateService.service.autoScaleTaskCount({
+      minCapacity: isProd ? 2 : 1,
+      maxCapacity: isProd ? 10 : 3,
+    });
+
+    // CPU Utilization Auto-Scaling (Target 70%)
+    scaling.scaleOnCpuUtilization('GatewayCpuScaling', {
+      targetUtilizationPercent: 70,
+      scaleInCooldown: cdk.Duration.seconds(60),
+      scaleOutCooldown: cdk.Duration.seconds(60),
+    });
+
+    // Memory Utilization Auto-Scaling (Target 70%)
+    scaling.scaleOnMemoryUtilization('GatewayMemoryScaling', {
+      targetUtilizationPercent: 70,
+      scaleInCooldown: cdk.Duration.seconds(60),
+      scaleOutCooldown: cdk.Duration.seconds(60),
+    });
+
+    // ALB Request Count Auto-Scaling (1000 requests per target per minute)
+    scaling.scaleOnRequestCount('GatewayRequestScaling', {
+      requestsPerTarget: 1000,
+      targetGroup: fargateService.targetGroup,
+      scaleInCooldown: cdk.Duration.seconds(60),
+      scaleOutCooldown: cdk.Duration.seconds(60),
+    });
+
     // ─── Stack Outputs ───────────────────────────────────────
     new cdk.CfnOutput(this, 'VpcId', { value: vpc.vpcId });
     new cdk.CfnOutput(this, 'DbEndpoint', { value: database.dbInstanceEndpointAddress });

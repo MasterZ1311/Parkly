@@ -4,12 +4,13 @@
 // ============================================================
 
 import { PutCommand, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { PublishCommand } from '@aws-sdk/client-sns';
+import { PublishCommand, MessageAttributeValue } from '@aws-sdk/client-sns';
 import {
   getDocClient,
   getSNSClient,
   getConfig,
   generateOtp,
+  normalizePhoneNumber,
   logger,
   AuthenticationError,
 } from '@parkly/shared';
@@ -26,7 +27,8 @@ export class OtpService {
    * Generate and store an OTP for the given phone number.
    * Returns the OTP (send via SMS in production).
    */
-  async requestOtp(phone: string): Promise<string> {
+  async requestOtp(rawPhone: string): Promise<string> {
+    const phone = normalizePhoneNumber(rawPhone);
     const otp = generateOtp();
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + OTP_TTL_SECONDS;
@@ -44,26 +46,42 @@ export class OtpService {
       }),
     );
 
-    logger.info({ phone: phone.slice(0, 4) + '***' }, 'OTP generated');
+    logger.info({ phone: phone.slice(0, 4) + '***' + phone.slice(-2) }, 'OTP generated');
 
     // Send OTP via configured SMS provider
     const config = getConfig();
     if (config.smsProvider === 'sns') {
       try {
+        const messageAttributes: Record<string, MessageAttributeValue> = {
+          'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: config.snsSmsSenderId || 'PARKLY' },
+          'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+        };
+
+        // Indian DLT Compliance Attributes (TRAI requirement)
+        if (config.snsSmsEntityId) {
+          messageAttributes['AWS.MM.SMS.EntityId'] = { DataType: 'String', StringValue: config.snsSmsEntityId };
+          messageAttributes['AWS.SNS.SMS.EntityId'] = { DataType: 'String', StringValue: config.snsSmsEntityId };
+        }
+        if (config.snsSmsTemplateId) {
+          messageAttributes['AWS.MM.SMS.TemplateId'] = { DataType: 'String', StringValue: config.snsSmsTemplateId };
+          messageAttributes['AWS.SNS.SMS.TemplateId'] = { DataType: 'String', StringValue: config.snsSmsTemplateId };
+        }
+
+        const message = `Your Parkly verification code is: ${otp}. Valid for 5 minutes.`;
+
         await getSNSClient().send(
           new PublishCommand({
             PhoneNumber: phone,
-            Message: `Your Parkly verification code is: ${otp}. Valid for 5 minutes.`,
-            MessageAttributes: {
-              'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: config.snsSmsSenderId },
-              'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-            },
+            Message: message,
+            MessageAttributes: messageAttributes,
           }),
         );
-        logger.info({ phone: phone.slice(0, 4) + '***' }, 'OTP sent via SNS SMS');
-      } catch (err) {
-        logger.error({ err, phone: phone.slice(0, 4) + '***' }, 'Failed to send OTP via SNS');
-        // Still return the OTP so it's stored — caller can retry or fallback
+        logger.info({ phone: phone.slice(0, 4) + '***' + phone.slice(-2) }, 'OTP sent via SNS SMS');
+      } catch (err: any) {
+        logger.error({ err: err?.message || err, phone: phone.slice(0, 4) + '***' }, 'Failed to send OTP via SNS');
+        if (config.nodeEnv === 'production') {
+          throw new AuthenticationError('Failed to deliver verification code. Please check your phone number and try again.');
+        }
       }
     } else {
       logger.info({ otp, phone: phone.slice(0, 4) + '***' }, '[MOCK] OTP generated — use this in dev');
@@ -76,7 +94,8 @@ export class OtpService {
    * Verify an OTP. Increments attempt count.
    * Throws on invalid/expired OTP or too many attempts.
    */
-  async verifyOtp(phone: string, otp: string): Promise<void> {
+  async verifyOtp(rawPhone: string, otp: string): Promise<string> {
+    const phone = normalizePhoneNumber(rawPhone);
     const result = await getDocClient().send(
       new GetCommand({
         TableName: this.tableName,
@@ -128,7 +147,9 @@ export class OtpService {
     );
 
     logger.info({ phone: phone.slice(0, 4) + '***' }, 'OTP verified successfully');
+    return phone;
   }
 }
 
 export const otpService = new OtpService();
+

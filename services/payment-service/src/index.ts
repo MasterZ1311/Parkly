@@ -31,13 +31,23 @@ import {
   ApiResponse,
   Payment,
   PaymentStatus,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 
 const PORT = process.env['PAYMENT_PORT'] || 4003;
 const SERVICE_NAME = 'payment-service';
 process.env['SERVICE_NAME'] = SERVICE_NAME;
 
-const prisma = new PrismaClient();
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: Buffer;
+    }
+  }
+}
+
+
+export const prisma = new PrismaClient();
 
 // ============================================================
 // Payment Provider Interface + Mock Implementation
@@ -306,7 +316,45 @@ const paymentService = {
 
     return mapPayment(updated);
   },
+
+  /**
+   * Handle verified payment capture directly from Razorpay Webhook.
+   * Does NOT re-check client checkout signature because webhook HMAC is already validated.
+   */
+  async handleWebhookCapture(orderId: string, providerPaymentId: string): Promise<Payment | null> {
+    const payment = await prisma.payment.findFirst({ where: { providerOrderId: orderId } });
+    if (!payment) {
+      logger.warn({ orderId, providerPaymentId }, 'Webhook payment order not found');
+      return null;
+    }
+    if (payment.status === 'completed') {
+      logger.info({ paymentId: payment.id }, 'Payment already completed, skipping webhook processing');
+      return mapPayment(payment);
+    }
+
+    const updated = await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'completed', providerPaymentId },
+    });
+
+    await prisma.booking.update({
+      where: { id: payment.bookingId },
+      data: { status: 'confirmed', paymentId: payment.id },
+    });
+
+    await publishEvent({
+      type: 'PaymentCompleted',
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      source: 'parkly.payment-service',
+      data: { paymentId: payment.id, bookingId: payment.bookingId, amount: payment.amount, providerPaymentId },
+    });
+
+    logger.info({ paymentId: payment.id, orderId }, 'Payment captured via Razorpay webhook');
+    return mapPayment(updated);
+  },
 };
+
 
 function mapPayment(raw: Record<string, unknown>): Payment {
   return {
@@ -398,8 +446,14 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
-app.use(express.json({ limit: '1mb' }));
+app.use(cors(getHardenedCorsOptions()));
+
+app.use(express.json({
+  limit: '1mb',
+  verify: (req: Request, _res: Response, buf: Buffer) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(requestLogger);
 
 app.get('/health', (_req, res) => {
@@ -409,35 +463,62 @@ app.get('/health', (_req, res) => {
 // POST /payments/webhook — Razorpay Webhook listener (verified via HMAC timing-safe comparison)
 app.post('/payments/webhook', async (req: Request, res: Response): Promise<void> => {
   try {
-    const webhookSecret = getConfig().paymentWebhookSecret;
-    const signature = req.headers['x-razorpay-signature'] as string;
+    const config = getConfig();
+    const webhookSecret = config.paymentWebhookSecret;
+    const signature = req.headers['x-razorpay-signature'] as string | undefined;
 
-    if (webhookSecret && signature) {
-      const rawBody = JSON.stringify(req.body);
+    // In production with Razorpay provider, secret and signature are mandatory
+    if (config.paymentProvider === 'razorpay') {
+      if (!webhookSecret) {
+        logger.error('PAYMENT_WEBHOOK_SECRET is not configured on server');
+        res.status(500).json({ error: 'Server webhook misconfiguration' });
+        return;
+      }
+      if (!signature) {
+        logger.warn('Incoming webhook missing x-razorpay-signature header');
+        res.status(400).json({ error: 'Missing webhook signature' });
+        return;
+      }
+
+      const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
       const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
         .update(rawBody)
         .digest('hex');
 
-      const expectedBuf = Buffer.from(expectedSignature);
-      const actualBuf = Buffer.from(signature);
+      const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+      const actualBuf = Buffer.from(signature, 'utf8');
+
       if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
-        logger.warn('Invalid Razorpay webhook signature');
+        logger.warn({ receivedSig: signature }, 'Invalid Razorpay webhook signature');
+        res.status(400).json({ error: 'Invalid webhook signature' });
+        return;
+      }
+    } else if (webhookSecret && signature) {
+      // Non-razorpay mode (e.g. dev/test) with signature provided
+      const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(rawBody)
+        .digest('hex');
+
+      const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+      const actualBuf = Buffer.from(signature, 'utf8');
+
+      if (expectedBuf.length !== actualBuf.length || !crypto.timingSafeEqual(expectedBuf, actualBuf)) {
+        logger.warn('Invalid webhook signature');
         res.status(400).json({ error: 'Invalid webhook signature' });
         return;
       }
     }
 
-    const event = req.body.event;
-    const payload = req.body.payload?.payment?.entity;
+    const event = req.body?.event;
+    const payload = req.body?.payload?.payment?.entity;
 
     if (event === 'payment.captured' && payload) {
       const orderId = payload.order_id;
       const paymentId = payload.id;
-      const payment = await prisma.payment.findFirst({ where: { providerOrderId: orderId } });
-      if (payment && payment.status === 'pending') {
-        await paymentService.confirmPayment(payment.id, paymentId, signature || 'webhook_verified');
-      }
+      await paymentService.handleWebhookCapture(orderId, paymentId);
     }
 
     res.status(200).json({ status: 'ok' });
@@ -449,16 +530,23 @@ app.post('/payments/webhook', async (req: Request, res: Response): Promise<void>
   }
 });
 
+
 app.use('/payments', paymentRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-});
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+  });
+}
 
 process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
+  if (server) {
+    server.close(() => process.exit(0));
+  }
 });
 
+export { paymentService, app };
 export default app;

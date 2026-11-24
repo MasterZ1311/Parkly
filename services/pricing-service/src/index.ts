@@ -19,6 +19,7 @@ import {
   ApiResponse,
   PricingResult,
   NotFoundError,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 import {
   DynamicPricingAgent,
@@ -185,7 +186,8 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+app.use(cors(getHardenedCorsOptions()));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
@@ -197,7 +199,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 let server: any;
-if (process.env.NODE_ENV !== 'test') {
+if (process.env['NODE_ENV'] !== 'test') {
   server = app.listen(PORT, () => {
     logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
   });
@@ -209,4 +211,5 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
+export { app, pricingService };
 export default app;

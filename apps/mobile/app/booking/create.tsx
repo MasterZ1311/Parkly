@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi, paymentApi } from '../../src/api/client';
+import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 
 export default function BookingCreateScreen() {
   const { spaceId, spaceName, hostId, hours, totalAmount, hourlyRate } = useLocalSearchParams<{
@@ -68,6 +69,23 @@ export default function BookingCreateScreen() {
 
       const bookingId = bookingResp?.data?.booking?.id || `bk-${Date.now()}`;
       setConfirmedBookingId(bookingId);
+
+      // Cache newly created booking for offline access
+      try {
+        const newBooking = bookingResp?.data?.booking || {
+          id: bookingId,
+          spaceId: spaceId!,
+          status: 'confirmed',
+          startTime,
+          endTime,
+          totalAmount: grandTotal,
+          type: 'instant',
+        };
+        const currentCached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+        await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, [newBooking, ...currentCached]);
+      } catch (cacheErr) {
+        console.warn('Failed to cache new booking:', cacheErr);
+      }
 
       // Step 2: Initiate payment
       try {

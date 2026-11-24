@@ -17,6 +17,7 @@ import {
   ValidationError,
   ApiResponse,
   logger,
+  normalizePhoneNumber,
 } from '@parkly/shared';
 
 export const authRouter = Router();
@@ -24,7 +25,15 @@ export const authRouter = Router();
 // --- Validation Schemas ---
 const phoneSchema = z
   .string()
-  .regex(/^\+?[1-9]\d{9,14}$/, 'Invalid phone number format');
+  .min(7, 'Invalid phone number format')
+  .max(25, 'Invalid phone number format')
+  .refine(
+    (val) => {
+      const normalized = normalizePhoneNumber(val);
+      return /^\+[1-9]\d{9,14}$/.test(normalized);
+    },
+    { message: 'Invalid phone number format' },
+  );
 
 const otpRequestSchema = z.object({
   phone: phoneSchema,
@@ -51,7 +60,8 @@ authRouter.post('/otp/request', async (req: Request, res: Response, next: NextFu
       );
     }
 
-    const { phone } = result.data;
+    const { phone: rawPhone } = result.data;
+    const phone = normalizePhoneNumber(rawPhone);
     const otp = await otpService.requestOtp(phone);
 
     // Dev convenience: when not running in production, return the OTP in the
@@ -85,12 +95,12 @@ authRouter.post('/otp/verify', async (req: Request, res: Response, next: NextFun
       );
     }
 
-    const { phone, otp, name } = result.data;
+    const { phone: rawPhone, otp, name } = result.data;
 
-    // Verify OTP
-    await otpService.verifyOtp(phone, otp);
+    // Verify OTP and get normalized phone
+    const phone = await otpService.verifyOtp(rawPhone, otp);
 
-    // Find or create user
+    // Find or create user with normalized phone
     const { user, isNew } = await userService.findOrCreate(phone, name);
 
     if (!user.isActive) {

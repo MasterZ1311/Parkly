@@ -8,6 +8,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import Redis from 'ioredis';
+import { RedisStore } from 'rate-limit-redis';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import {
   authenticate,
@@ -21,6 +23,7 @@ import {
   createHttpCheck,
   registerGracefulShutdown,
   ApiResponse,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 
 const PORT = process.env['GATEWAY_PORT'] || 4000;
@@ -33,19 +36,72 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+
+app.use(cors(getHardenedCorsOptions()));
+
 // NOTE: Do NOT add a body parser (express.json) globally here. The gateway proxies
 // raw request streams downstream; pre-parsing consumes the stream and hangs http-proxy-middleware.
 app.use(requestLogger);
 
+// --- Redis Client for Distributed Rate Limiting ---
+const redisUrl = process.env['REDIS_URL'];
+let redisClient: Redis | null = null;
+let isRedisConnected = false;
+
+if (redisUrl) {
+  redisClient = new Redis(redisUrl, {
+    enableOfflineQueue: false, // Do not hang requests if Redis is offline
+    maxRetriesPerRequest: 1,
+    connectTimeout: 2000,
+    retryStrategy(times) {
+      if (times > 5) {
+        logger.warn('Max Redis connection retries reached; rate-limiting in fallback mode');
+        return null;
+      }
+      return Math.min(times * 200, 2000);
+    },
+  });
+
+  redisClient.on('connect', () => {
+    isRedisConnected = true;
+    logger.info('Connected to Redis for distributed rate-limiting');
+  });
+
+  redisClient.on('error', (err) => {
+    isRedisConnected = false;
+    logger.warn({ err: err.message }, 'Redis rate-limit store error — falling back to MemoryStore');
+  });
+
+  redisClient.on('close', () => {
+    isRedisConnected = false;
+  });
+} else {
+  logger.info('REDIS_URL not configured. API Gateway running with in-memory rate-limiting');
+}
+
 // --- Rate Limiting: 100 requests per 15 minutes per IP ---
+const windowMs = parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10);
+const maxRequests = parseInt(process.env['RATE_LIMIT_MAX'] || '100', 10);
+
 const rateLimiter = rateLimit({
-  windowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10), // 15 minutes
-  max: parseInt(process.env['RATE_LIMIT_MAX'] || '100', 10),
+  windowMs,
+  max: maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true, // Gracefully fallback to memory/pass-through if Redis fails
+  store: redisClient
+    ? new RedisStore({
+        sendCommand: async (...args: string[]) => {
+          if (!isRedisConnected || !redisClient) {
+            throw new Error('Redis not connected');
+          }
+          return (redisClient as any).call(args[0], ...args.slice(1));
+        },
+        prefix: 'rl:gw:',
+      })
+    : undefined,
   handler: (req, res) => {
-    const retryAfter = Math.ceil(parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || '900000', 10) / 1000);
+    const retryAfter = Math.ceil(windowMs / 1000);
     res.status(429).json({
       success: false,
       error: {
@@ -58,6 +114,7 @@ const rateLimiter = rateLimit({
   },
 });
 app.use('/api', rateLimiter);
+
 
 // --- Service URLs ---
 const SERVICES = {
@@ -77,8 +134,12 @@ function proxyTo(target: string, basePath: string) {
   return createProxyMiddleware({
     target,
     changeOrigin: true,
-    pathRewrite: (path: string) => `${basePath}${path}`,
+    pathRewrite: (path: string) => {
+      const normalizedPath = path === '/' ? '' : path;
+      return `${basePath}${normalizedPath}`;
+    },
     on: {
+
       error: (err, _req, res) => {
         logger.error({ err, target }, 'Proxy error');
         (res as Response).status(503).json({
@@ -168,9 +229,14 @@ app.use('/predict', proxyTo(SERVICES.prediction, '/predict'));
 app.use('/api/v1/concierge', proxyTo(SERVICES.prediction, '/concierge'));
 app.use('/concierge', proxyTo(SERVICES.prediction, '/concierge'));
 
+// --- Public Webhook Routes (No JWT authentication required) ---
+app.use('/api/v1/payments/webhook', proxyTo(SERVICES.payment, '/payments/webhook'));
+app.use('/payments/webhook', proxyTo(SERVICES.payment, '/payments/webhook'));
+
 // --- Protected Routes (JWT required at gateway level) ---
 app.use('/api/v1/bookings', authenticate, proxyTo(SERVICES.booking, '/bookings'));
 app.use('/bookings', authenticate, proxyTo(SERVICES.booking, '/bookings'));
+
 
 app.use('/api/v1/payments', authenticate, proxyTo(SERVICES.payment, '/payments'));
 app.use('/payments', authenticate, proxyTo(SERVICES.payment, '/payments'));
@@ -191,11 +257,15 @@ app.use('/admin', authenticate, proxyTo(SERVICES.admin, '/admin'));
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-  logger.info('Routes registered:', Object.keys(SERVICES));
-});
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+    logger.info('Routes registered:', Object.keys(SERVICES));
+  });
 
-registerGracefulShutdown({ server, serviceName: SERVICE_NAME });
+  registerGracefulShutdown({ server, serviceName: SERVICE_NAME });
+}
 
+export { SERVICES, rateLimiter, redisClient, app };
 export default app;

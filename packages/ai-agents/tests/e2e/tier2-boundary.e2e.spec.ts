@@ -898,14 +898,14 @@ describe('Tier 2: Boundary & Corner Cases E2E Test Suite (65 tests)', () => {
     });
 
     it('T2.12.4: Probe failure in HALF_OPEN returns to OPEN and resets cooldown', async () => {
-      const cb = new CircuitBreaker({ failureThreshold: 2, resetTimeoutMs: 20 });
+      const cb = new CircuitBreaker({ failureThreshold: 2, resetTimeoutMs: 100 });
       const failing = async () => { throw new Error('Fail'); };
 
       await expect(cb.execute(failing)).rejects.toThrow();
       await expect(cb.execute(failing)).rejects.toThrow();
       expect(cb.getState()).toBe('OPEN');
 
-      await new Promise((r) => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 120));
 
       await expect(cb.execute(failing)).rejects.toThrow();
       expect(cb.getState()).toBe('OPEN');

@@ -21,7 +21,9 @@ import {
   publishEvent,
   NotFoundError,
   ApiResponse,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
+import { anonymizeUser } from './services/anonymizeService';
 import {
   DisputeMediationAgent,
   CityAnalyticsAgent,
@@ -57,12 +59,76 @@ adminRouter.get('/users', async (req: Request, res: Response, next: NextFunction
         orderBy: { createdAt: 'desc' },
         skip: (Number(page) - 1) * Number(pageSize),
         take: Number(pageSize),
-        select: { id: true, phone: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+        select: {
+          id: true,
+          phone: true,
+          name: true,
+          email: true,
+          role: true,
+          isActive: true,
+          isAnonymized: true,
+          anonymizedAt: true,
+          deletedAt: true,
+          createdAt: true,
+        },
       }),
       prisma.user.count({ where }),
     ]);
 
     res.json({ success: true, data: { users, total, page: Number(page) } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /admin/users/:id — fetch single user
+adminRouter.get('/users/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params['id'] },
+      include: {
+        vehicles: true,
+        host: true,
+      },
+    });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    res.json({
+      success: true,
+      data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /admin/users/:id — DPDPA compliant user anonymization & soft deletion
+adminRouter.delete('/users/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.params['id']!;
+    const result = await anonymizeUser(userId, prisma);
+    res.status(200).json({
+      success: true,
+      data: result,
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/users/:id/anonymize — Alternative endpoint for DPDPA user anonymization
+adminRouter.post('/users/:id/anonymize', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.params['id']!;
+    const result = await anonymizeUser(userId, prisma);
+    res.status(200).json({
+      success: true,
+      data: result,
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
   } catch (err) {
     next(err);
   }
@@ -270,7 +336,8 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+app.use(cors(getHardenedCorsOptions()));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
@@ -281,12 +348,18 @@ app.use('/admin', adminRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-});
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+  });
+}
 
 process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
+  if (server) {
+    server.close(() => process.exit(0));
+  }
 });
 
+export { app, anonymizeUser };
 export default app;

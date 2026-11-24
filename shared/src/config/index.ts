@@ -43,6 +43,8 @@ export interface AppConfig {
 
   // SNS
   snsSmsSenderId: string;
+  snsSmsEntityId?: string;
+  snsSmsTemplateId?: string;
 
   // EventBridge
   eventBusName: string;
@@ -130,6 +132,8 @@ export function getConfig(): AppConfig {
 
     // SNS
     snsSmsSenderId: process.env['SNS_SMS_SENDER_ID'] || 'PARKLY',
+    snsSmsEntityId: optionalEnv('SNS_SMS_ENTITY_ID'),
+    snsSmsTemplateId: optionalEnv('SNS_SMS_TEMPLATE_ID'),
 
     // EventBridge
     eventBusName: process.env['EVENT_BUS_NAME'] || 'parkly-event-bus',

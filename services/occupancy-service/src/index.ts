@@ -25,6 +25,7 @@ import {
   ApiResponse,
   OccupancyRecord,
   CurrentOccupancy,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 
 const PORT = process.env['OCCUPANCY_PORT'] || 4007;
@@ -180,7 +181,8 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+app.use(cors(getHardenedCorsOptions()));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
@@ -191,17 +193,23 @@ app.use('/occupancy', occupancyRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-  // Auto-start simulator in dev
-  if (process.env['NODE_ENV'] === 'development') {
-    runSimulator().catch(() => {});
-    logger.info('Occupancy simulator started');
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+    // Auto-start simulator in dev
+    if (process.env['NODE_ENV'] === 'development') {
+      runSimulator().catch(() => {});
+      logger.info('Occupancy simulator started');
+    }
+  });
+}
+
+process.on('SIGTERM', () => {
+  if (server) {
+    server.close(() => process.exit(0));
   }
 });
 
-process.on('SIGTERM', () => {
-  server.close(() => process.exit(0));
-});
-
+export { app, occupancyService };
 export default app;

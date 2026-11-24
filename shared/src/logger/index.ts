@@ -6,11 +6,13 @@
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const pinoLib = require('pino');
+import { pinoTraceMixin } from '../tracing';
 
 const isDev = process.env['NODE_ENV'] !== 'production';
 
 export const logger = pinoLib({
   level: process.env['LOG_LEVEL'] || 'info',
+  mixin: () => pinoTraceMixin(),
   transport: isDev
     ? {
         target: 'pino-pretty',

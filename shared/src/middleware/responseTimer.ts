@@ -9,7 +9,7 @@ import { Request, Response, NextFunction } from 'express';
  * Attaches a high-resolution timer and sets X-Response-Time header.
  * Clients (mobile app, dashboards) can use this to monitor backend latency.
  */
-export function responseTimer(req: Request, res: Response, next: NextFunction): void {
+export function responseTimer(_req: Request, res: Response, next: NextFunction): void {
   const start = process.hrtime.bigint();
 
   // Hook into writeHead to set header before response is sent

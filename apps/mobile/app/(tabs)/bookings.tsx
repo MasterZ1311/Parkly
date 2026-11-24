@@ -3,8 +3,11 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator }
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../src/api/client';
+import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
+import { useAuthStore } from '../../src/store/auth.store';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 
-interface Booking {
+export interface Booking {
   id: string;
   spaceId: string;
   status: string;
@@ -26,19 +29,37 @@ const STATUS_COLORS: Record<string, string> = {
 export default function BookingsScreen() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOfflineData, setIsOfflineData] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const isOffline = useAuthStore((s) => s.isOffline);
 
   useEffect(() => {
+    // 1. Immediate cache hydration
+    cacheGet<Booking[]>(CACHE_KEYS.RECENT_BOOKINGS).then((cached) => {
+      if (cached && cached.length > 0) {
+        setBookings(cached);
+        setLoading(false);
+      }
+    });
+
+    // 2. Fresh background fetch
     loadBookings();
   }, []);
 
   const loadBookings = async () => {
-    setLoading(true);
     try {
       const { data } = await bookingApi.list();
-      setBookings(data.data.bookings || []);
-    } catch {
-      setBookings([]);
+      const freshBookings = data?.data?.bookings || [];
+      setBookings(freshBookings);
+      setIsOfflineData(false);
+      await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, freshBookings);
+    } catch (err) {
+      console.warn('[Bookings] Failed to fetch live bookings, using cached list:', err);
+      const cached = await cacheGet<Booking[]>(CACHE_KEYS.RECENT_BOOKINGS);
+      if (cached && cached.length > 0) {
+        setBookings(cached);
+        setIsOfflineData(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -88,6 +109,7 @@ export default function BookingsScreen() {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner visible={isOffline || isOfflineData} message="Offline Mode — Showing saved reservations" />
       {/* Tabs */}
       <View style={styles.tabs}>
         {(['upcoming', 'past'] as const).map(tab => (

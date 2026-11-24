@@ -17,16 +17,20 @@ model User {
   phone     String   @unique
   name      String
   email     String?  @unique
-  role      UserRole @default(driver)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  role         UserRole  @default(driver)
+  isActive     Boolean   @default(true)
+  isAnonymized Boolean   @default(false) @map("is_anonymized")
+  anonymizedAt DateTime? @map("anonymized_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   vehicles  Vehicle[]
   bookings  Booking[]
   host      Host?
   disputes  Dispute[]
 
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -46,11 +50,13 @@ model Vehicle {
   model        String?
   color        String?
   isDefault    Boolean     @default(false) @map("is_default")
+  deletedAt    DateTime?   @map("deleted_at")
   createdAt    DateTime    @default(now()) @map("created_at")
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookings Booking[]
 
+  @@index([deletedAt])
   @@map("vehicles")
 }
 
@@ -75,6 +81,8 @@ model Host {
   verifiedAt          DateTime?          @map("verified_at")
   totalEarnings       Decimal            @default(0) @map("total_earnings")
   totalPayouts        Decimal            @default(0) @map("total_payouts")
+  isAnonymized        Boolean            @default(false) @map("is_anonymized")
+  deletedAt           DateTime?          @map("deleted_at")
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @updatedAt @map("updated_at")
 
@@ -82,6 +90,7 @@ model Host {
   spaces        ParkingSpace[]
   payouts       Payout[]
 
+  @@index([deletedAt])
   @@map("hosts")
 }
 
@@ -184,6 +193,7 @@ model Booking {
   cancellationReason String?       @map("cancellation_reason")
   cancelledAt        DateTime?     @map("cancelled_at")
   completedAt        DateTime?     @map("completed_at")
+  deletedAt          DateTime?     @map("deleted_at")
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
@@ -197,6 +207,7 @@ model Booking {
   @@index([spaceId])
   @@index([status])
   @@index([startTime, endTime])
+  @@index([deletedAt])
   @@map("bookings")
 }
 

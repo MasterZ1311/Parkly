@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,11 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { searchApi } from '../../src/api/client';
+import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
+import { useAuthStore } from '../../src/store/auth.store';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
 
-interface SpaceResult {
+export interface SpaceResult {
   id: string;
   name: string;
   address: string;
@@ -32,7 +35,19 @@ export default function HomeScreen() {
   const [results, setResults] = useState<SpaceResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [isOfflineResults, setIsOfflineResults] = useState(false);
   const [activeFilter, setActiveFilter] = useState<Filter>('All');
+  const isOffline = useAuthStore((s) => s.isOffline);
+
+  useEffect(() => {
+    cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH).then((cached) => {
+      if (cached && cached.results && cached.results.length > 0) {
+        setQuery(cached.query || '');
+        setResults(cached.results);
+        setSearched(true);
+      }
+    });
+  }, []);
 
   const matchesFilter = (item: SpaceResult): boolean => {
     switch (activeFilter) {
@@ -64,11 +79,26 @@ export default function HomeScreen() {
         page: 1,
         pageSize: 20,
       });
-      setResults(data.data.results || []);
+      const searchResults = data?.data?.results || [];
+      setResults(searchResults);
+      setIsOfflineResults(false);
+      await cacheSet(CACHE_KEYS.LAST_SEARCH, { query, results: searchResults });
+      await cacheSet(CACHE_KEYS.CACHED_SPACES, searchResults);
     } catch (error) {
-      // Gracefully handle connection errors
-      console.error('Search failed:', error);
-      setResults([]);
+      console.warn('Search failed, trying cached spaces:', error);
+      const cached = await cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH);
+      if (cached && cached.results && cached.results.length > 0) {
+        setResults(cached.results);
+        setIsOfflineResults(true);
+      } else {
+        const cachedSpaces = await cacheGet<SpaceResult[]>(CACHE_KEYS.CACHED_SPACES);
+        if (cachedSpaces && cachedSpaces.length > 0) {
+          setResults(cachedSpaces);
+          setIsOfflineResults(true);
+        } else {
+          setResults([]);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -115,6 +145,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner visible={isOffline || isOfflineResults} message="Offline Mode — Showing cached parking spaces" />
       {/* Brand Header */}
       <View style={styles.brandHeader}>
         <View style={styles.brandLogoCard}>

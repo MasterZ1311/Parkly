@@ -18,6 +18,7 @@ import {
   createPrismaCheck,
   registerGracefulShutdown,
   logger,
+  getHardenedCorsOptions,
 } from '@parkly/shared';
 
 const PORT = process.env['BOOKING_PORT'] || 4002;
@@ -30,7 +31,8 @@ const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(securityHeaders);
 app.use(responseTimer);
-app.use(cors({ origin: process.env['ALLOWED_ORIGINS']?.split(',') || '*' }));
+app.use(cors(getHardenedCorsOptions()));
+
 app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
@@ -45,16 +47,20 @@ app.use('/bookings', bookingRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
-});
+let server: any;
+if (process.env['NODE_ENV'] !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
+  });
 
-registerGracefulShutdown({
-  server,
-  serviceName: SERVICE_NAME,
-  onShutdown: async () => {
-    await prisma.$disconnect();
-  },
-});
+  registerGracefulShutdown({
+    server,
+    serviceName: SERVICE_NAME,
+    onShutdown: async () => {
+      await prisma.$disconnect();
+    },
+  });
+}
 
+export { app };
 export default app;
