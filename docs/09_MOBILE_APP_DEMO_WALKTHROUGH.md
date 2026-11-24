@@ -1,4 +1,4 @@
-﻿# Parkly Mobile Application â€” End-to-End Demo & UI Walkthrough
+﻿# Parkly Mobile Application — End-to-End Demo & UI Walkthrough
 
 > [!NOTE]
 > **Environment Verification**: Tested and captured directly on **Android Studio Emulator** (`Parkly_Pixel`, Android 14 API 34 x86_64) running **Expo SDK 54** with **React Native 0.79.1** and pinned **React 19.0.0**. All screens are fully interactive, resilient to offline/backend latency, and localized for Chennai drivers (INR currency, Indian phone verification, and Tamil Nadu license plates).
@@ -9,10 +9,10 @@
 
 | Evaluation Dimension | Status | Notes |
 | :--- | :--- | :--- |
-| **Visual Polish & Design System** |  **Excellent** | Modern dark palette (`#0F172A`, `#1E293B`), Parkly Red accent (`#EF010C`), and Electric Blue highlights (`#38BDF8`). Consistent typography, status pills, and spacing. |
-| **Core User Journey** |  **100% Complete** | Seamless progression: Phone Login â†’ OTP Verify â†’ Find Spaces â†’ Space Details â†’ Booking Confirmation â†’ Gate QR Pass. |
-| **Offline & Latency Resilience** |  **Built-in** | Graceful fallback cache and demo datasets ensure smooth, zero-crash presentations even if the backend API is unreachable. |
-| **Interactive Map & AI Concierge** |  **Live & Functional** | Real-time map pins with price indicators, and natural language AI Concierge that recommends parking spots with Instant Reserve cards. |
+| **Visual Polish & Design System** | **Excellent** | Modern dark palette (`#0A1425`, `#111D33`), Parkly Red accent (`#EF010C`), and Electric Cyan highlights (`#38BDF8`). Consistent typography, status pills, and spacing. |
+| **Core User Journey** | **100% Complete** | Seamless progression: Phone Login → OTP Verify → Find Spaces → Space Details → Booking Confirmation → Gate QR Pass. |
+| **Offline & Latency Resilience** | **Built-in** | Graceful cache fallback and demo datasets ensure smooth, zero-crash presentations even if the backend API is unreachable. |
+| **Interactive Map & AI Concierge** | **Live & Functional** | Real-time map pins with price indicators, plus natural-language AI Concierge recommendations with `Instant Reserve`. |
 
 ---
 
@@ -37,15 +37,15 @@ flowchart LR
 
 ![01 Login Screen](./screenshots/01_auth_login.png)
 
-- **File Link**: [apps/mobile/app/(auth)/login.tsx](file:///e:/Github/Parkly/apps/mobile/app/(auth)/login.tsx)
+- **Source File**: [`apps/mobile/app/(auth)/login.tsx`](../apps/mobile/app/(auth)/login.tsx)
 - **Visual Design**:
-  - Deep obsidian background (`#0F172A`) with high-contrast typography.
+  - Deep Midnight Navy background (`#0A1425` / `#0F172A`) with high-contrast typography.
   - Branded header highlighting Parkly's mission: *"Smart, stress-free parking in Chennai"*.
   - Localized Indian mobile input field with `+91` flag prefix, rounded borders, and clear placeholder.
-  - Parkly Red primary CTA button (`#EF010C`) with hover/pressed states.
+  - Parkly Red primary CTA button (`#EF010C`) with pressed states.
 - **How to Use in Demo**:
-  1. Open app. The phone number field defaults to `98765 43210` for effortless presenter convenience.
-  2. Tap **"Get OTP"**. The app transitions smoothly to the verification screen.
+  1. Open the app. The phone number defaults cleanly for convenience.
+  2. Tap **"Get OTP"** to proceed to verification.
 
 ---
 
@@ -53,15 +53,14 @@ flowchart LR
 
 ![02 OTP Screen](./screenshots/02_auth_otp.png)
 
-- **File Link**: [apps/mobile/app/(auth)/verify-otp.tsx](file:///e:/Github/Parkly/apps/mobile/app/(auth)/verify-otp.tsx)
+- **Source File**: [`apps/mobile/app/(auth)/otp.tsx`](../apps/mobile/app/(auth)/otp.tsx)
 - **Visual Design**:
   - Security-focused 6-digit PIN input tiles with active border illumination.
-  - Quick-fill developer OTP badges (`123456`) to guarantee instant verification without waiting for SMS gateways.
-  - Full Name entry input (`Demo User`).
-  - Resend timer and legal consent disclaimer.
+  - Quick-fill developer OTP badges (`123456`) for instant local/demo authentication.
+  - Full Name entry input (`Demo User`), resend timer, and legal consent disclaimer.
 - **How to Use in Demo**:
-  1. Tap the quick OTP badge or leave the pre-filled `123456`.
-  2. Tap **"Verify & Continue"** to instantly authenticate and enter the main app.
+  1. Tap the quick OTP badge or verify pre-filled `123456`.
+  2. Tap **"Verify & Continue"** to enter the main driver interface.
 
 ---
 
@@ -73,17 +72,15 @@ flowchart LR
 ![04 Search Results](./screenshots/04_home_search_results.png)
 ````
 
-- **File Link**: [apps/mobile/app/(tabs)/home.tsx](file:///e:/Github/Parkly/apps/mobile/app/(tabs)/home.tsx)
+- **Source File**: [`apps/mobile/app/(tabs)/home.tsx`](../apps/mobile/app/(tabs)/home.tsx)
 - **Visual Design**:
-  - Clean top bar with greeting, location selector (`Chennai`), and notification bell.
-  - Smart search input: *"Search area, landmark or metro..."*.
-  - Horizontal filter pills: `All`, `âš¡ EV Charging`, `ðŸ  Covered`, `ðŸ”’ Secure`.
+  - Clean header bar with location indicator (`Chennai`), search input (*"Search area, landmark or metro..."*), and filter chips (`All`, `⚡ EV`, `🏠 Covered`, `🔒 Secure`).
   - Chennai Quick-Area chips: `T Nagar`, `Anna Nagar`, `Adyar`, `Velachery`.
-  - Resilience banner: *"Offline Mode â€” Showing verified demo spaces"* ensuring 100% demo uptime.
-  - Parking cards with high-visibility availability percentages (`88%`, `72%`, `45%`), real-time distances (`120m`, `350m`), and pricing (`â‚¹60/hr`, `â‚¹40/hr`).
+  - Resilience banner (*"Offline Mode — Showing cached parking spaces"*) ensuring 100% uptime.
+  - Live-style parking cards showing ETA availability probabilities (`88%`, `72%`, `45%`), walking distance, and hourly rates (`₹60/hr`, `₹40/hr`, `₹50/hr`).
 - **How to Use in Demo**:
-  1. Show how tapping area chips (`T Nagar`, `Anna Nagar`) filters parking options instantly.
-  2. Tap the first card: **"Express Avenue Premium Parking"** to view spot details.
+  1. Tap area chips (`T Nagar`, `Anna Nagar`) to display nearby parking inventory.
+  2. Tap **"Express Avenue Premium Parking"** to inspect spot details.
 
 ---
 
@@ -91,17 +88,14 @@ flowchart LR
 
 ![05 Space Details](./screenshots/05_space_details.png)
 
-- **File Link**: [apps/mobile/app/space/[id].tsx](file:///e:/Github/Parkly/apps/mobile/app/space/[id].tsx)
+- **Source File**: [`apps/mobile/app/space/[id].tsx`](../apps/mobile/app/space/[id].tsx)
 - **Visual Design**:
-  - Prominent space title with green availability badge: `88% open`.
-  - Address tag (`Whites Road, Royapettah`) and base rate (`â‚¹60/hr`).
-  - Amenities grid featuring visual icons: `Covered`, `EV Charging`, `CCTV`, `Disabled Access`.
-  - Interactive duration pill selector: `1h`, `2h`, `3h`, `4h`, `8h`.
-  - Dynamic cost breakdown card (`â‚¹120 parking + â‚¹6 fee = â‚¹126`).
-  - Fixed bottom bar with dynamic CTA: **"Book Now â€” â‚¹126"**.
+  - Header with availability badge (`88% open`), address metadata, and base hourly tariff (`₹60/hr`).
+  - Verified amenities grid: `Covered`, `EV Charging`, `CCTV`, `Disabled Access`.
+  - Interactive duration pill selector (`1h`, `2h`, `3h`, `4h`, `8h`) with live total breakdown (`₹120 parking + ₹6 fee = ₹126`) and sticky bottom CTA (**"Book Now — ₹126"**).
 - **How to Use in Demo**:
-  1. Tap different duration pills (e.g., 2h, 4h) to demonstrate real-time client-side price recalculation.
-  2. Tap **"Book Now â€” â‚¹126"** to proceed to checkout.
+  1. Toggle duration pills to showcase live pricing recalculation.
+  2. Tap **"Book Now — ₹126"** to launch checkout.
 
 ---
 
@@ -109,17 +103,14 @@ flowchart LR
 
 ![06 Booking Confirm](./screenshots/06_booking_create.png)
 
-- **File Link**: [apps/mobile/app/booking/create.tsx](file:///e:/Github/Parkly/apps/mobile/app/booking/create.tsx)
+- **Source File**: [`apps/mobile/app/booking/create.tsx`](../apps/mobile/app/booking/create.tsx)
 - **Visual Design**:
-  - Summary card with spot name, selected duration, and parking window.
-  - License Plate input pre-populated with Indian registration syntax (`TN01AB1234`).
-  - Vehicle Type selection chips: `Motorcycle`, `Compact`, `Sedan`, `SUV`.
-  - Transparent itemized payment summary with total amount.
-  - Payment method selector (`UPI / Mobile Wallet`).
-  - Prominent action button: **"Confirm & Pay â‚¹126"**.
+  - Spot summary card with selected window and Indian license plate validation (`TN01AB1234`).
+  - Vehicle Type selector (`Motorcycle`, `Compact`, `Sedan`, `SUV`), itemized summary, and `UPI / Mobile Wallet` selector.
+  - Prominent checkout button: **"Confirm & Pay ₹126"**.
 - **How to Use in Demo**:
-  1. Highlight the pre-validated Indian vehicle license plate and vehicle type selector.
-  2. Tap **"Confirm & Pay â‚¹126"**.
+  1. Review vehicle details and UPI breakdown.
+  2. Tap **"Confirm & Pay ₹126"**.
 
 ---
 
@@ -127,18 +118,13 @@ flowchart LR
 
 ![07 Gate QR Pass](./screenshots/07_booking_pass.png)
 
-- **File Link**: [apps/mobile/app/booking/create.tsx](file:///e:/Github/Parkly/apps/mobile/app/booking/create.tsx#L120-L170)
+- **Source File**: [`apps/mobile/app/booking/create.tsx`](../apps/mobile/app/booking/create.tsx#L120-L170)
 - **Visual Design**:
-  - Celebratory confirmation header: *"Booking Confirmed! ðŸŽ‰"* with green checkmark.
-  - High-density, scannable QR Code card with unique booking token (`#bk-demo-001`).
-  - Key reservation summary card:
-    - Vehicle Plate: `TN01AB1234`
-    - Duration: `2 hours`
-    - Total Paid: `â‚¹126` (in success green)
-  - Primary button: **"View My Bookings"** and **"Back to Home"** link.
+  - Confirmation header (*"Booking Confirmed! 🎉"*) with green status check.
+  - High-density scannable QR Gate Pass (`#bk-demo-001`) displaying Vehicle Plate (`TN01AB1234`), Duration (`2 hours`), Total Paid (`₹126`), **"View My Bookings"**, and **"Back to Home"**.
 - **How to Use in Demo**:
-  1. Explain that parking lot boom barriers and security guards scan this exact QR code for instant, contactless entry.
-  2. Tap **"View My Bookings"** to navigate to the active reservations screen.
+  1. Highlight how parking boom barriers and lot attendants scan `#bk-demo-001` for contactless entry without dedicated hardware.
+  2. Tap **"View My Bookings"**.
 
 ---
 
@@ -146,16 +132,11 @@ flowchart LR
 
 ![08 Chennai Map](./screenshots/08_map.png)
 
-- **File Link**: [apps/mobile/app/(tabs)/map.tsx](file:///e:/Github/Parkly/apps/mobile/app/(tabs)/map.tsx)
+- **Source File**: [`apps/mobile/app/(tabs)/map.tsx`](../apps/mobile/app/(tabs)/map.tsx)
 - **Visual Design**:
-  - Stylized dark grid coordinate map centered on Chennai city center (`13.0827Â° N, 80.2707Â° E`).
-  - Floating price bubble pins (`â‚¹60`, `â‚¹40`, `â‚¹35`, `â‚¹50`) indicating parking lots in T Nagar, Anna Nagar, Adyar, and Velachery.
-  - Live/Offline status indicator dot.
-  - Color-coded availability legend (`Green = Available`, `Red = Full`).
-  - Draggable bottom sheet with nearby parking spots.
+  - Dark coordinate grid centered on Chennai (`13.0827° N, 80.2707° E`) with price pins (`₹60`, `₹40`, `₹35`, `₹50`), green/red availability legend, and nearby spots sheet (`FreeMap` renders OpenFreeMap on web / native styled map fallback on device).
 - **How to Use in Demo**:
-  1. Switch to the Map tab via the bottom navigation bar.
-  2. Point out real-time pricing pins and color indicators showing available vs full facilities.
+  1. Switch to the **Map** tab from the bottom bar and tap any pricing pin to inspect lots spatially.
 
 ---
 
@@ -163,18 +144,11 @@ flowchart LR
 
 ![09 My Bookings](./screenshots/09_bookings.png)
 
-- **File Link**: [apps/mobile/app/(tabs)/bookings.tsx](file:///e:/Github/Parkly/apps/mobile/app/(tabs)/bookings.tsx)
+- **Source File**: [`apps/mobile/app/(tabs)/bookings.tsx`](../apps/mobile/app/(tabs)/bookings.tsx)
 - **Visual Design**:
-  - Clean segment tab controller: `Upcoming (1)` vs `Past (0)`.
-  - Active reservation card displaying:
-    - Booking identifier (`Booking #DEMO-001`)
-    - Parking type (`Instant`)
-    - Green status badge (`Confirmed`)
-    - Schedule window (`24 Nov, 11:56 pm â†’ 25 Nov, 1:56 am`)
-    - Total amount (`â‚¹126`)
+  - Segmented tabs (`Upcoming (1)` vs `Past (0)`) displaying `Booking #DEMO-001`, `Instant` tag, `Confirmed` green badge, booking window, and `₹126` total.
 - **How to Use in Demo**:
-  1. Tap the Bookings tab to review active and historical passes.
-  2. Tap any reservation card to re-display the QR Gate Pass at any time.
+  1. Tap any booking row to re-open its full Entry Gate QR Pass.
 
 ---
 
@@ -186,25 +160,11 @@ flowchart LR
 ![10 Concierge Recommendation](./screenshots/10_concierge_reply.png)
 ````
 
-- **File Link**: [apps/mobile/app/(tabs)/concierge.tsx](file:///e:/Github/Parkly/apps/mobile/app/(tabs)/concierge.tsx)
+- **Source File**: [`apps/mobile/app/(tabs)/concierge.tsx`](../apps/mobile/app/(tabs)/concierge.tsx)
 - **Visual Design**:
-  - Conversational AI interface featuring the Parkly sparkle badge.
-  - Tamil Nadu welcome: *"Namaskaram! ðŸ…¿ï¸ I am your Chennai Driver Concierge..."*.
-  - Fast-action suggestion chips:
-    - *"Find covered parking near Pothys under â‚¹60/hr"*
-    - *"EV parking near Anna Nagar for 3 hours"*
-    - *"Cheapest slot near OMR IT corridor"*
-  - Grounded Recommendation Card:
-    - Lot Name: `T Nagar Parking Complex - Spot A`
-    - Availability: `88% open` (green badge)
-    - Address: `23, Panagal Park Road, T Nagar`
-    - Rate: `â‚¹40/hr`
-    - Walking distance: `120m away`
-    - Attendant notes: *"Enter through Gate 1. Security attendant will scan your QR pass."*
-    - Action buttons: **"Directions"** and **"âš¡ Instant Reserve"**.
+  - Conversational assistant greeting (*"Namaskaram! 🅿️ I am your Chennai Driver Concierge..."*) with quick-action suggestion chips and actionable recommendation cards (`T Nagar Parking Complex - Spot A`, `88% open`, `₹40/hr`, `120m away`, **Directions**, and **⚡ Instant Reserve**).
 - **How to Use in Demo**:
-  1. Tap the Concierge tab (speech bubble icon).
-  2. Tap any quick suggestion chip to showcase AI reasoning and instant spot recommendation with turn-by-turn navigation.
+  1. Tap **Concierge** tab, tap *"Find covered parking near Pothys under ₹60/hr"*, and click **Instant Reserve**.
 
 ---
 
@@ -212,33 +172,16 @@ flowchart LR
 
 ![11 Driver Profile](./screenshots/11_profile.png)
 
-- **File Link**: [apps/mobile/app/(tabs)/profile.tsx](file:///e:/Github/Parkly/apps/mobile/app/(tabs)/profile.tsx)
+- **Source File**: [`apps/mobile/app/(tabs)/profile.tsx`](../apps/mobile/app/(tabs)/profile.tsx)
 - **Visual Design**:
-  - Circular avatar with driver initial (`D`).
-  - User name (`Demo User`), verified phone number (`+919876543210`), and `DRIVER` badge.
-  - Driver metrics summary: `0 Bookings`, `â‚¹0 Saved`, `0h Hours`.
-  - Account menu options: `My Vehicles`, `Notifications`, `Payment Methods`, `Saved Places`.
-  - Support & Legal: `Help Center`, `Terms of Service`, `Privacy Policy`, and `Logout`.
-- **How to Use in Demo**:
-  1. Tap the Profile tab (person icon).
-  2. Highlight driver account management, saved vehicles, and clean profile settings.
+  - Driver avatar (`D`), verified phone (`+919876543210`), `DRIVER` badge, usage summary counters (`Bookings`, `Saved`, `Hours`), and account/support navigation menu.
 
 ---
 
-## Demo Cheat-Sheet (3-Minute Presentation Script)
+## 3-Minute Live Demo Script
 
-1. **Start at Login (0:00 - 0:30)**:
-   - *"Welcome to Parkly, Chennai's smart parking platform. Drivers can sign in with one tap using their mobile number."*
-   - Tap **"Get OTP"** â†’ Tap **"Verify & Continue"**.
-2. **Explore Discovery & Live Availability (0:30 - 1:15)**:
-   - *"On the Home screen, drivers see real-time parking spaces across Chennai hotspots like T Nagar and Anna Nagar. Each card highlights live availability probability, amenities like EV charging and CCTV, and hourly rates."*
-   - Tap **"T Nagar"** â†’ Tap **"Express Avenue Premium Parking"**.
-3. **Select Duration & Confirm Reservation (1:15 - 2:00)**:
-   - *"Drivers can adjust parking duration on the fly. Parkly automatically calculates total costs and fees. With pre-saved vehicle profiles and UPI integration, checkout takes seconds."*
-   - Tap **"Book Now"** â†’ Tap **"Confirm & Pay â‚¹126"**.
-4. **Demonstrate Entry Gate QR Pass (2:00 - 2:30)**:
-   - *"Immediately upon booking, Parkly generates a high-contrast digital QR pass. When the driver arrives at the gate, cameras or parking attendants scan this pass for friction-free, automated boom barrier access."*
-5. **Showcase AI Concierge & Interactive Map (2:30 - 3:00)**:
-   - *"Need parking on the go? Our AI Concierge understands natural language requests like 'Find covered parking near Pothys under â‚¹60' and instantly recommends the optimal spot with turn-by-turn directions."*
-   - Tap **Concierge tab** â†’ Show AI recommendation card.
-
+1. **Login (`0:00–0:30`)**: Tap **Get OTP** → **Verify & Continue**.
+2. **Discovery (`0:30–1:15`)**: Tap **T Nagar** → open **Express Avenue Premium Parking**.
+3. **Checkout (`1:15–2:00`)**: Adjust duration → tap **Book Now** → **Confirm & Pay ₹126**.
+4. **QR Pass (`2:00–2:30`)**: Show `#bk-demo-001` scannable Gate QR pass.
+5. **AI Concierge & Map (`2:30–3:00`)**: Ask AI Concierge near Pothys and show one-tap **Instant Reserve**.

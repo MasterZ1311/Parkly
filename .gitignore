@@ -53,3 +53,6 @@ docker/data/
 
 # Autonomous agent work logs
 .agents/
+
+# Hyperframes raw renders & heavy intermediate media (final showcase GIF/stills tracked in docs/assets/)
+brag-output/

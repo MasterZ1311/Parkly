@@ -67,7 +67,7 @@ export default function HomeScreen() {
   const visibleResults = results.filter(matchesFilter);
 
   const handleSearch = useCallback(async (searchQuery?: string) => {
-    const q = (searchQuery !== undefined ? searchQuery : query).trim();
+    const q = (typeof searchQuery === 'string' ? searchQuery : query).trim();
     if (!q) return;
     setLoading(true);
     setSearched(true);
@@ -198,7 +198,7 @@ export default function HomeScreen() {
             placeholderTextColor="#64748B"
             value={query}
             onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
+            onSubmitEditing={() => handleSearch()}
             returnKeyType="search"
           />
           {query.length > 0 && (
@@ -207,7 +207,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+        <TouchableOpacity style={styles.searchButton} onPress={() => handleSearch()}>
           <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>

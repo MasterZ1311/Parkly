@@ -12,18 +12,18 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        PARKLY TECHNOLOGY STACK                         │
 ├─────────────────────┬──────────────────────────────────────────────────┤
-│ Mobile Driver App   │ React Native 0.74+, Expo SDK 51+, TypeScript     │
-│ Host Web Dashboard  │ React 18+, Vite, TypeScript, TailwindCSS/CSS     │
-│ Admin Portal        │ React 18+, Vite, TypeScript, Recharts, Lucide    │
+│ Mobile Driver App   │ React Native 0.79.1, Expo SDK 54, React 19.0.0  │
+│ Host Web Dashboard  │ React 18+, Vite, TypeScript, Recharts, CSS Vars  │
+│ Admin Portal        │ React 18+, Vite, TypeScript, Recharts            │
 │ Backend Runtime     │ Node.js 20 LTS (Active), TypeScript 5.4+         │
-│ Backend Framework   │ Fastify / Express (High throughput, strict type) │
+│ Backend Framework   │ Express (11 Domain Microservices + API Gateway)  │
 │ Database & ORM      │ PostgreSQL 16, Prisma ORM 5+, DynamoDB Local     │
-│ Caching & Ephemeral │ Redis 7 / DynamoDB TTL (OTP, locks, occupancy)   │
+│ Caching & Ephemeral │ Redis / DynamoDB TTL (OTP, rate-limits, live telemetry) │
 │ Cloud Infrastructure│ AWS Cloud Native (provisioned via AWS CDK TS)    │
 │ Messaging & Events  │ Amazon EventBridge, Amazon SNS, SQS              │
 │ Validation & Schema │ Zod (Runtime validation & static type inference) │
-│ Testing Suites      │ Jest, Supertest, Fast-Check (Property-Based)     │
-│ Monorepo Tooling    │ npm workspaces / Turborepo, Docker Compose       │
+│ Testing Suites      │ Vitest, Supertest (360 tests in packages/ai-agents) │
+│ Monorepo Tooling    │ npm workspaces, Docker Compose, GitHub Actions   │
 └─────────────────────┴──────────────────────────────────────────────────┘
 ```
 
@@ -32,45 +32,43 @@
 ## 2. Frontend Applications
 
 ### 2.1 Driver Mobile App (`apps/mobile`)
-* **Framework**: React Native with **Expo (Managed Workflow)**.
-* **State Management**: **Zustand** (lightweight, predictable, no boilerplate) + **TanStack Query (React Query)** for server state caching and optimistic updates.
-* **Navigation**: **Expo Router v3** (file-based navigation with deep linking).
-* **Maps & Geolocation**: `@react-native-community/geolocation` + `react-native-maps` (Google Maps / OpenStreetMap fallback).
-* **UI Components**: NativeWind (Tailwind styling for React Native) or bespoke modular design system with responsive primitives.
-* **Authentication**: Passwordless Phone + OTP with auto-read SMS permissions on Android.
+* **Framework**: React Native `0.79.1` with **Expo SDK 54** and **React 19.0.0**.
+* **State Management**: **Zustand** + local offline cache utilities (`AsyncStorage` / `SecureStore`) for zero-crash fallback mode.
+* **Navigation**: **Expo Router v6** (`apps/mobile/app/` file-based tabs & stack routing).
+* **Maps & Geolocation**: `expo-location`, `maplibre-gl` (web map stage) & `react-native-maps` / custom styled fallback.
+* **UI Components**: Bespoke dark Navy & Crimson mobile design system defined in `apps/mobile/src/constants/theme.ts`.
+* **Authentication**: Passwordless Phone + 6-digit OTP verification with local dev quick-fill.
 
 ### 2.2 Host Web Dashboard (`apps/host-dashboard`)
-* **Framework**: React 18 with **Vite** (sub-second HMR and optimized production bundles).
-* **Styling**: TailwindCSS with custom design tokens for glassmorphism, fluid typography, and dark mode.
-* **Data Visualization**: **Recharts** for real-time earnings, daily revenue trends, and occupancy percentages.
-* **Forms & Validation**: React Hook Form + Zod resolvers.
-* **State & API**: Zustand + Axios / Fetch client with automatic JWT bearer interceptors and token refresh loops.
+* **Framework**: React 18 with **Vite** (port `3001`).
+* **Styling**: Custom CSS variables implementing Parkly Navy (`#0A1425`) and Crimson (`#EF010C`) tokens (`apps/host-dashboard/src/index.css`).
+* **Data Visualization**: **Recharts** for real-time monthly revenue trends, bookings charts, and occupancy percentages.
+* **State & API**: Zustand + Axios client with JWT interceptors (`apps/host-dashboard/src/utils/api.ts`).
 
 ### 2.3 Admin Portal (`apps/admin-portal`)
-* **Framework**: React 18 + Vite.
+* **Framework**: React 18 + Vite (port `3002`).
 * **Key Capabilities**: 
-  - Real-time host KYC review and property approval workflow.
-  - Interactive platform heatmaps of active vs pending parking bays.
-  - User and vehicle suspension controls.
-  - Dispute resolution console with refund issuance triggers.
+  - Real-time host KYC review & AI verification audits (`Verifications.tsx`).
+  - Interactive platform KPI overview and audit streams (`Overview.tsx`).
+  - City-wide mobility & CO₂ abatement analytics (`CityAnalytics.tsx`).
+  - User management and dispute mediation console.
 
 ---
 
-## 3. Backend & Core APIs (`services/*` / `packages/*`)
+## 3. Backend & Core APIs (`services/*` / `packages/*` / `shared/`)
 
 ### 3.1 Runtime & Framework Standards
-* **Node.js 20 LTS**: Leveraging native `fetch`, improved V8 performance, and ESM modules.
-* **Fastify / Express**: Fastify chosen for core high-throughput APIs (Search, Occupancy) delivering up to 30,000 req/sec with built-in schema compilation.
-* **Zod**: All request bodies, query strings, and headers validated with strict Zod schemas before touching service logic.
-* **TypeScript Strict Mode**: `noImplicitAny: true`, `strictNullChecks: true`, zero untyped `any` code in core business modules.
+* **Node.js 20 LTS**: Clean TypeScript backend services compiled with strict typing.
+* **Express**: Domain microservices behind `api-gateway` (`:4000`), complete with Helmet, CORS, distributed Redis/in-memory rate-limiting, and aggregated `/health` / `/ready` / `/api/v1/status` checks.
+* **Zod**: All request bodies, agent inputs/outputs, and configs validated strictly at runtime.
+* **TypeScript Strict Mode**: Workspace build checks across `services/*`, `packages/*`, and `shared/`.
 
-### 3.2 Shared Foundation (`packages/shared` or `@parkly/shared`)
-A single, canonical shared TypeScript library to prevent code duplication across services:
-* **`@parkly/shared/types`**: Unified domain types (User, Host, Space, Booking, Payment, Occupancy, etc.).
-* **`@parkly/shared/errors`**: Standardized error classes (`NotFoundError`, `ValidationError`, `ConcurrencyConflictError`, `UnauthorizedError`).
-* **`@parkly/shared/logger`**: Pre-configured Pino logger writing structured JSON with correlation IDs.
-* **`@parkly/shared/utils`**: Mathematical helpers for Geohash encoding/decoding, Haversine distance calculations, and pricing formulas.
-* **`@parkly/shared/middleware`**: Common JWT verification, RBAC guards, and security header middlewares.
+### 3.2 Shared Foundation (`shared/` → `@parkly/shared`)
+A canonical shared TypeScript workspace preventing duplication across services:
+* **Theme Palette**: Brand hex tokens (`parklyPalette`).
+* **Errors & Responses**: Standardized `ApiResponse<T>` envelope and HTTP error classes.
+* **Logging & Middleware**: Structured Pino logger, JWT authentication, RBAC guards, security headers, health checks, and graceful shutdown helpers.
+* **Geospatial Utilities**: Geohash precision encoding/decoding and distance math.
 
 ---
 
@@ -113,7 +111,6 @@ A single, canonical shared TypeScript library to prevent code duplication across
 * **Localhost Mocking**: Built-in mock providers for SMS (`mock`), Payments (`mock`), and IoT Sensors (`simulator`) so developers can build offline without incurring AWS or API costs.
 
 ### 6.2 Testing Strategy
-* **Unit Testing**: Jest for business logic, pricing formulas, and concurrency locks.
-* **Integration Testing**: Supertest against Fastify/Express routes verifying schema validation and database constraints.
-* **Property-Based Testing (PBT)**: **Fast-Check** verifying mathematical invariants (e.g., dynamic price is never less than host base rate, recommendation scores always fall between 0.0 and 1.0, geohash spatial containment).
-* **CI/CD Pipeline**: GitHub Actions running lint, typecheck, test suites, and AWS CDK synth on every pull request.
+* **Multi-Agent & Unit Testing**: **Vitest** executing 360+ deterministic tests across unit specs, distributed sagas, circuit breakers, real providers, and the 4-tier E2E suite in `packages/ai-agents`.
+* **API Verification**: Express route and health-check integration tests via Supertest.
+* **CI/CD Pipeline**: GitHub Actions (`.github/workflows/ci.yml`) running tests, workspace builds, web portal builds, Prisma schema drift checks, and AWS CDK synthesis.
