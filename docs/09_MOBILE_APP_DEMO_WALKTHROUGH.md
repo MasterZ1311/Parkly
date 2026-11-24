@@ -1,4 +1,4 @@
-﻿# Parkly Mobile Application — End-to-End Demo & UI Walkthrough
+# Parkly Mobile Application — End-to-End Demo & UI Walkthrough
 
 > [!NOTE]
 > **Environment Verification**: Tested and captured directly on **Android Studio Emulator** (`Parkly_Pixel`, Android 14 API 34 x86_64) running **Expo SDK 54** with **React Native 0.79.1** and pinned **React 19.0.0**. All screens are fully interactive, resilient to offline/backend latency, and localized for Chennai drivers (INR currency, Indian phone verification, and Tamil Nadu license plates).
