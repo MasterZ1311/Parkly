@@ -1,0 +1,29 @@
+{
+  "name": "@parkly/ai-agents",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Autonomous Multi-Agent Architecture for Parkly",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "clean": "rimraf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@vitest/coverage-v8": "^1.6.0",
+    "rimraf": "^5.0.7",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

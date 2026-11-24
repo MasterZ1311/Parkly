@@ -1,0 +1,23 @@
+{
+  "name": "@parkly/prisma",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "migrate": "prisma migrate dev --schema=./schema.prisma",
+    "migrate:deploy": "prisma migrate deploy --schema=./schema.prisma",
+    "generate": "prisma generate --schema=./schema.prisma",
+    "studio": "prisma studio --schema=./schema.prisma",
+    "seed": "ts-node seed.ts"
+  },
+  "prisma": {
+    "seed": "ts-node seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.16.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.16.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,15 @@
+# Parkly Host Portal — LLM & AI Agent Context Directory
+> https://host.parkly.in
+
+## Overview
+Parkly is Chennai's autonomous smart city parking marketplace connecting property hosts with drivers. The Host Portal allows parking facility operators and residential homeowners to list parking spaces, configure EV charging, enable dynamic surge pricing, and manage real-time reservations.
+
+## Key Capabilities
+- **Automated Listing Creation**: Geo-tagging with Base32 Geohash (precision 7, ~150m cell), capacity, and vehicle compatibility.
+- **AI Visual & KYC Inspection**: Autonomous document verification and gate clearance verification via computer vision.
+- **Dynamic Pricing Engine**: Automated demand surge calculations based on real-time occupancy and Chennai traffic choke-points.
+- **Instant Bank Payouts**: Automated settlement via UPI and Razorpay Route.
+
+## API Documentation
+- Primary Gateway: https://api.parkly.in/api/v1
+- Host Endpoints: `/host/listings`, `/host/listings/:id/ai-verify`, `/host/revenue`, `/host/payouts`

@@ -1,0 +1,415 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
+  Image,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { searchApi } from '../../src/api/client';
+import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
+import { useAuthStore } from '../../src/store/auth.store';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
+
+export interface SpaceResult {
+  id: string;
+  name: string;
+  address: string;
+  distance: { value: number; unit: string };
+  price: { value: number; currency: string; per: string };
+  availability: { probabilityPercent: number; confidencePercent: number };
+  amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
+}
+
+const FILTERS = ['All', '⚡ EV', '🏠 Covered', '🔒 Secure'] as const;
+type Filter = (typeof FILTERS)[number];
+
+export default function HomeScreen() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SpaceResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [isOfflineResults, setIsOfflineResults] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<Filter>('All');
+  const isOffline = useAuthStore((s) => s.isOffline);
+
+  useEffect(() => {
+    cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH).then((cached) => {
+      if (cached && cached.results && cached.results.length > 0) {
+        setQuery(cached.query || '');
+        setResults(cached.results);
+        setSearched(true);
+      }
+    });
+  }, []);
+
+  const matchesFilter = (item: SpaceResult): boolean => {
+    switch (activeFilter) {
+      case '⚡ EV':
+        return item.amenities.evCharging;
+      case '🏠 Covered':
+        return item.amenities.covered;
+      case '🔒 Secure': {
+        const level = (item.amenities.securityLevel || '').toLowerCase();
+        return level !== '' && level !== 'none' && level !== 'low';
+      }
+      default:
+        return true;
+    }
+  };
+
+  const visibleResults = results.filter(matchesFilter);
+
+  const handleSearch = useCallback(async (searchQuery?: string) => {
+    const q = (searchQuery !== undefined ? searchQuery : query).trim();
+    if (!q) return;
+    setLoading(true);
+    setSearched(true);
+    try {
+      const { data } = await searchApi.search({
+        location: { type: 'text', value: q },
+        arrivalTime: new Date().toISOString(),
+        duration: 60,
+        radius: 5,
+        page: 1,
+        pageSize: 20,
+      });
+      const searchResults = data?.data?.results || [];
+      setResults(searchResults);
+      setIsOfflineResults(false);
+      await cacheSet(CACHE_KEYS.LAST_SEARCH, { query: q, results: searchResults });
+      await cacheSet(CACHE_KEYS.CACHED_SPACES, searchResults);
+    } catch (error) {
+      console.warn('Search failed, using demo spaces:', error);
+      const cached = await cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH);
+      if (cached && cached.results && cached.results.length > 0) {
+        setResults(cached.results);
+        setIsOfflineResults(true);
+      } else {
+        const cachedSpaces = await cacheGet<SpaceResult[]>(CACHE_KEYS.CACHED_SPACES);
+        if (cachedSpaces && cachedSpaces.length > 0) {
+          setResults(cachedSpaces);
+          setIsOfflineResults(true);
+        } else {
+          const demoSpaces: SpaceResult[] = [
+            {
+              id: 'sp-tng-001',
+              name: 'Express Avenue Premium Parking',
+              address: 'Royapettah / T Nagar Hub, Chennai',
+              distance: { value: 0.4, unit: 'km' },
+              price: { value: 60, currency: 'INR', per: 'hour' },
+              availability: { probabilityPercent: 88, confidencePercent: 95 },
+              amenities: { evCharging: true, covered: true, securityLevel: 'high' },
+            },
+            {
+              id: 'sp-tng-002',
+              name: 'Pondy Bazaar Smart Multi-Level',
+              address: 'Pondy Bazaar, T Nagar, Chennai',
+              distance: { value: 0.8, unit: 'km' },
+              price: { value: 40, currency: 'INR', per: 'hour' },
+              availability: { probabilityPercent: 72, confidencePercent: 90 },
+              amenities: { evCharging: false, covered: true, securityLevel: 'high' },
+            },
+            {
+              id: 'sp-tng-003',
+              name: 'Panagal Park EV Charging Station',
+              address: 'Usman Road, T Nagar, Chennai',
+              distance: { value: 1.2, unit: 'km' },
+              price: { value: 50, currency: 'INR', per: 'hour' },
+              availability: { probabilityPercent: 45, confidencePercent: 82 },
+              amenities: { evCharging: true, covered: false, securityLevel: 'medium' },
+            },
+          ];
+          setResults(demoSpaces);
+          setIsOfflineResults(true);
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
+
+  const renderItem = ({ item }: { item: SpaceResult }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => router.push({ pathname: '/space/[id]', params: { id: item.id } })}
+      activeOpacity={0.8}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+          <View style={styles.availBadge}>
+            <View
+              style={[
+                styles.availDot,
+                { backgroundColor: item.availability.probabilityPercent > 60 ? '#22C55E' : '#F59E0B' },
+              ]}
+            />
+            <Text style={styles.availText}>{item.availability.probabilityPercent}%</Text>
+          </View>
+        </View>
+        <Text style={styles.cardAddress} numberOfLines={1}>{item.address}</Text>
+      </View>
+
+      <View style={styles.cardFooter}>
+        <Text style={styles.distance}>
+          <Ionicons name="location" size={12} color="#64748B" /> {item.distance.value} {item.distance.unit}
+        </Text>
+        <View style={styles.amenities}>
+          {item.amenities.evCharging && (
+            <View style={styles.badge}><Text style={styles.badgeText}>⚡ EV</Text></View>
+          )}
+          {item.amenities.covered && (
+            <View style={styles.badge}><Text style={styles.badgeText}>🏠 Covered</Text></View>
+          )}
+        </View>
+        <Text style={styles.price}>₹{item.price.value}<Text style={styles.priceUnit}>/hr</Text></Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      <OfflineBanner visible={isOffline || isOfflineResults} message="Offline Mode — Showing cached parking spaces" />
+      {/* Brand Header */}
+      <View style={styles.brandHeader}>
+        <View style={styles.brandLogoCard}>
+          <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+        </View>
+        <View>
+          <Text style={styles.brandTitle}>Parkly</Text>
+          <Text style={styles.brandSubtitle}>Smart City Parking • Chennai</Text>
+        </View>
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#64748B" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search location (e.g. T Nagar, Chennai)"
+            placeholderTextColor="#64748B"
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
+          />
+          {query.length > 0 && (
+            <TouchableOpacity onPress={() => { setQuery(''); setResults([]); setSearched(false); }}>
+              <Ionicons name="close-circle" size={20} color="#64748B" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
+          <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Quick Filters */}
+      <View style={styles.quickFilters}>
+        {FILTERS.map(filter => {
+          const active = activeFilter === filter;
+          return (
+            <TouchableOpacity
+              key={filter}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              onPress={() => setActiveFilter(filter)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterText, active && styles.filterTextActive]}>{filter}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Results */}
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#EF010C" />
+          <Text style={styles.loadingText}>Finding parking spaces...</Text>
+        </View>
+      ) : !searched ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="car-outline" size={64} color="#334155" />
+          <Text style={styles.emptyTitle}>Find Parking Near You</Text>
+          <Text style={styles.emptySubtitle}>
+            Search by area, landmark, or address to discover available parking spaces.
+          </Text>
+          {/* Quick area chips */}
+          <View style={styles.areaSuggestions}>
+            {['T Nagar', 'Anna Nagar', 'Adyar', 'Velachery'].map(area => (
+              <TouchableOpacity
+                key={area}
+                style={styles.areaSuggestion}
+                onPress={() => { setQuery(area); handleSearch(area); }}
+              >
+                <Text style={styles.areaSuggestionText}>{area}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : results.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="sad-outline" size={64} color="#334155" />
+          <Text style={styles.emptyTitle}>No Spaces Found</Text>
+          <Text style={styles.emptySubtitle}>Try a different location or expand your search radius.</Text>
+        </View>
+      ) : visibleResults.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="filter-outline" size={64} color="#334155" />
+          <Text style={styles.emptyTitle}>No Matches for "{activeFilter}"</Text>
+          <Text style={styles.emptySubtitle}>
+            {results.length} space{results.length === 1 ? '' : 's'} found nearby. Tap "All" to see them.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={visibleResults}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={styles.resultCount}>
+              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} found
+              {activeFilter !== 'All' ? ` · ${activeFilter}` : ''}
+            </Text>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A1425' },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 12,
+    backgroundColor: '#0A1425',
+  },
+  brandLogoCard: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+    padding: 3,
+  },
+  brandLogo: {
+    width: 36,
+    height: 36,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    letterSpacing: -0.3,
+  },
+  brandSubtitle: {
+    fontSize: 11,
+    color: '#EF010C',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+    backgroundColor: '#0A1425',
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111D33',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#263957',
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 14 },
+  searchButton: {
+    backgroundColor: '#EF010C',
+    borderRadius: 12,
+    width: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickFilters: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 8,
+  },
+  filterChip: {
+    backgroundColor: '#111D33',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#263957',
+  },
+  filterText: { color: '#CBD5E1', fontSize: 12 },
+  filterChipActive: { backgroundColor: '#EF010C', borderColor: '#EF010C' },
+  filterTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingText: { color: '#94A3B8', fontSize: 14 },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 12 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' },
+  emptySubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20 },
+  areaSuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
+  areaSuggestion: {
+    backgroundColor: '#111D33',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#EF010C',
+  },
+  areaSuggestionText: { color: '#EF010C', fontSize: 13, fontWeight: '600' },
+  list: { paddingHorizontal: 16, paddingBottom: 16 },
+  resultCount: { color: '#64748B', fontSize: 13, marginBottom: 12 },
+  card: {
+    backgroundColor: '#111D33',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#263957',
+  },
+  cardHeader: { marginBottom: 12 },
+  cardTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  cardName: { flex: 1, fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginRight: 8 },
+  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#0A1425', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  availDot: { width: 8, height: 8, borderRadius: 4 },
+  availText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
+  cardAddress: { color: '#64748B', fontSize: 13 },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  distance: { color: '#64748B', fontSize: 12, flex: 1 },
+  amenities: { flexDirection: 'row', gap: 4 },
+  badge: { backgroundColor: '#0A1425', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeText: { color: '#94A3B8', fontSize: 10 },
+  price: { color: '#EF010C', fontSize: 16, fontWeight: '800' },
+  priceUnit: { color: '#64748B', fontSize: 11, fontWeight: '400' },
+});

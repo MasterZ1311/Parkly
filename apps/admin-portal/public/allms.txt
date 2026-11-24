@@ -1,0 +1,5 @@
+# Parkly Admin Portal — Multi-Agent System Registry (allms.txt)
+Domain: https://admin.parkly.in
+API: https://api.parkly.in/api/v1
+Service: parkly-admin-portal
+Scope: Administrative & Smart City Operations Command Center

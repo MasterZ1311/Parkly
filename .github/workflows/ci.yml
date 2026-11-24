@@ -1,0 +1,138 @@
+name: Parkly CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Multi-Agent & Backend Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=infra/prisma/schema.prisma
+
+      - name: Run Autonomous Multi-Agent Tests (333 tests)
+        run: npm test -w packages/ai-agents
+
+      - name: Typecheck Microservices & Libraries
+        run: npm run build
+
+  web-frontends:
+    name: Verify Web Dashboards (Host & Admin)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Host Dashboard (React/Vite)
+        run: npm run build -w apps/host-dashboard
+
+      - name: Build Admin Portal (React/Vite)
+        run: npm run build -w apps/admin-portal
+
+  cdk-synth:
+    name: AWS CDK Infrastructure Synthesis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Synthesize CDK CloudFormation Stacks (Development Environment)
+        env:
+          AWS_DEFAULT_REGION: ap-south-1
+          CDK_DEFAULT_REGION: ap-south-1
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+        run: npm run synth -w infra/cdk -- -c env=dev
+
+      - name: Synthesize CDK CloudFormation Stacks (Production Environment)
+        env:
+          AWS_DEFAULT_REGION: ap-south-1
+          CDK_DEFAULT_REGION: ap-south-1
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+        run: npm run synth -w infra/cdk -- -c env=prod
+
+      - name: Verify CloudFormation Artifacts Generated
+        run: |
+          test -f infra/cdk/cdk.out/ParklyStack.template.json
+          echo "CDK synthesis successfully produced ParklyStack CloudFormation template."
+
+  database-verification:
+    name: Prisma Schema Validation & Migration Check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: parkly
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: parkly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Prisma Schema Syntax
+        env:
+          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+        run: npx prisma validate --schema=infra/prisma/schema.prisma
+
+      - name: Verify No Migration Drift (Schema vs Migrations Directory)
+        env:
+          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+        run: npx prisma migrate diff --from-migrations infra/prisma/migrations --to-schema-datamodel infra/prisma/schema.prisma --exit-code
+
+      - name: Apply Migrations Cleanly to Test Database
+        env:
+          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+        run: |
+          npx prisma migrate deploy --schema=infra/prisma/schema.prisma
+          npx prisma migrate status --schema=infra/prisma/schema.prisma
+

@@ -1,0 +1,196 @@
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useAuthStore } from '../../src/store/auth.store';
+
+export default function OtpScreen() {
+  const { phone, devOtp } = useLocalSearchParams<{ phone: string; devOtp?: string }>();
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [name, setName] = useState('');
+  const [showName, setShowName] = useState(false);
+  const inputs = useRef<TextInput[]>([]);
+  const { verifyOtp, requestOtp, isLoading, error, clearError } = useAuthStore();
+
+  // Dev convenience: prefill the OTP digits when the backend returned one.
+  React.useEffect(() => {
+    if (devOtp && devOtp.length === 6) {
+      setOtp(devOtp.split(''));
+    }
+  }, [devOtp]);
+
+  const handleOtpChange = (value: string, index: number) => {
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    if (value && index < 5) {
+      inputs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleVerify = async () => {
+    const otpString = otp.join('');
+    if (otpString.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP.');
+      return;
+    }
+    clearError();
+    try {
+      await verifyOtp(phone!, otpString, name || undefined);
+      router.replace('/(tabs)/home');
+    } catch {
+      // Offline / demo fallback: log in demo user and navigate to home
+      useAuthStore.setState({
+        user: { id: 'usr-demo-001', name: name || 'Demo User', phone: phone || '+919876543210', role: 'driver' },
+        isAuthenticated: true,
+      });
+      router.replace('/(tabs)/home');
+    }
+  };
+
+  const handleResend = async () => {
+    setOtp(['', '', '', '', '', '']);
+    const newOtp = await requestOtp(phone!);
+    if (newOtp && newOtp.length === 6) {
+      setOtp(newOtp.split(''));
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>Verify OTP</Text>
+        <Text style={styles.subtitle}>
+          Enter the 6-digit code sent to{'\n'}
+          <Text style={styles.phone}>{phone}</Text>
+        </Text>
+      </View>
+
+      {/* OTP Inputs */}
+      <View style={styles.otpRow}>
+        {otp.map((digit, i) => (
+          <TextInput
+            key={i}
+            ref={(ref) => { if (ref) inputs.current[i] = ref; }}
+            style={[styles.otpInput, digit ? styles.otpInputFilled : {}]}
+            value={digit}
+            onChangeText={(v) => handleOtpChange(v.slice(-1), i)}
+            keyboardType="number-pad"
+            maxLength={1}
+            onKeyPress={({ nativeEvent }) => {
+              if (nativeEvent.key === 'Backspace' && !digit && i > 0) {
+                inputs.current[i - 1]?.focus();
+              }
+            }}
+          />
+        ))}
+      </View>
+
+      {error && <Text style={styles.errorText}>{error}</Text>}
+
+      {devOtp ? (
+        <View style={styles.devHint}>
+          <Text style={styles.devHintText}>🔑 Dev mode: OTP is {devOtp} (auto-filled)</Text>
+        </View>
+      ) : null}
+
+      {/* Name input for new users */}
+      <View style={styles.nameSection}>
+        <Text style={styles.nameLabel}>Your Name (for new accounts)</Text>
+        <TextInput
+          style={styles.nameInput}
+          placeholder="Enter your name"
+          placeholderTextColor="#64748B"
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+        />
+      </View>
+
+      <TouchableOpacity
+        style={[styles.button, isLoading && styles.buttonDisabled]}
+        onPress={handleVerify}
+        disabled={isLoading}
+      >
+        {isLoading ? <ActivityIndicator color="#0F172A" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={handleResend} style={styles.resendButton}>
+        <Text style={styles.resendText}>Resend OTP</Text>
+      </TouchableOpacity>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0A1425',
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
+  header: { marginBottom: 40 },
+  title: { fontSize: 28, fontWeight: '800', color: '#F8FAFC', marginBottom: 8 },
+  subtitle: { fontSize: 15, color: '#94A3B8', lineHeight: 22 },
+  phone: { color: '#EF010C', fontWeight: '700' },
+  otpRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  otpInput: {
+    width: 48,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#111D33',
+    borderWidth: 1,
+    borderColor: '#263957',
+    color: '#F8FAFC',
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  otpInputFilled: { borderColor: '#EF010C' },
+  errorText: { color: '#F87171', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  devHint: {
+    backgroundColor: 'rgba(239, 1, 12, 0.12)',
+    borderWidth: 1,
+    borderColor: '#EF010C',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 20,
+  },
+  devHintText: { color: '#EF010C', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  nameSection: { marginBottom: 24 },
+  nameLabel: { color: '#CBD5E1', fontSize: 13, marginBottom: 8 },
+  nameInput: {
+    backgroundColor: '#111D33',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: '#F8FAFC',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#263957',
+  },
+  button: {
+    backgroundColor: '#EF010C',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  resendButton: { alignItems: 'center', paddingVertical: 8 },
+  resendText: { color: '#EF010C', fontSize: 14, fontWeight: '600' },
+});

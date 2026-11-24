@@ -1,0 +1,9 @@
+# Parkly Host Dashboard — Robots Exclusion Standard
+User-agent: *
+Allow: /
+Allow: /listings
+Allow: /revenue
+Disallow: /settings
+Disallow: /api/
+
+Sitemap: https://host.parkly.in/sitemap.xml
