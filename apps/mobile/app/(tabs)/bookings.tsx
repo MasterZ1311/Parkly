@@ -165,7 +165,7 @@ export default function BookingsScreen() {
       ) : (
         <FlatList
           data={displayed}
-          keyExtractor={item => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           renderItem={renderBooking}
           contentContainerStyle={styles.list}
           refreshing={loading}

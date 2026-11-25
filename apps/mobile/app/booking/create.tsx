@@ -97,7 +97,7 @@ export default function BookingCreateScreen() {
       setStep('success');
     } catch (err: any) {
       console.warn('Booking API offline, proceeding with verified demo booking:', err);
-      const bookingId = 'bk-demo-001';
+      const bookingId = `bk-demo-${String(Date.now()).slice(-3)}`;
       setConfirmedBookingId(bookingId);
       const newBooking = {
         id: bookingId,
@@ -108,9 +108,13 @@ export default function BookingCreateScreen() {
         totalAmount: grandTotal,
         type: 'instant',
       };
-      cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS).then((cached) => {
-        cacheSet(CACHE_KEYS.RECENT_BOOKINGS, [newBooking, ...(cached || [])]);
-      });
+      try {
+        const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+        const deduped = cached.filter((item) => item.id !== bookingId);
+        await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, [newBooking, ...deduped]);
+      } catch (cacheErr) {
+        console.warn('Failed to cache demo booking:', cacheErr);
+      }
       setStep('success');
     } finally {
       setLoading(false);
