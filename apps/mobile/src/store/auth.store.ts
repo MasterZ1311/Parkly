@@ -3,14 +3,18 @@
 // ============================================================
 
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { authApi, notificationApi } from '../api/client';
+import { authApi, notificationApi, USE_MOCK_DATA } from '../api/client';
 import { cacheGet, cacheSet, cacheRemove, CACHE_KEYS } from '../utils/cache';
+
+const LOGGED_OUT_KEY = '@parkly/explicit_logout';
 
 export interface AuthUser {
   id: string;
   name: string;
   phone: string;
+  email?: string;
   role: 'driver' | 'host' | 'admin';
 }
 
@@ -60,6 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       await SecureStore.setItemAsync('access_token', tokens.accessToken);
       await SecureStore.setItemAsync('refresh_token', tokens.refreshToken);
+      await AsyncStorage.removeItem(LOGGED_OUT_KEY).catch(() => {});
       await cacheSet(CACHE_KEYS.USER_PROFILE, user);
 
       set({ user, isAuthenticated: true, isOffline: false, isLoading: false });
@@ -88,6 +93,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     await cacheRemove(CACHE_KEYS.USER_PROFILE);
     await cacheRemove(CACHE_KEYS.RECENT_BOOKINGS);
+    await AsyncStorage.setItem(LOGGED_OUT_KEY, 'true').catch(() => {});
     set({ user: null, isAuthenticated: false, isOffline: false });
   },
 
@@ -103,6 +109,25 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
     } catch {
       // Ignore initial cache read error
+    }
+
+    if (!token && USE_MOCK_DATA) {
+      const explicitlyLoggedOut = await AsyncStorage.getItem(LOGGED_OUT_KEY).catch(() => null);
+      if (explicitlyLoggedOut !== 'true') {
+        try {
+          const { data } = await authApi.getMe();
+          const defaultUser = data?.data?.user as AuthUser | undefined;
+          if (defaultUser) {
+            await SecureStore.setItemAsync('access_token', 'parkly.driver.session.token').catch(() => {});
+            await SecureStore.setItemAsync('refresh_token', 'parkly.driver.refresh.token').catch(() => {});
+            await cacheSet(CACHE_KEYS.USER_PROFILE, defaultUser);
+            set({ user: defaultUser, isAuthenticated: true, isOffline: false });
+            return;
+          }
+        } catch {
+          // Continue normal unauthenticated path
+        }
+      }
     }
 
     if (!token) {

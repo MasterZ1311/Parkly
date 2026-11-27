@@ -15,9 +15,12 @@ import { userService } from '../services/userService';
 import {
   authenticate,
   ValidationError,
+  NotFoundError,
+  ConflictError,
   ApiResponse,
   logger,
   normalizePhoneNumber,
+  getConfig,
 } from '@parkly/shared';
 
 export const authRouter = Router();
@@ -64,16 +67,15 @@ authRouter.post('/otp/request', async (req: Request, res: Response, next: NextFu
     const phone = normalizePhoneNumber(rawPhone);
     const otp = await otpService.requestOtp(phone);
 
-    // Dev convenience: when not running in production, return the OTP in the
-    // response so testers can sign in on web without real SMS delivery.
-    const isProd = process.env['NODE_ENV'] === 'production';
+    // Dev convenience: only return devOtp when explicitly allowed outside production.
+    const includeDevOtp = getConfig().returnDevOtp;
 
     const response: ApiResponse = {
       success: true,
       data: {
         message: 'OTP sent successfully',
         phone,
-        ...(isProd ? {} : { devOtp: otp }),
+        ...(includeDevOtp ? { devOtp: otp } : {}),
       },
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     };
@@ -179,11 +181,118 @@ authRouter.post('/logout', authenticate, (req: Request, res: Response) => {
 authRouter.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await userService.findById(req.user!.sub);
-    if (!user) throw new ValidationError('User not found');
+    if (!user) throw new NotFoundError('User not found');
 
     res.status(200).json({
       success: true,
       data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- GET /auth/profile ---
+authRouter.get('/profile', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await userService.findById(req.user!.sub);
+    if (!user) throw new NotFoundError('User not found');
+
+    res.status(200).json({
+      success: true,
+      data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const updateProfileSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  email: z.string().email().optional(),
+  bankAccount: z.string().max(60).optional(),
+  ifscCode: z.string().max(20).optional(),
+});
+
+// --- PATCH /auth/profile ---
+authRouter.patch('/profile', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid profile update');
+    }
+    const user = await userService.updateUser(req.user!.sub, parsed.data);
+    res.status(200).json({
+      success: true,
+      data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- Vehicle Management ---
+const vehicleSchema = z.object({
+  licensePlate: z
+    .string()
+    .transform((s) => s.trim().toUpperCase().replace(/\s+/g, ''))
+    .refine((s) => /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$/.test(s), {
+      message: 'License plate must follow Indian registration format (e.g. TN01AB1234)',
+    }),
+  vehicleType: z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck']).default('sedan'),
+  make: z.string().max(50).optional(),
+  model: z.string().max(50).optional(),
+  color: z.string().max(30).optional(),
+  isDefault: z.boolean().optional(),
+});
+
+// GET /auth/vehicles
+authRouter.get('/vehicles', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const vehicles = await userService.listVehicles(req.user!.sub);
+    res.status(200).json({
+      success: true,
+      data: { vehicles },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /auth/vehicles
+authRouter.post('/vehicles', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = vehicleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid vehicle payload');
+    }
+    const vehicle = await userService.upsertVehicle(req.user!.sub, parsed.data);
+    res.status(201).json({
+      success: true,
+      data: { vehicle },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err: any) {
+    if (err?.message === 'VEHICLE_OWNED_BY_OTHER_USER') {
+      next(new ConflictError('This license plate is already registered to another account'));
+      return;
+    }
+    next(err);
+  }
+});
+
+// DELETE /auth/vehicles/:id
+authRouter.delete('/vehicles/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const deleted = await userService.deleteVehicle(req.user!.sub, req.params['id']!);
+    if (!deleted) throw new NotFoundError('Vehicle not found');
+    res.status(200).json({
+      success: true,
+      data: { message: 'Vehicle removed' },
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     } as ApiResponse);
   } catch (err) {

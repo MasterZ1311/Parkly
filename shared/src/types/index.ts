@@ -165,6 +165,19 @@ export interface Booking {
   totalAmount: number;
   currency: Currency;
   paymentId?: string;
+  qrToken?: string;
+  space?: {
+    id: string;
+    name: string;
+    address: string;
+    latitude?: number;
+    longitude?: number;
+  };
+  vehicle?: {
+    id: string;
+    licensePlate: string;
+    vehicleType: VehicleType;
+  };
   cancellationReason?: string;
   cancelledAt?: string;
   completedAt?: string;
@@ -286,6 +299,7 @@ export interface SearchResponse {
 
 export interface ParkingSpaceResult {
   id: string;
+  hostId?: string;
   name: string;
   address: string;
   coordinates: Coordinates;

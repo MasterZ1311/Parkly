@@ -36,6 +36,8 @@
     "dev:prediction": "npm run dev -w services/prediction-service",
     "dev:host-dashboard": "npm run dev -w apps/host-dashboard",
     "dev:admin-portal": "npm run dev -w apps/admin-portal",
+    "dev:mobile": "npm --prefix apps/mobile start",
+    "typecheck:mobile": "npx --prefix apps/mobile tsc --noEmit",
     "migrate": "npx prisma migrate dev --schema=infra/prisma/schema.prisma",
     "migrate:deploy": "npx prisma migrate deploy --schema=infra/prisma/schema.prisma",
     "prisma:generate": "npx prisma generate --schema=infra/prisma/schema.prisma",

@@ -6,22 +6,34 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { searchService } from '../services/searchService';
-import { authenticate, ValidationError, ApiResponse } from '@parkly/shared';
+import {
+  authenticate,
+  optionalAuthenticate,
+  ValidationError,
+  ApiResponse,
+  haversineDistanceKm,
+} from '@parkly/shared';
 import { PrismaClient } from '@prisma/client';
 import {
   DriverConciergeAgent,
-  MockSearchServiceProvider,
+  ISearchServiceTool,
+  SearchCandidateSpace,
+  SearchQueryParams,
   MockBookingServiceProvider,
   MockTrafficMonitorProvider,
   ExecutionContext,
+  ok,
+  err,
+  AgentError,
+  Result,
 } from '@parkly/ai-agents';
 
 const prisma = new PrismaClient();
 
 export const searchRouter = Router();
 
-// All search routes require authentication
-searchRouter.use(authenticate);
+// Public discovery routes accept optional auth; AI concierge enforces JWT auth
+searchRouter.use(optionalAuthenticate);
 
 const locationInputSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), value: z.string().min(1).max(200) }),
@@ -81,15 +93,65 @@ searchRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
   }
 });
 
-// Autonomous Driver Concierge Agent
+// Live PostgreSQL-backed search tool for DriverConciergeAgent
+class PrismaSearchServiceTool implements ISearchServiceTool {
+  async searchSpaces(params: SearchQueryParams): Promise<Result<SearchCandidateSpace[], AgentError>> {
+    try {
+      const q = (params.query || '').toLowerCase();
+      const spaces = await prisma.parkingSpace.findMany({
+        where: {
+          status: 'active',
+          ...(params.evOnly ? { evCharging: true } : {}),
+          ...(params.coveredOnly ? { covered: true } : {}),
+          ...(params.maxRate !== undefined ? { hourlyRate: { lte: params.maxRate } } : {}),
+        },
+        take: 100,
+      });
+
+      const locationHints = [
+        't nagar', 'tnagar', 'pothys', 'anna nagar', 'adyar', 'velachery', 'omr', 'guindy', 'mylapore',
+      ].filter((hint) => q.includes(hint));
+
+      const candidates: SearchCandidateSpace[] = spaces
+        .map((s) => {
+          const lat = Number(s.latitude);
+          const lng = Number(s.longitude);
+          const distMeters = Math.round(haversineDistanceKm(params.latitude, params.longitude, lat, lng) * 1000);
+          const haystack = `${s.name} ${s.address} ${s.city}`.toLowerCase();
+          const textBoost = locationHints.some((h) => haystack.includes(h.replace('pothys', 't nagar'))) ? 0.35 : 0;
+          const distScore = Math.max(0, 1 - distMeters / 20000);
+          const priceScore = Math.max(0, 1 - Number(s.hourlyRate) / 200);
+          return {
+            id: s.id,
+            name: s.name,
+            address: s.address,
+            latitude: lat,
+            longitude: lng,
+            distanceMeters: distMeters,
+            hourlyRate: Number(s.hourlyRate),
+            evCharging: s.evCharging,
+            covered: s.covered,
+            recommendationScore: Number((0.45 * distScore + 0.2 * priceScore + textBoost).toFixed(4)),
+          };
+        })
+        .sort((a, b) => b.recommendationScore - a.recommendationScore);
+
+      return ok(candidates);
+    } catch (e: any) {
+      return err(AgentError.downstream(`Database search failed: ${e.message}`));
+    }
+  }
+}
+
+// Autonomous Driver Concierge Agent backed by live Prisma inventory
 const driverConciergeAgent = new DriverConciergeAgent({
-  searchTool: new MockSearchServiceProvider(),
+  searchTool: new PrismaSearchServiceTool(),
   bookingTool: new MockBookingServiceProvider(),
   trafficTool: new MockTrafficMonitorProvider(),
 });
 
 // POST /search/concierge — Conversational/Intent-based AI driver concierge
-searchRouter.post('/concierge', async (req: Request, res: Response, next: NextFunction) => {
+searchRouter.post('/concierge', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { query, currentLocation } = req.body;
     if (!query || typeof query !== 'string') {

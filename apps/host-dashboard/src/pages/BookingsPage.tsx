@@ -5,7 +5,8 @@ import { useDocumentTitle } from '../utils/useDocumentTitle';
 
 export default function BookingsPage() {
   useDocumentTitle('Reservations & Bookings');
-  const { bookings, loading } = useBookings();
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const { bookings, loading, error } = useBookings(statusFilter);
   const [selected, setSelected] = useState<HostBooking | null>(null);
 
   const activeCount = bookings.filter((b) => b.status === 'active' || b.status === 'confirmed').length;
@@ -20,18 +21,31 @@ export default function BookingsPage() {
           <h1 className="page-title">Reservations &amp; Bookings</h1>
           <p className="page-subtitle">Track active sessions, check-in timestamps, and driver vehicle details.</p>
         </div>
+        <select
+          className="form-select"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="all">All Statuses</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
       </div>
+
+      {error && <div className="alert-error">{error}</div>}
 
       {/* Summary */}
       <div className="grid-4" style={{ marginBottom: 24 }}>
         {[
-          { label: 'Active Now', value: String(activeCount || 1), color: '#38BDF8', bg: '#38BDF820', icon: '🚗' },
-          { label: 'Completed', value: String(completedCount || 3), color: '#22C55E', bg: '#22C55E20', icon: '✅' },
-          { label: 'Total Reservations', value: String(bookings.length || 5), color: '#8B5CF6', bg: '#8B5CF620', icon: '📊' },
-          { label: 'Cancelled', value: String(cancelledCount || 1), color: '#EF4444', bg: '#EF444420', icon: '❌' },
+          { label: 'Active / Confirmed', value: String(activeCount), color: '#EF010C', bg: 'rgba(239,1,12,0.15)', icon: '🚗' },
+          { label: 'Completed', value: String(completedCount), color: '#10B981', bg: '#10B98120', icon: '✅' },
+          { label: 'Total Reservations', value: String(bookings.length), color: '#8B5CF6', bg: '#8B5CF620', icon: '📊' },
+          { label: 'Cancelled', value: String(cancelledCount), color: '#F59E0B', bg: '#F59E0B20', icon: '❌' },
         ].map((s) => (
           <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg }}>{s.icon}</div>
+            <div className="stat-icon" style={{ background: s.bg, color: s.color }}>{s.icon}</div>
             <div>
               <div className="stat-value">{s.value}</div>
               <div className="stat-label">{s.label}</div>
@@ -44,6 +58,8 @@ export default function BookingsPage() {
         <div className="table-wrap">
           {loading ? (
             <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading bookings...</div>
+          ) : bookings.length === 0 ? (
+            <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>No bookings match this filter.</div>
           ) : (
             <table>
               <thead>
@@ -63,16 +79,16 @@ export default function BookingsPage() {
                 {bookings.map((b) => (
                   <tr key={b.id}>
                     <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{b.id.slice(0, 8)}</td>
-                    <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.driverName || 'Guest Driver'}</td>
+                    <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.driverName || 'Driver'}</td>
                     <td>
-                      <span className="badge badge-blue">{b.vehiclePlate || 'TN01AB1234'}</span>
+                      <span className="badge badge-blue">{b.vehiclePlate || '—'}</span>
                     </td>
-                    <td>{b.spaceName || 'T Nagar Spot A'}</td>
+                    <td>{b.spaceName}</td>
                     <td style={{ fontSize: 12 }}>
-                      {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(b.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td style={{ fontSize: 12 }}>
-                      {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(b.endTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
                     <td>
@@ -107,19 +123,20 @@ export default function BookingsPage() {
           <div className="modal" style={{ maxWidth: 480 }}>
             <div className="modal-header">
               <h2 className="modal-title">Booking Details #{selected.id.slice(0, 8)}</h2>
-              <button className="btn btn-outline" style={{ padding: '4px 10px' }} onClick={() => setSelected(null)}>
+              <button className="btn btn-secondary" style={{ padding: '4px 10px' }} onClick={() => setSelected(null)}>
                 ✕
               </button>
             </div>
-            <div className="modal-body" style={{ gap: 14 }}>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>DRIVER</div>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selected.driverName || 'Arjun K.'}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selected.driverName}</div>
+                  {selected.driverPhone && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{selected.driverPhone}</div>}
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>VEHICLE PLATE</div>
-                  <div style={{ fontWeight: 700, color: 'var(--accent)' }}>{selected.vehiclePlate || 'TN01AB1234'}</div>
+                  <div style={{ fontWeight: 700, color: 'var(--accent)' }}>{selected.vehiclePlate}</div>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

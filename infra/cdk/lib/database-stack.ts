@@ -7,11 +7,13 @@ import { Construct } from 'constructs';
 
 export interface DatabaseStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
+  ecsServiceSg?: ec2.ISecurityGroup;
 }
 
 export class DatabaseStack extends cdk.Stack {
   public readonly database: rds.DatabaseInstance;
   public readonly dbSecret: secretsmanager.Secret;
+  public readonly dbSecurityGroup: ec2.SecurityGroup;
   public readonly otpTable: dynamodb.Table;
   public readonly occupancyTable: dynamodb.Table;
   public readonly notificationsTable: dynamodb.Table;
@@ -33,11 +35,18 @@ export class DatabaseStack extends cdk.Stack {
       },
     });
 
-    const dbSg = new ec2.SecurityGroup(this, 'DbSg', {
+    this.dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSg', {
       vpc: props.vpc,
       securityGroupName: `${prefix}-rds-sg`,
       description: 'Security group for Parkly PostgreSQL RDS',
     });
+    if (props.ecsServiceSg) {
+      this.dbSecurityGroup.addIngressRule(
+        props.ecsServiceSg,
+        ec2.Port.tcp(5432),
+        'Allow Parkly ECS microservices to access RDS PostgreSQL',
+      );
+    }
 
     // ─── PostgreSQL RDS ──────────────────────────────────────
     this.database = new rds.DatabaseInstance(this, 'ParklyDb', {
@@ -50,7 +59,7 @@ export class DatabaseStack extends cdk.Stack {
         : ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [dbSg],
+      securityGroups: [this.dbSecurityGroup],
       credentials: rds.Credentials.fromSecret(this.dbSecret),
       databaseName: 'parkly',
       multiAz: isProd,

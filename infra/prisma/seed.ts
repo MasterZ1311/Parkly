@@ -259,6 +259,142 @@ async function main() {
   });
 
   console.log('✅ Pricing rules created');
+
+  // ── Sample Pending Space for Admin Verification Queue ──────
+  await prisma.parkingSpace.upsert({
+    where: { id: 'sp-ann-pending-01' },
+    update: {},
+    create: {
+      id: 'sp-ann-pending-01',
+      hostId: host.id,
+      name: 'Anna Nagar West Commercial Bay',
+      description: 'Covered multi-bay parking near 2nd Avenue.',
+      latitude: 13.0849,
+      longitude: 80.2101,
+      geohash: encodeGeohash(13.0849, 80.2101, 6),
+      address: '42, 2nd Avenue, Anna Nagar',
+      city: 'Chennai',
+      state: 'Tamil Nadu',
+      pincode: '600040',
+      regionId: chennaiRegion.id,
+      totalCapacity: 14,
+      vehicleTypes: ['motorcycle', 'compact', 'sedan', 'suv'],
+      evCharging: true,
+      covered: true,
+      securityLevel: 'monitored',
+      accessibility: [],
+      cctv: true,
+      lighting: true,
+      attendant: false,
+      hourlyRate: 50,
+      currency: 'INR',
+      dynamicPricing: true,
+      minBookingHours: 1,
+      maxBookingHours: 24,
+      photoUrls: [],
+      status: 'pending_verification',
+    },
+  });
+
+  // ── Sample Booking + Payment + Dispute ───────────────────
+  const sampleStart = new Date(Date.now() - 2 * 3600 * 1000);
+  const sampleEnd = new Date(Date.now() + 1 * 3600 * 1000);
+  const driverVehicle = await prisma.vehicle.findUnique({ where: { licensePlate: 'TN01AB1234' } });
+
+  if (driverVehicle) {
+    const sampleBooking = await prisma.booking.upsert({
+      where: { id: 'bk-seed-001' },
+      update: {},
+      create: {
+        id: 'bk-seed-001',
+        userId: driverUser.id,
+        spaceId: 'sp-tng-001',
+        vehicleId: driverVehicle.id,
+        hostId: host.id,
+        type: 'instant',
+        status: 'confirmed',
+        startTime: sampleStart,
+        endTime: sampleEnd,
+        durationMinutes: 180,
+        totalAmount: 126,
+        currency: 'INR',
+      },
+    });
+
+    await prisma.payment.upsert({
+      where: { bookingId: sampleBooking.id },
+      update: {},
+      create: {
+        id: 'pay-seed-001',
+        bookingId: sampleBooking.id,
+        userId: driverUser.id,
+        amount: 126,
+        currency: 'INR',
+        provider: 'mock',
+        providerOrderId: 'MOCK_ORDER_SEED_001',
+        providerPaymentId: 'MOCK_PAY_SEED_001',
+        tokenRef: 'TOKEN_SEED_001',
+        status: 'completed',
+      },
+    });
+
+    await prisma.dispute.upsert({
+      where: { bookingId: sampleBooking.id },
+      update: {},
+      create: {
+        id: 'disp-seed-001',
+        bookingId: sampleBooking.id,
+        raisedBy: driverUser.id,
+        disputeType: 'other',
+        description: 'Overstay sensor check around Panagal Park exit lane (45m claimed).',
+        status: 'open',
+      },
+    });
+  }
+
+  // ── Operational Alerts, Audit Logs & Default Settings ────
+  await prisma.systemAlert.upsert({
+    where: { id: 'alert-seed-001' },
+    update: {},
+    create: {
+      id: 'alert-seed-001',
+      severity: 'warning',
+      title: 'Pending Host Verification Queue',
+      detail: 'Anna Nagar West Commercial Bay is awaiting operator verification.',
+      source: 'host-service',
+      resolved: false,
+    },
+  });
+
+  await prisma.auditLog.upsert({
+    where: { id: 'audit-seed-001' },
+    update: {},
+    create: {
+      id: 'audit-seed-001',
+      actorId: adminUser.id,
+      actorName: adminUser.email || adminUser.phone,
+      action: 'SYSTEM_SEED_INITIALIZED',
+      target: 'chennai-tn-in',
+      ipAddress: '127.0.0.1',
+    },
+  });
+
+  const defaultSettings: Array<[string, string]> = [
+    ['platformName', 'Parkly'],
+    ['supportEmail', 'support@parkly.in'],
+    ['city', 'Chennai'],
+    ['platformFee', '15'],
+    ['autoApprove', 'false'],
+    ['maintenanceMode', 'false'],
+  ];
+  for (const [key, value] of defaultSettings) {
+    await prisma.platformSetting.upsert({
+      where: { key },
+      update: {},
+      create: { key, value, updatedBy: adminUser.id },
+    });
+  }
+
   console.log('\n🎉 Seeding complete! Database is ready for development.');
 }
 

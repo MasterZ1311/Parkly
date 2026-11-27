@@ -11,6 +11,8 @@ export const CACHE_KEYS = {
   LAST_SEARCH: '@parkly/last_search',
   LAST_CONCIERGE_REC: '@parkly/last_concierge_rec',
   CACHED_SPACES: '@parkly/cached_spaces',
+  SAVED_PLACES: '@parkly/saved_places',
+  PREFERRED_UPI: '@parkly/preferred_upi',
   NETWORK_STATUS: '@parkly/network_status',
 } as const;
 

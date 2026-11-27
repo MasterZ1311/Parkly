@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -7,44 +7,48 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
-  Legend,
 } from 'recharts';
 import { adminApi } from '../utils/apiClient';
 import Breadcrumbs from '../components/Breadcrumbs';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+
+interface ChokePointMetric {
+  intersection: string;
+  unsatisfiedSearches: number;
+}
 
 export default function CityAnalytics() {
   useDocumentTitle('City Mobility & Carbon Analytics');
 
   const [period, setPeriod] = useState('2026-W36');
   const [selectedZone, setSelectedZone] = useState('all');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const [analyticsData, setAnalyticsData] = useState({
-    offStreetHoursSupplied: 14280,
-    cruisingMinutesReduced: 52400,
-    co2AbatedKg: 1842.5,
-    activeCorridorsCount: 8,
-    chokePoints: [
-      { name: 'Panagal Park North Intersection', zone: 'T Nagar', severity: 'HIGH', cruisingMinutes: 18400, delayRelief: '38%' },
-      { name: 'Roundtana 2nd Avenue Junction', zone: 'Anna Nagar', severity: 'MODERATE', cruisingMinutes: 14200, delayRelief: '27%' },
-      { name: 'Madhya Kailash Tech Junction', zone: 'OMR Corridor', severity: 'HIGH', cruisingMinutes: 12600, delayRelief: '31%' },
-      { name: 'Lattice Bridge Road Cross', zone: 'Adyar', severity: 'LOW', cruisingMinutes: 7200, delayRelief: '19%' },
-    ],
-    zonePerformance: [
-      { zone: 'T Nagar', offStreetHrs: 5200, co2Abated: 680, cruisingSaved: 21000 },
-      { zone: 'Anna Nagar', offStreetHrs: 3800, co2Abated: 490, cruisingSaved: 15200 },
-      { zone: 'OMR', offStreetHrs: 3400, co2Abated: 440, cruisingSaved: 11400 },
-      { zone: 'Adyar', offStreetHrs: 1880, co2Abated: 232, cruisingSaved: 4800 },
-    ],
+  const [analyticsData, setAnalyticsData] = useState<{
+    offStreetHoursProvided: number;
+    cruisingMinutesReduced: number;
+    co2AbatedKg: number;
+    chokePoints: ChokePointMetric[];
+    recommendation: string;
+    reportGeneratedAt: string;
+  }>({
+    offStreetHoursProvided: 0,
+    cruisingMinutesReduced: 0,
+    co2AbatedKg: 0,
+    chokePoints: [],
+    recommendation: '',
+    reportGeneratedAt: '',
   });
 
-  const handleRunAnalysis = async () => {
+  const handleRunAnalysis = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
-      const zones = selectedZone === 'all' ? ['t-nagar', 'anna-nagar', 'omr', 'adyar'] : [selectedZone];
+      const zones =
+        selectedZone === 'all'
+          ? ['t-nagar', 'anna-nagar', 'omr', 'adyar']
+          : [selectedZone];
       const res = await adminApi.getCityAnalytics({
         cityId: 'chennai',
         period,
@@ -52,20 +56,32 @@ export default function CityAnalytics() {
       });
 
       const data = res.data?.data;
-      if (data) {
-        setAnalyticsData((prev) => ({
-          ...prev,
-          offStreetHoursSupplied: data.totalOffStreetHoursSupplied || prev.offStreetHoursSupplied,
-          cruisingMinutesReduced: data.cruisingMinutesReduced || prev.cruisingMinutesReduced,
-          co2AbatedKg: data.co2AbatedKg || prev.co2AbatedKg,
-        }));
+      const metrics = data?.metrics || data;
+      if (metrics) {
+        setAnalyticsData({
+          offStreetHoursProvided: Number(metrics.totalOffStreetHoursProvided || 0),
+          cruisingMinutesReduced: Number(metrics.estimatedCurbsideCruisingReducedMinutes || 0),
+          co2AbatedKg: Number(metrics.estimatedCO2AbatedKg || 0),
+          chokePoints: Array.isArray(metrics.unmetDemandChokePoints)
+            ? metrics.unmetDemandChokePoints.map((cp: any) => ({
+                intersection: String(cp.intersection || cp.zone || 'Unknown Zone'),
+                unsatisfiedSearches: Number(cp.unsatisfiedSearches || 0),
+              }))
+            : [],
+          recommendation: data?.recommendation || '',
+          reportGeneratedAt: data?.reportGeneratedAt || new Date().toISOString(),
+        });
       }
     } catch (err: any) {
-      console.warn('Real-time analytics fetch warning, keeping local baseline:', err);
+      setError(err.response?.data?.error?.message || 'Unable to compute city mobility analytics');
     } finally {
       setLoading(false);
     }
-  };
+  }, [period, selectedZone]);
+
+  useEffect(() => {
+    handleRunAnalysis();
+  }, [handleRunAnalysis]);
 
   return (
     <div>
@@ -74,10 +90,22 @@ export default function CityAnalytics() {
         <div>
           <h1 className="page-title">Chennai Mobility &amp; Urban Carbon Analytics</h1>
           <p className="page-subtitle">
-            Autonomous multi-zone cruising reduction, off-street hour absorption &amp; CMDA carbon credits audit.
+            Autonomous multi-zone cruising reduction, off-street hour absorption &amp; CMDA carbon telemetry.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <select
+            className="form-select"
+            value={selectedZone}
+            onChange={(e) => setSelectedZone(e.target.value)}
+            style={{ width: 150 }}
+          >
+            <option value="all">All Chennai Zones</option>
+            <option value="t-nagar">T Nagar</option>
+            <option value="anna-nagar">Anna Nagar</option>
+            <option value="omr">OMR Corridor</option>
+            <option value="adyar">Adyar</option>
+          </select>
           <select
             className="form-select"
             value={period}
@@ -94,16 +122,18 @@ export default function CityAnalytics() {
         </div>
       </div>
 
+      {error && <div className="alert-error">{error}</div>}
+
       {/* KPI Cards */}
       <div className="grid-4" style={{ marginBottom: 24 }}>
         {[
-          { label: 'Off-Street Hours Supplied', value: `${analyticsData.offStreetHoursSupplied.toLocaleString()} hrs`, icon: '🅿️', color: '#38BDF8', bg: '#38BDF820' },
-          { label: 'Cruising Minutes Saved', value: `${analyticsData.cruisingMinutesReduced.toLocaleString()} min`, icon: '⏱️', color: '#22C55E', bg: '#22C55E20' },
-          { label: 'CO2 Abated (GCC)', value: `${analyticsData.co2AbatedKg.toLocaleString()} kg`, icon: '🌱', color: '#8B5CF6', bg: '#8B5CF620' },
-          { label: 'Congestion Relief Score', value: '88.4 / 100', icon: '🚦', color: '#F59E0B', bg: '#F59E0B20' },
+          { label: 'Off-Street Hours Supplied', value: `${analyticsData.offStreetHoursProvided.toLocaleString('en-IN')} hrs`, icon: '🅿️', color: '#EF010C', bg: 'rgba(239,1,12,0.15)' },
+          { label: 'Cruising Minutes Saved', value: `${analyticsData.cruisingMinutesReduced.toLocaleString('en-IN')} min`, icon: '⏱️', color: '#10B981', bg: '#10B98120' },
+          { label: 'CO2 Abated (GCC)', value: `${analyticsData.co2AbatedKg.toLocaleString('en-IN')} kg`, icon: '🌱', color: '#8B5CF6', bg: '#8B5CF620' },
+          { label: 'Choke Points Tracked', value: String(analyticsData.chokePoints.length), icon: '🚦', color: '#F59E0B', bg: '#F59E0B20' },
         ].map((s) => (
           <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg }}>{s.icon}</div>
+            <div className="stat-icon" style={{ background: s.bg, color: s.color }}>{s.icon}</div>
             <div>
               <div className="stat-value">{s.value}</div>
               <div className="stat-label">{s.label}</div>
@@ -112,77 +142,72 @@ export default function CityAnalytics() {
         ))}
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid-2" style={{ marginBottom: 24 }}>
-        <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Corridor Cruising Minutes Saved by Zone
-          </h3>
+      {analyticsData.recommendation && (
+        <div className="card" style={{ marginBottom: 24, borderColor: 'var(--green)' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', textTransform: 'uppercase', marginBottom: 6 }}>
+            AI Policy Recommendation
+          </div>
+          <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>{analyticsData.recommendation}</p>
+        </div>
+      )}
+
+      {/* Unmet Demand Chart */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
+          Unsatisfied Demand Hotspots by Corridor
+        </h3>
+        {analyticsData.chokePoints.length === 0 ? (
+          <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            {loading ? 'Running city analytics...' : 'No unmet demand choke points reported for this period.'}
+          </div>
+        ) : (
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={analyticsData.zonePerformance}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="zone" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }} />
-              <Bar dataKey="cruisingSaved" fill="#EF010C" name="Cruising Saved (min)" radius={[4, 4, 0, 0]} />
+            <BarChart data={analyticsData.chokePoints}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#263957" />
+              <XAxis dataKey="intersection" tick={{ fill: '#9CA3AF', fontSize: 12 }} />
+              <YAxis tick={{ fill: '#9CA3AF', fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: '#111D33', border: '1px solid #263957', borderRadius: 8, color: '#F9FAFB' }} />
+              <Bar dataKey="unsatisfiedSearches" fill="#EF010C" name="Unsatisfied Searches" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-
-        <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Carbon Credits &amp; Off-Street Hours
-          </h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={analyticsData.zonePerformance}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="zone" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }} />
-              <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
-              <Line type="monotone" dataKey="co2Abated" name="CO2 Abated (kg)" stroke="#22C55E" strokeWidth={2} />
-              <Line type="monotone" dataKey="offStreetHrs" name="Off-Street Hours" stroke="#38BDF8" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        )}
       </div>
 
-      {/* Critical Choke Points */}
+      {/* Critical Choke Points Table */}
       <div className="card">
         <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
-          🚨 Chennai GCC Corridor Choke Points &amp; Diversion Efficiency
+          🚨 Chennai Corridor Demand &amp; Supply Priority
         </h3>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Corridor / Choke Point</th>
-                <th>Chennai Zone</th>
-                <th>Traffic Severity</th>
-                <th>Cruising Minutes Reduced</th>
-                <th>Relief Factor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analyticsData.chokePoints.map((cp) => (
-                <tr key={cp.name}>
-                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{cp.name}</td>
-                  <td>
-                    <span className="badge badge-blue">{cp.zone}</span>
-                  </td>
-                  <td>
-                    <span className={`badge badge-${cp.severity === 'HIGH' ? 'red' : cp.severity === 'MODERATE' ? 'yellow' : 'green'}`}>
-                      {cp.severity}
-                    </span>
-                  </td>
-                  <td style={{ color: 'var(--green)', fontWeight: 700 }}>
-                    {cp.cruisingMinutes.toLocaleString()} min
-                  </td>
-                  <td style={{ fontWeight: 700, color: 'var(--accent)' }}>{cp.delayRelief}</td>
+          {analyticsData.chokePoints.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No choke point records.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Zone / Corridor</th>
+                  <th>Priority Level</th>
+                  <th>Unsatisfied Searches</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {analyticsData.chokePoints.map((cp) => {
+                  const severity = cp.unsatisfiedSearches >= 30 ? 'HIGH' : cp.unsatisfiedSearches >= 15 ? 'MODERATE' : 'LOW';
+                  return (
+                    <tr key={cp.intersection}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{cp.intersection}</td>
+                      <td>
+                        <span className={`badge badge-${severity === 'HIGH' ? 'red' : severity === 'MODERATE' ? 'yellow' : 'green'}`}>
+                          {severity}
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--accent)', fontWeight: 700 }}>{cp.unsatisfiedSearches}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

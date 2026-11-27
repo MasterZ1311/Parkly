@@ -26,6 +26,9 @@ import {
   generateId,
   publishEvent,
   ValidationError,
+  NotFoundError,
+  AuthorizationError,
+  ConflictError,
   ApiResponse,
   ParkingSpace,
   getHardenedCorsOptions,
@@ -33,10 +36,10 @@ import {
 import {
   HostOnboardingAgent,
   VisualInspectionAgent,
-  MockOcrProvider,
-  MockGeocodingProvider,
+  RealOCRProvider,
+  RealGeocodingProvider,
+  RealVisionProvider,
   MockZoningProvider,
-  MockVisionProvider,
   ExecutionContext,
 } from '@parkly/ai-agents';
 
@@ -75,6 +78,47 @@ const listingSchema = z.object({
     endTime: z.string().regex(/^\d{2}:\d{2}$/),
   })).optional(),
 });
+
+const payoutSchema = z.object({
+  amount: z.number().positive().max(1000000),
+});
+
+async function writeHostAuditLog(
+  actorId: string,
+  action: string,
+  target: string,
+  metadata?: Record<string, unknown>,
+  ipAddress?: string,
+) {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorId,
+        actorName: `host:${actorId.slice(0, 8)}`,
+        action,
+        target,
+        ipAddress: ipAddress || null,
+        metadata: (metadata || {}) as any,
+      },
+    });
+  } catch (err) {
+    logger.warn({ err, action, target }, 'Failed to persist host audit log');
+  }
+}
+
+async function verifySpaceAccess(spaceId: string, user: { sub: string; role: string }) {
+  const space = await prisma.parkingSpace.findUnique({
+    where: { id: spaceId },
+    include: { host: true, availabilitySlots: true },
+  });
+  if (!space) {
+    throw new NotFoundError('Listing not found');
+  }
+  if (space.host.userId !== user.sub && user.role !== 'admin') {
+    throw new AuthorizationError('Not authorized to access this listing');
+  }
+  return space;
+}
 
 const hostService = {
   async getOrCreateHost(userId: string): Promise<{ id: string }> {
@@ -116,7 +160,7 @@ const hostService = {
         minBookingHours: data.minBookingHours,
         maxBookingHours: data.maxBookingHours,
         photoUrls: [],
-        status: 'draft',
+        status: 'pending_verification',
       },
     });
 
@@ -141,19 +185,218 @@ const hostService = {
       data: { spaceId: space.id, hostId: host.id },
     });
 
+    await writeHostAuditLog(userId, 'HOST_LISTING_CREATED', space.id, {
+      name: space.name,
+      city: space.city,
+      hourlyRate: Number(space.hourlyRate),
+    });
+
     return mapSpace(space);
   },
 
   async getHostListings(userId: string): Promise<ParkingSpace[]> {
     const host = await prisma.host.findUnique({ where: { userId } });
     if (!host) return [];
-    const spaces = await prisma.parkingSpace.findMany({ where: { hostId: host.id } });
+    const spaces = await prisma.parkingSpace.findMany({
+      where: { hostId: host.id, status: { not: 'suspended' } },
+      include: { availabilitySlots: true },
+      orderBy: { createdAt: 'desc' },
+    });
     return spaces.map(mapSpace);
   },
 
-  async getPresignedUploadUrl(spaceId: string, filename: string): Promise<string> {
+  async updateListing(
+    spaceId: string,
+    user: { sub: string; role: string },
+    data: Partial<z.infer<typeof listingSchema>>,
+  ): Promise<ParkingSpace> {
+    const existing = await verifySpaceAccess(spaceId, user);
+    const lat = data.latitude ?? Number(existing.latitude);
+    const lng = data.longitude ?? Number(existing.longitude);
+    const geohash = (data.latitude !== undefined || data.longitude !== undefined)
+      ? encodeGeohash(lat, lng, 7)
+      : existing.geohash;
+
+    const updated = await prisma.parkingSpace.update({
+      where: { id: spaceId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        ...(data.latitude !== undefined ? { latitude: data.latitude } : {}),
+        ...(data.longitude !== undefined ? { longitude: data.longitude } : {}),
+        geohash,
+        ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.city !== undefined ? { city: data.city, regionId: data.city.toLowerCase().replace(/\s+/g, '-') } : {}),
+        ...(data.state !== undefined ? { state: data.state } : {}),
+        ...(data.pincode !== undefined ? { pincode: data.pincode } : {}),
+        ...(data.totalCapacity !== undefined ? { totalCapacity: data.totalCapacity } : {}),
+        ...(data.vehicleTypes !== undefined ? { vehicleTypes: data.vehicleTypes } : {}),
+        ...(data.evCharging !== undefined ? { evCharging: data.evCharging } : {}),
+        ...(data.covered !== undefined ? { covered: data.covered } : {}),
+        ...(data.securityLevel !== undefined ? { securityLevel: data.securityLevel } : {}),
+        ...(data.accessibility !== undefined ? { accessibility: data.accessibility } : {}),
+        ...(data.hourlyRate !== undefined ? { hourlyRate: data.hourlyRate } : {}),
+        ...(data.dynamicPricing !== undefined ? { dynamicPricing: data.dynamicPricing } : {}),
+        ...(data.minBookingHours !== undefined ? { minBookingHours: data.minBookingHours } : {}),
+        ...(data.maxBookingHours !== undefined ? { maxBookingHours: data.maxBookingHours } : {}),
+      },
+      include: { availabilitySlots: true },
+    });
+
+    await writeHostAuditLog(user.sub, 'HOST_LISTING_UPDATED', spaceId, {
+      fields: Object.keys(data),
+    });
+
+    return mapSpace(updated);
+  },
+
+  async deleteListing(spaceId: string, user: { sub: string; role: string }) {
+    await verifySpaceAccess(spaceId, user);
+    const activeCount = await prisma.booking.count({
+      where: {
+        spaceId,
+        status: { in: ['created', 'confirmed', 'active'] },
+        endTime: { gt: new Date() },
+      },
+    });
+    if (activeCount > 0) {
+      throw new ConflictError(`Cannot delete listing with ${activeCount} active or upcoming bookings`);
+    }
+
+    await prisma.parkingSpace.update({
+      where: { id: spaceId },
+      data: { status: 'suspended' },
+    });
+
+    await writeHostAuditLog(user.sub, 'HOST_LISTING_DELETED', spaceId);
+    return { id: spaceId, deleted: true };
+  },
+
+  async getHostBookings(userId: string, status?: string) {
+    const host = await prisma.host.findUnique({ where: { userId } });
+    if (!host) return [];
+    const where: any = { space: { hostId: host.id } };
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+    return prisma.booking.findMany({
+      where,
+      include: {
+        space: { select: { id: true, name: true, address: true, city: true } },
+        vehicle: { select: { id: true, licensePlate: true, vehicleType: true } },
+        user: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  },
+
+  async getHostRevenue(userId: string) {
+    const host = await prisma.host.findUnique({ where: { userId } });
+    if (!host) {
+      return {
+        totalEarnings: 0,
+        totalPayouts: 0,
+        availableBalance: 0,
+        grossRevenue: 0,
+        platformFees: 0,
+        netRevenue: 0,
+        monthlyBreakdown: [],
+        recentPayouts: [],
+      };
+    }
+
+    const [bookings, payouts] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          space: { hostId: host.id },
+          status: { in: ['confirmed', 'active', 'completed'] },
+        },
+        orderBy: { startTime: 'desc' },
+        take: 250,
+      }),
+      prisma.payout.findMany({
+        where: { hostId: host.id },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+      }),
+    ]);
+
+    const grossRevenue = bookings.reduce((sum, b) => sum + Number(b.totalAmount), 0);
+    const platformFees = Number((grossRevenue * 0.1).toFixed(2));
+    const netRevenue = Number((grossRevenue - platformFees).toFixed(2));
+    const totalEarnings = Math.max(Number(host.totalEarnings), netRevenue);
+    const totalPayouts = Number(host.totalPayouts);
+    const availableBalance = Math.max(0, Number((totalEarnings - totalPayouts).toFixed(2)));
+
+    const monthlyMap = new Map<string, { month: string; gross: number; fees: number; net: number; bookings: number }>();
+    for (const b of bookings) {
+      const monthKey = new Date(b.startTime).toISOString().slice(0, 7);
+      const entry = monthlyMap.get(monthKey) || { month: monthKey, gross: 0, fees: 0, net: 0, bookings: 0 };
+      const amt = Number(b.totalAmount);
+      const fee = Number((amt * 0.1).toFixed(2));
+      entry.gross = Number((entry.gross + amt).toFixed(2));
+      entry.fees = Number((entry.fees + fee).toFixed(2));
+      entry.net = Number((entry.net + amt - fee).toFixed(2));
+      entry.bookings += 1;
+      monthlyMap.set(monthKey, entry);
+    }
+
+    return {
+      totalEarnings,
+      totalPayouts,
+      availableBalance,
+      grossRevenue: Number(grossRevenue.toFixed(2)),
+      platformFees,
+      netRevenue,
+      monthlyBreakdown: Array.from(monthlyMap.values()).sort((a, b) => b.month.localeCompare(a.month)),
+      recentPayouts: payouts,
+    };
+  },
+
+  async requestPayout(userId: string, amount: number) {
+    const host = await prisma.host.findUnique({ where: { userId } });
+    if (!host) throw new NotFoundError('Host profile not found');
+
+    const payout = await prisma.$transaction(async (tx) => {
+      const freshHost = await tx.host.findUnique({ where: { id: host.id } });
+      if (!freshHost) throw new NotFoundError('Host profile not found');
+      const available = Number(freshHost.totalEarnings) - Number(freshHost.totalPayouts);
+      if (amount > available) {
+        throw new ValidationError(`Requested amount ₹${amount} exceeds available balance ₹${Math.max(0, available).toFixed(2)}`);
+      }
+
+      const created = await tx.payout.create({
+        data: {
+          id: generateId(),
+          hostId: host.id,
+          amount,
+          platformCommission: 0,
+          currency: 'INR',
+          status: 'processing',
+          paymentIds: [],
+        },
+      });
+
+      await tx.host.update({
+        where: { id: host.id },
+        data: { totalPayouts: { increment: amount } },
+      });
+
+      return created;
+    });
+
+    await writeHostAuditLog(userId, 'HOST_PAYOUT_REQUESTED', payout.id, { amount });
+    return payout;
+  },
+
+  async getPresignedUploadUrl(spaceId: string, filename: string, user?: { sub: string; role: string }): Promise<string> {
+    if (user) {
+      await verifySpaceAccess(spaceId, user);
+    }
     const config = getConfig();
-    const key = `spaces/${spaceId}/${generateId()}-${filename}`;
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = `spaces/${spaceId}/${generateId()}-${safeFilename}`;
     const command = new PutObjectCommand({
       Bucket: config.s3BucketUploads,
       Key: key,
@@ -209,18 +452,18 @@ function mapSpace(raw: Record<string, unknown>): ParkingSpace {
 const hostRouter = Router();
 hostRouter.use(authenticate);
 
-// GET /host/listings
-hostRouter.get('/listings', async (req: Request, res: Response, next: NextFunction) => {
+const updateListingSchema = listingSchema.partial();
+
+const handleGetListings = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const listings = await hostService.getHostListings(req.user!.sub);
     res.json({ success: true, data: listings } as ApiResponse);
   } catch (err) {
     next(err);
   }
-});
+};
 
-// POST /host/listings
-hostRouter.post('/listings', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+const handleCreateListing = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = listingSchema.safeParse(req.body);
     if (!result.success) throw new ValidationError(result.error.errors[0]?.message || 'Invalid input');
@@ -229,50 +472,160 @@ hostRouter.post('/listings', requireRole('host', 'admin'), async (req: Request, 
   } catch (err) {
     next(err);
   }
-});
+};
 
-// GET /host/listings/:id/upload-url — get S3 presigned upload URL
-hostRouter.post('/listings/:id/upload-url', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+const handleGetListingById = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const space = await verifySpaceAccess(req.params['id']!, req.user!);
+    res.json({ success: true, data: mapSpace(space as any) } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const handleUpdateListing = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = updateListingSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid input');
+    const updated = await hostService.updateListing(req.params['id']!, req.user!, parsed.data);
+    res.json({ success: true, data: updated } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const handleDeleteListing = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await hostService.deleteListing(req.params['id']!, req.user!);
+    res.json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const handleUploadUrl = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { filename } = req.body;
     if (!filename || typeof filename !== 'string') throw new ValidationError('filename is required');
-    const url = await hostService.getPresignedUploadUrl(req.params['id']!, filename);
+    const url = await hostService.getPresignedUploadUrl(req.params['id']!, filename, req.user!);
     res.json({ success: true, data: { uploadUrl: url } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /host/listings & /host/spaces
+hostRouter.get('/listings', handleGetListings);
+hostRouter.get('/spaces', handleGetListings);
+
+// POST /host/listings & /host/spaces
+hostRouter.post('/listings', requireRole('host', 'admin'), handleCreateListing);
+hostRouter.post('/spaces', requireRole('host', 'admin'), handleCreateListing);
+
+// GET /host/listings/:id & /host/spaces/:id
+hostRouter.get('/listings/:id', handleGetListingById);
+hostRouter.get('/spaces/:id', handleGetListingById);
+
+// PATCH /host/listings/:id & /host/spaces/:id
+hostRouter.patch('/listings/:id', requireRole('host', 'admin'), handleUpdateListing);
+hostRouter.patch('/spaces/:id', requireRole('host', 'admin'), handleUpdateListing);
+
+// DELETE /host/listings/:id & /host/spaces/:id
+hostRouter.delete('/listings/:id', requireRole('host', 'admin'), handleDeleteListing);
+hostRouter.delete('/spaces/:id', requireRole('host', 'admin'), handleDeleteListing);
+
+// POST /host/listings/:id/upload-url — get S3 presigned upload URL
+hostRouter.post('/listings/:id/upload-url', requireRole('host', 'admin'), handleUploadUrl);
+hostRouter.post('/spaces/:id/upload-url', requireRole('host', 'admin'), handleUploadUrl);
+
+// GET /host/bookings — bookings across the authenticated host's spaces
+hostRouter.get('/bookings', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const status = req.query['status'] as string | undefined;
+    const bookings = await hostService.getHostBookings(req.user!.sub, status);
+    res.json({ success: true, data: { bookings, total: bookings.length } } as ApiResponse);
   } catch (err) {
     next(err);
   }
 });
 
-// Autonomous AI Agents
+// GET /host/revenue — host earnings & payout breakdown
+hostRouter.get('/revenue', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const revenue = await hostService.getHostRevenue(req.user!.sub);
+    res.json({ success: true, data: revenue } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /host/payouts — list payout history
+hostRouter.get('/payouts', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const revenue = await hostService.getHostRevenue(req.user!.sub);
+    res.json({
+      success: true,
+      data: {
+        payouts: revenue.recentPayouts,
+        availableBalance: revenue.availableBalance,
+        totalEarnings: revenue.totalEarnings,
+        totalPayouts: revenue.totalPayouts,
+      },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /host/payouts — request payout transfer
+hostRouter.post('/payouts', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = payoutSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError(parsed.error.errors[0]?.message || 'Valid payout amount is required');
+    const payout = await hostService.requestPayout(req.user!.sub, parsed.data.amount);
+    res.status(201).json({ success: true, data: { payout } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Autonomous AI Agents (Real OCR, Geocoding & Vision Providers)
 const hostOnboardingAgent = new HostOnboardingAgent({
-  ocrTool: new MockOcrProvider(),
-  geocodingTool: new MockGeocodingProvider(),
+  ocrTool: new RealOCRProvider({
+    endpointUrl: process.env['OCR_ENDPOINT_URL'],
+    apiKey: process.env['OCR_API_KEY'],
+    fallbackToMock: true,
+  }),
+  geocodingTool: new RealGeocodingProvider(),
   zoningTool: new MockZoningProvider(),
 });
 
 const visualInspectionAgent = new VisualInspectionAgent({
-  visionTool: new MockVisionProvider(),
+  visionTool: new RealVisionProvider({
+    endpointUrl: process.env['VISION_ENDPOINT_URL'],
+    apiKey: process.env['VISION_API_KEY'],
+  }),
 });
 
 // POST /host/listings/:id/ai-verify — Autonomous multi-agent onboarding verification
-hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+const handleAiVerify = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const spaceId = req.params['id']!;
-    const space = await prisma.parkingSpace.findUnique({
-      where: { id: spaceId },
-      include: { host: true },
-    });
-    if (!space) throw new ValidationError('Listing not found');
+    const space = await verifySpaceAccess(spaceId, req.user!);
 
-    const documentUrls = (req.body.documentUrls as string[]) || ['https://s3.amazonaws.com/parkly/docs/electricity-bill.pdf'];
+    const documentUrls = Array.isArray(req.body.documentUrls) && req.body.documentUrls.length > 0
+      ? (req.body.documentUrls as string[])
+      : ['https://s3.amazonaws.com/parkly/docs/electricity-bill.pdf'];
     const photoUrls = (space.photoUrls && space.photoUrls.length > 0)
       ? space.photoUrls
-      : ((req.body.photoUrls as string[]) || ['https://s3.amazonaws.com/parkly/spaces/sample-space.jpg']);
+      : (Array.isArray(req.body.photoUrls) && req.body.photoUrls.length > 0
+          ? (req.body.photoUrls as string[])
+          : ['https://s3.amazonaws.com/parkly/spaces/sample-space.jpg']);
 
     const ctx = ExecutionContext.create({
       correlationId: (req.headers['x-correlation-id'] as string) || generateId(),
       initiatorUserId: req.user!.sub,
-      metadata: { tenantId: 'chennai-main' },
+      metadata: { tenantId: space.regionId || 'chennai-main' },
     });
 
     const onboardingResult = await hostOnboardingAgent.execute({
@@ -316,6 +669,11 @@ hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), async (
       });
     }
 
+    await writeHostAuditLog(req.user!.sub, 'HOST_LISTING_AI_VERIFIED', spaceId, {
+      status: newStatus,
+      aiApproval: isApproved,
+    }, req.ip);
+
     res.json({
       success: true,
       data: {
@@ -329,7 +687,10 @@ hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), async (
   } catch (err) {
     next(err);
   }
-});
+};
+
+hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), handleAiVerify);
+hostRouter.post('/spaces/:id/ai-verify', requireRole('host', 'admin'), handleAiVerify);
 
 // ============================================================
 // App

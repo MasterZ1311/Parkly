@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '../../src/store/auth.store';
+import { IS_DEMO_MODE } from '../../src/api/client';
 
 export default function OtpScreen() {
   const { phone, devOtp } = useLocalSearchParams<{ phone: string; devOtp?: string }>();
@@ -47,13 +48,18 @@ export default function OtpScreen() {
     try {
       await verifyOtp(phone!, otpString, name || undefined);
       router.replace('/(tabs)/home');
-    } catch {
-      // Offline / demo fallback: log in demo user and navigate to home
-      useAuthStore.setState({
-        user: { id: 'usr-demo-001', name: name || 'Demo User', phone: phone || '+919876543210', role: 'driver' },
-        isAuthenticated: true,
-      });
-      router.replace('/(tabs)/home');
+    } catch (err: unknown) {
+      if (IS_DEMO_MODE) {
+        useAuthStore.setState({
+          user: { id: 'usr-driver-001', name: name || 'Vikram Nair', phone: phone || '+919840012345', role: 'driver' },
+          isAuthenticated: true,
+        });
+        router.replace('/(tabs)/home');
+        return;
+      }
+      const message = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message || 'OTP verification failed. Please check the code and retry.';
+      Alert.alert('Verification Failed', message);
     }
   };
 
@@ -102,7 +108,7 @@ export default function OtpScreen() {
 
       {devOtp ? (
         <View style={styles.devHint}>
-          <Text style={styles.devHintText}>🔑 Dev mode: OTP is {devOtp} (auto-filled)</Text>
+          <Text style={styles.devHintText}>🔑 Verification code auto-filled: {devOtp}</Text>
         </View>
       ) : null}
 
@@ -124,7 +130,7 @@ export default function OtpScreen() {
         onPress={handleVerify}
         disabled={isLoading}
       >
-        {isLoading ? <ActivityIndicator color="#0F172A" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
+        {isLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Verify & Continue</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity onPress={handleResend} style={styles.resendButton}>

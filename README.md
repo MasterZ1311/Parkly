@@ -27,7 +27,7 @@ In metro cities like Chennai, **30% of downtown traffic** consists of cars cruis
 **Parkly** ("Airbnb for Parking") turns invisible urban bays into guaranteed, reservable digital inventory:
 - **Predict Open Bays at Your ETA**: Live availability probability scoring (**88% open**, **72% open**) across high-density Chennai corridors (T. Nagar, Anna Nagar, Adyar, Velachery, OMR).
 - **AI Driver Concierge**: Ask naturally (*"Covered spot near Pothys under ₹60/hr"*) and get distance-ranked, rule-verified parking with one-tap **`Instant Reserve`**.
-- **The 3-Tap Rule + Zero Hardware Start**: Select bay → confirm Indian registration (`TN01AB1234`) + UPI (`₹126`) → unlock boom barriers with a digital **Entry Gate QR Pass (`#BK-DEMO-001`)**.
+- **The 3-Tap Rule + Zero Hardware Start**: Select bay → confirm Indian registration (`TN01AB1234`) + UPI (`₹126`) → unlock boom barriers with a digital **Entry Gate QR Pass (`#BK-LIVE-1001`)**.
 - **Atomic Concurrency Guarantee**: PostgreSQL row-level locking prevents double-bookings under concurrent demand spikes.
 - **Full Two-Sided + Municipal Grid**: Automated **80–85% UPI payouts** for property hosts + **8 Autonomous AI Agents** powering KYC onboarding, vision inspection, surge pricing, dispute mediation, and city CO₂ analytics.
 
@@ -100,28 +100,44 @@ PostgreSQL 16 (Prisma)       DynamoDB (OTP / Occupancy / Notifs)
 
 ---
 
-## ⚡ Quick Start for Developers
+## ⚡ Quick Start
+
+### Option A — Instant UI & Local Preview (Zero Docker / Database Required)
+
+All three client surfaces ship with a built-in stateful Chennai parking dataset out of the box so you can explore every workflow immediately:
 
 ```bash
-# 1. Install dependencies & generate Prisma Client
+# 1. Install workspace dependencies & generate Prisma Client
 npm install
+
+# 2. Launch Host Portal (http://localhost:3001) — Sign in with 9840123456 (OTP: 482910)
+npm run dev:host-dashboard
+
+# 3. Launch Admin Portal (http://localhost:3002) — Sign in with 9840000001 (OTP: 482910)
+npm run dev:admin-portal
+
+# 4. Launch Mobile App (Expo Web / Android / iOS)
+cd apps/mobile && npm install && npx expo start --clear
+```
+
+### Option B — Full Microservice & PostgreSQL Stack
+
+```bash
+# 1. Configure environment & enable live backend routing
 cp .env.example .env
+# Set VITE_LIVE_API=true and EXPO_PUBLIC_LIVE_API=true in .env
 
 # 2. Boot Postgres + DynamoDB Local, migrate schema & seed Chennai data
 .\scripts\local-seed.ps1   # (or ./scripts/local-seed.sh on macOS/Linux)
 
-# 3. Verify core test suite & monorepo build
-npm test -w packages/ai-agents
+# 3. Verify all workspace tests & builds
+npm test
 npm run build
 
-# 4. Run backend services + web dashboards
-npm run dev                  # All 11 microservices on ports 4000–4011
-npm run dev:host-dashboard   # Host Portal -> http://localhost:3001
-npm run dev:admin-portal     # Admin Portal -> http://localhost:3002
-
-# 5. Launch Mobile App on Android Studio Emulator (see apps/mobile/README.md)
-adb reverse tcp:8081 tcp:8081 ; adb reverse tcp:4000 tcp:4000
-cd apps/mobile && npx expo start --clear
+# 4. Run all 11 microservices (ports 4000–4011) + portals
+npm run dev
+npm run dev:host-dashboard
+npm run dev:admin-portal
 ```
 
 ---

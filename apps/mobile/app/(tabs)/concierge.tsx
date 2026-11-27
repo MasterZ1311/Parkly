@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { conciergeApi, searchApi } from '../../src/api/client';
+import { IS_DEMO_MODE, conciergeApi, searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -118,15 +118,14 @@ export default function ConciergeScreen() {
           console.warn('Live search ground resolution error:', searchErr);
         }
 
-        // Step 3: Populate recommendation with real space data or agent output
-        // Seeded space fallback is sp-tng-001 (host-chennai-001), NEVER mock-space-01
-        const resolvedSpaceId = realSpace?.id || data?.recommendedSpace?.id || 'sp-tng-001';
-        const resolvedName = realSpace?.name || data?.recommendedSpace?.name || 'T Nagar Parking Complex - Spot A';
-        const resolvedAddress = realSpace?.address || data?.recommendedSpace?.address || '23, Panagal Park Road, T Nagar, Chennai 600017';
-        const resolvedHostId = realSpace?.hostId || 'host-chennai-001';
-        const resolvedPrice = realSpace?.price?.value || data?.recommendedSpace?.hourlyRate || 40;
-        const resolvedProb = realSpace?.availability?.probabilityPercent || data?.recommendedSpace?.arrivalProbability || 88;
-        const resolvedDistance = realSpace?.distance?.value || data?.recommendedSpace?.distanceMeters || 120;
+        // Step 3: Populate recommendation preferring exact Concierge recommendation or live search match
+        const resolvedSpaceId = data?.recommendedSpace?.id || realSpace?.id || 'sp-tng-001';
+        const resolvedName = data?.recommendedSpace?.name || realSpace?.name || 'T Nagar Parking Complex - Spot A';
+        const resolvedAddress = data?.recommendedSpace?.address || realSpace?.address || '23, Panagal Park Road, T Nagar, Chennai 600017';
+        const resolvedHostId = data?.recommendedSpace?.hostId || realSpace?.hostId || 'host-chennai-001';
+        const resolvedPrice = data?.recommendedSpace?.hourlyRate || realSpace?.price?.value || 40;
+        const resolvedProb = data?.recommendedSpace?.arrivalProbability || realSpace?.availability?.probabilityPercent || 88;
+        const resolvedDistance = data?.recommendedSpace?.distanceMeters || Math.round((realSpace?.distance?.value || 0.4) * 1000);
 
         rec = {
           spaceId: resolvedSpaceId,
@@ -153,29 +152,66 @@ export default function ConciergeScreen() {
       };
 
       setMessages((prev) => [...prev, botMsg]);
-    } catch {
-      // Graceful offline fallback using real seeded ID or cached recommendation
-      const cachedRec = await cacheGet<Recommendation>(CACHE_KEYS.LAST_CONCIERGE_REC);
-      const fallbackRec: Recommendation = cachedRec || {
-        spaceId: 'sp-tng-001', // Real seeded database ID, NEVER mock-space-01
-        hostId: 'host-chennai-001',
-        name: 'T Nagar Parking Complex - Spot A',
-        address: '23, Panagal Park Road, T Nagar, Chennai 600017',
-        hourlyRate: 40,
-        arrivalProbability: 85,
-        distanceMeters: 150,
-        deepLink: 'geo:13.0418,80.2341?q=T+Nagar+Parking+Complex',
-        entryInstructions: 'Present offline QR pass at entry kiosk. Offline attendant on-site.',
-      };
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 401 && !IS_DEMO_MODE) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: 'Please sign in with your mobile number to use AI Concierge recommendations and live reservations.',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        return;
+      }
 
-      const fallbackMsg: Message = {
-        id: `assistant-${Date.now()}`,
-        sender: 'assistant',
-        text: 'You are currently offline. Here is a verified available parking location matching your saved preferences:',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        recommendation: fallbackRec,
-      };
-      setMessages((prev) => [...prev, fallbackMsg]);
+      const cachedRec = await cacheGet<Recommendation>(CACHE_KEYS.LAST_CONCIERGE_REC);
+      if (cachedRec) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: 'You are currently offline. Showing your last saved concierge recommendation:',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            recommendation: cachedRec,
+          },
+        ]);
+      } else if (IS_DEMO_MODE) {
+        const demoRec: Recommendation = {
+          spaceId: 'sp-tng-001',
+          hostId: 'host-chennai-001',
+          name: 'T Nagar Parking Complex - Spot A',
+          address: '23, Panagal Park Road, T Nagar, Chennai 600017',
+          hourlyRate: 40,
+          arrivalProbability: 85,
+          distanceMeters: 150,
+          deepLink: 'geo:13.0418,80.2341?q=T+Nagar+Parking+Complex',
+          entryInstructions: 'Present QR pass at entry kiosk.',
+        };
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: 'Here is a verified Chennai location matching your request:',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            recommendation: demoRec,
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: 'Unable to reach AI Concierge right now. Please check your connection or use Find Search.',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+      }
     } finally {
       setLoading(false);
     }

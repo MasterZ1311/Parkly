@@ -30,10 +30,10 @@ npx expo start --clear
 
 ---
 
-## Environment Configuration & Offline Demo Mode
+## Environment Configuration & Data Source Mode
 
-- **API Endpoint**: Set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` if connecting to a hosted or non-localhost backend (on Android Emulator, `adb reverse tcp:4000 tcp:4000` allows querying `http://localhost:4000/api/v1` directly).
-- **Offline Demo Resilience**: If backend microservices are offline, the mobile app gracefully degrades to cached/demo Chennai spaces (`Express Avenue Premium`, `Pondy Bazaar Smart Multi-Level`, `Panagal Park EV`), interactive AI Concierge matches, and instant Entry Gate QR confirmation passes (`#bk-demo-001`) so product demos work anywhere without network crashes.
+- **API Endpoint**: Set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` when connecting to a hosted or non-localhost backend (on Android Emulator, `adb reverse tcp:4000 tcp:4000` allows querying `http://localhost:4000/api/v1` directly).
+- **Local vs Live Backend**: By default (`EXPO_PUBLIC_LIVE_API` unset or `false`), the mobile app runs against a built-in stateful Chennai parking dataset (T Nagar, Anna Nagar, Adyar, Velachery, OMR, Mylapore) supporting search, AI Concierge recommendations, OTP login, vehicle management, and Entry Gate QR passes. Set `EXPO_PUBLIC_LIVE_API=true` to route traffic to live microservices.
 
 ---
 

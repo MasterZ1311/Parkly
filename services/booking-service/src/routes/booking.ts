@@ -13,16 +13,34 @@ export const bookingRouter = Router();
 // All booking routes require authentication
 bookingRouter.use(authenticate);
 
+const idSchema = z.string().min(3).max(64).regex(/^[a-zA-Z0-9_-]+$/, 'Invalid ID format');
+
 const createBookingSchema = z.object({
-  spaceId: z.string().uuid(),
-  vehicleId: z.string().uuid(),
-  hostId: z.string().uuid(),
+  spaceId: idSchema,
+  vehicleId: idSchema,
+  hostId: idSchema.optional(),
   type: z.enum(['instant', 'scheduled', 'recurring']),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  totalAmount: z.number().positive(),
+  totalAmount: z.number().positive().optional(),
   recurringFrequency: z.enum(['daily', 'weekly']).optional(),
   recurringEndDate: z.string().datetime().optional(),
+});
+
+const extendSchema = z.object({
+  additionalMinutes: z.number().int().min(15).max(720).default(60),
+});
+
+// GET /bookings/verify-qr?token=... — Gate pass verification (host/admin)
+bookingRouter.get('/verify-qr', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = String(req.query['token'] || '');
+    if (!token) throw new ValidationError('token query parameter is required');
+    const result = await bookingService.verifyQrPass(token);
+    res.json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /bookings — Create a booking
@@ -73,7 +91,25 @@ bookingRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
 // GET /bookings/:id — Get a booking
 bookingRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const booking = await bookingService.getBooking(req.params['id']!, req.user!.sub);
+    const booking = await bookingService.getBooking(req.params['id']!, req.user!.sub, req.user!.role);
+    res.json({ success: true, data: booking } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /bookings/:id/extend — Extend an active/confirmed booking
+bookingRouter.put('/:id/extend', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = extendSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid extension request');
+    }
+    const booking = await bookingService.extendBooking(
+      req.params['id']!,
+      req.user!.sub,
+      parsed.data.additionalMinutes,
+    );
     res.json({ success: true, data: booking } as ApiResponse);
   } catch (err) {
     next(err);

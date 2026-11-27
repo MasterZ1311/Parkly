@@ -4,14 +4,40 @@
 // ============================================================
 
 import axios from 'axios';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { mobileMockAdapter } from './mockAdapter';
 
-const BASE_URL = process.env['EXPO_PUBLIC_API_URL'] || 'http://100.116.89.14:4000/api/v1';
+function resolveBaseUrl(): string {
+  const configured = process.env['EXPO_PUBLIC_API_URL'];
+  if (configured && configured.trim().length > 0) {
+    return configured.trim();
+  }
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    if (host && host !== '127.0.0.1' && host !== 'localhost') {
+      return `http://${host}:4000/api/v1`;
+    }
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:4000/api/v1';
+  }
+  return 'http://localhost:4000/api/v1';
+}
+
+export const BASE_URL = resolveBaseUrl();
+export const USE_MOCK_DATA = process.env['EXPO_PUBLIC_LIVE_API'] !== 'true';
+export const IS_DEMO_MODE = USE_MOCK_DATA;
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 5000,
+  timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
+  ...(USE_MOCK_DATA ? { adapter: mobileMockAdapter } : {}),
 });
 
 // Inject JWT on every request
@@ -63,6 +89,12 @@ export const authApi = {
   verifyOtp: (phone: string, otp: string, name?: string) =>
     api.post('/auth/otp/verify', { phone, otp, name }),
   getMe: () => api.get('/auth/me'),
+  getProfile: () => api.get('/auth/profile'),
+  updateProfile: (data: { name?: string; email?: string }) => api.patch('/auth/profile', data),
+  listVehicles: () => api.get('/auth/vehicles'),
+  addVehicle: (data: { licensePlate: string; vehicleType: string; make?: string; model?: string; color?: string; isDefault?: boolean }) =>
+    api.post('/auth/vehicles', data),
+  deleteVehicle: (vehicleId: string) => api.delete(`/auth/vehicles/${vehicleId}`),
   refresh: (refreshToken: string) => api.post('/auth/refresh', { refreshToken }),
 };
 
@@ -91,6 +123,9 @@ export const bookingApi = {
   }) => api.post('/bookings', data),
   list: (status?: string) => api.get('/bookings', { params: { status } }),
   get: (id: string) => api.get(`/bookings/${id}`),
+  extend: (id: string, additionalMinutes: number) =>
+    api.put(`/bookings/${id}/extend`, { additionalMinutes }),
+  verifyQr: (qrToken: string) => api.get('/bookings/verify-qr', { params: { qrToken } }),
   cancel: (id: string, reason?: string) => api.put(`/bookings/${id}/cancel`, { reason }),
 };
 

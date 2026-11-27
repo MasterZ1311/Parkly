@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Multi-Agent & Backend Verification
+    name: Multi-Agent & Microservice Verification
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -26,14 +26,19 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate --schema=infra/prisma/schema.prisma
 
-      - name: Run Autonomous Multi-Agent Tests (333 tests)
-        run: npm test -w packages/ai-agents
+      - name: Build Shared & AI Packages
+        run: |
+          npm run build -w @parkly/shared
+          npm run build -w @parkly/ai-agents
 
-      - name: Typecheck Microservices & Libraries
-        run: npm run build
+      - name: Run All Workspace Test Suites (Jest & Vitest)
+        run: npm test --workspaces --if-present
 
-  web-frontends:
-    name: Verify Web Dashboards (Host & Admin)
+      - name: Typecheck & Build All Workspaces
+        run: npm run build --workspaces --if-present
+
+  web-and-mobile:
+    name: Verify Web Dashboards & Mobile Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -53,6 +58,11 @@ jobs:
 
       - name: Build Admin Portal (React/Vite)
         run: npm run build -w apps/admin-portal
+
+      - name: Typecheck Mobile App (Expo)
+        run: |
+          npm --prefix apps/mobile install --no-audit --no-fund
+          npx --prefix apps/mobile tsc --noEmit
 
   cdk-synth:
     name: AWS CDK Infrastructure Synthesis
@@ -86,8 +96,10 @@ jobs:
 
       - name: Verify CloudFormation Artifacts Generated
         run: |
+          test -f infra/cdk/cdk.out/ParklyNetworkStack.template.json
+          test -f infra/cdk/cdk.out/ParklyDatabaseStack.template.json
           test -f infra/cdk/cdk.out/ParklyStack.template.json
-          echo "CDK synthesis successfully produced ParklyStack CloudFormation template."
+          echo "CDK synthesis successfully produced all CloudFormation templates."
 
   database-verification:
     name: Prisma Schema Validation & Migration Check
@@ -124,11 +136,6 @@ jobs:
           DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
         run: npx prisma validate --schema=infra/prisma/schema.prisma
 
-      - name: Verify No Migration Drift (Schema vs Migrations Directory)
-        env:
-          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
-        run: npx prisma migrate diff --from-migrations infra/prisma/migrations --to-schema-datamodel infra/prisma/schema.prisma --exit-code
-
       - name: Apply Migrations Cleanly to Test Database
         env:
           DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
@@ -136,3 +143,7 @@ jobs:
           npx prisma migrate deploy --schema=infra/prisma/schema.prisma
           npx prisma migrate status --schema=infra/prisma/schema.prisma
 
+      - name: Verify No Migration Drift (Migrated DB vs Schema)
+        env:
+          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+        run: npx prisma migrate diff --from-schema-datasource infra/prisma/schema.prisma --to-schema-datamodel infra/prisma/schema.prisma --exit-code

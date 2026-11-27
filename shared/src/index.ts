@@ -16,7 +16,13 @@ export * from './middleware/responseTimer';
 export { securityHeaders, requestLogger } from './middleware/requestLogger';
 export { responseTimer } from './middleware/responseTimer';
 export { errorHandler, notFoundHandler } from './middleware/errorHandler';
-export { authenticate, requireRole, requireOwnership } from './middleware/auth';
+export {
+  authenticate,
+  optionalAuthenticate,
+  requireRole,
+  requireInternalOrRole,
+  requireOwnership,
+} from './middleware/auth';
 
 // Health Checks
 export * from './health';

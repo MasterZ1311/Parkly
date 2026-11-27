@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../src/store/auth.store';
+import { colors } from '../src/constants/theme';
 
 // Prevent splash screen auto-hiding until ready
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -24,10 +25,10 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: '#0F172A' },
-          headerTintColor: '#38BDF8',
-          headerTitleStyle: { fontWeight: 'bold', color: '#F8FAFC' },
-          contentStyle: { backgroundColor: '#0F172A' },
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.primary,
+          headerTitleStyle: { fontWeight: 'bold', color: colors.text },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

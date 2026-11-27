@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { searchApi } from '../../src/api/client';
+import { IS_DEMO_MODE, searchApi } from '../../src/api/client';
 import FreeMap, { MapSpace } from '../../src/components/FreeMap';
+import { colors } from '../../src/constants/theme';
+import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
 
 // Chennai city center — default map focus.
 const CHENNAI = { lat: 13.0827, lng: 80.2707 };
 
-// Fallback markers used only if the search service is unreachable.
+// Demo markers used only when EXPO_PUBLIC_DEMO_MODE=true.
 const FALLBACK_SPACES: MapSpace[] = [
   { id: 'sp-tng-001', name: 'T Nagar Parking Complex', lat: 13.0418, lng: 80.2341, available: true, price: 40 },
   { id: 'sp-ana-002', name: 'Anna Nagar Multi-Level', lat: 13.0849, lng: 80.2101, available: false, price: 60 },
@@ -24,7 +26,7 @@ interface ApiSpace {
 }
 
 export default function MapScreen() {
-  const [spaces, setSpaces] = useState<MapSpace[]>(FALLBACK_SPACES);
+  const [spaces, setSpaces] = useState<MapSpace[]>(IS_DEMO_MODE ? FALLBACK_SPACES : []);
   const [loading, setLoading] = useState(true);
   const [usingLive, setUsingLive] = useState(false);
 
@@ -52,12 +54,27 @@ export default function MapScreen() {
           price: r.price?.value ?? 0,
         }));
 
-      if (mapped.length > 0) {
-        setSpaces(mapped);
-        setUsingLive(true);
-      }
+      setSpaces(mapped);
+      setUsingLive(true);
     } catch {
-      // Keep fallback markers — map still renders.
+      const cached = await cacheGet<ApiSpace[]>(CACHE_KEYS.CACHED_SPACES);
+      if (cached && cached.length > 0) {
+        const mapped = cached
+          .filter((r) => r.coordinates)
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            lat: r.coordinates!.lat,
+            lng: r.coordinates!.lng,
+            available: (r.availability?.probabilityPercent ?? 0) > 50,
+            price: r.price?.value ?? 0,
+          }));
+        setSpaces(mapped);
+      } else if (IS_DEMO_MODE) {
+        setSpaces(FALLBACK_SPACES);
+      } else {
+        setSpaces([]);
+      }
       setUsingLive(false);
     } finally {
       setLoading(false);
@@ -102,13 +119,20 @@ export default function MapScreen() {
 
         {loading ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color="#38BDF8" />
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.legendText}>Loading spaces…</Text>
+          </View>
+        ) : spaces.length === 0 ? (
+          <View style={styles.loadingRow}>
+            <Text style={styles.legendText}>Unable to load live map markers. Pull or retry.</Text>
+            <TouchableOpacity onPress={loadSpaces} style={styles.retryBtn}>
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           spaces.slice(0, 4).map((space) => (
             <TouchableOpacity key={space.id} style={styles.listItem} onPress={() => openSpace(space.id)} activeOpacity={0.7}>
-              <View style={[styles.statusDot, { backgroundColor: space.available ? '#22C55E' : '#EF4444' }]} />
+              <View style={[styles.statusDot, { backgroundColor: space.available ? colors.success : colors.danger }]} />
               <View style={styles.listInfo}>
                 <Text style={styles.listName} numberOfLines={1}>{space.name}</Text>
                 <Text style={styles.listStatus}>{space.available ? 'Available' : 'Full'}</Text>
@@ -123,29 +147,33 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
+  container: { flex: 1, backgroundColor: colors.background },
   mapWrap: { flex: 1, position: 'relative', overflow: 'hidden' },
   bottomSheet: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: 300,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  bottomTitle: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
-  sourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0F172A', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  bottomTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  sourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.background, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   sourceDot: { width: 8, height: 8, borderRadius: 4 },
-  sourceText: { color: '#CBD5E1', fontSize: 11, fontWeight: '600' },
+  sourceText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
   legend: { flexDirection: 'row', gap: 16, marginBottom: 12 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { color: '#94A3B8', fontSize: 12 },
+  legendText: { color: colors.textSecondary, fontSize: 12 },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16 },
-  listItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  retryBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 'auto' },
+  retryBtnText: { color: colors.white, fontSize: 12, fontWeight: '700' },
+  listItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   statusDot: { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
   listInfo: { flex: 1 },
-  listName: { color: '#F8FAFC', fontSize: 13, fontWeight: '600' },
-  listStatus: { color: '#64748B', fontSize: 11 },
-  listPrice: { color: '#38BDF8', fontWeight: '700' },
+  listName: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  listStatus: { color: colors.textMuted, fontSize: 11 },
+  listPrice: { color: colors.primary, fontWeight: '700' },
 });

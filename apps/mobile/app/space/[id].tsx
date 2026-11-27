@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { searchApi, pricingApi } from '../../src/api/client';
+import { IS_DEMO_MODE, searchApi, pricingApi } from '../../src/api/client';
+import { colors } from '../../src/constants/theme';
+import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
 
 interface SpaceDetails {
   id: string;
@@ -78,23 +80,46 @@ export default function SpaceDetailScreen() {
         return;
       }
     } catch (err) {
-      console.warn('Could not fetch live space, falling back to local dataset:', err);
+      console.warn('Could not fetch live space, checking cache:', err);
+      const cachedSpaces = await cacheGet<any[]>(CACHE_KEYS.CACHED_SPACES);
+      const match = cachedSpaces?.find((s) => s.id === id);
+      if (match) {
+        setSpace({
+          id: match.id,
+          name: match.name,
+          address: match.address,
+          hostId: match.hostId,
+          totalCapacity: match.totalCapacity || 10,
+          amenities: {
+            evCharging: Boolean(match.amenities?.evCharging ?? match.evCharging),
+            covered: Boolean(match.amenities?.covered ?? match.covered),
+            securityLevel: match.amenities?.securityLevel || match.securityLevel || 'none',
+          },
+          price: { value: match.price?.value || match.hourlyRate || 40, currency: 'INR' },
+          availability: { probabilityPercent: match.availability?.probabilityPercent || 85 },
+          photoUrls: match.photoUrls || [],
+        });
+        return;
+      }
     } finally {
       setLoading(false);
     }
 
-    // Graceful fallback for offline / mock space IDs
-    setSpace({
-      id: id!,
-      name: id === 'sp-tng-001' ? 'Express Avenue Premium Parking' : 'T Nagar Parking Complex',
-      address: id === 'sp-tng-001' ? 'Royapettah / T Nagar Hub, Chennai' : '23, Panagal Park Road, T Nagar, Chennai 600017',
-      hostId: 'host-chennai-001',
-      totalCapacity: 25,
-      amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
-      price: { value: id === 'sp-tng-001' ? 60 : 40, currency: 'INR' },
-      availability: { probabilityPercent: 88 },
-      photoUrls: [],
-    });
+    if (IS_DEMO_MODE) {
+      setSpace({
+        id: id!,
+        name: id === 'sp-tng-001' ? 'Express Avenue Premium Parking' : 'T Nagar Parking Complex',
+        address: id === 'sp-tng-001' ? 'Royapettah / T Nagar Hub, Chennai' : '23, Panagal Park Road, T Nagar, Chennai 600017',
+        hostId: 'host-chennai-001',
+        totalCapacity: 25,
+        amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
+        price: { value: id === 'sp-tng-001' ? 60 : 40, currency: 'INR' },
+        availability: { probabilityPercent: 88 },
+        photoUrls: [],
+      });
+    } else {
+      setSpace(null);
+    }
   };
 
   const totalCost = space ? space.price.value * selectedHours : 0;
@@ -117,7 +142,7 @@ export default function SpaceDetailScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#38BDF8" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -125,7 +150,10 @@ export default function SpaceDetailScreen() {
   if (!space) {
     return (
       <View style={styles.center}>
-        <Text style={{ color: '#F8FAFC' }}>Space not found</Text>
+        <Text style={{ color: colors.text, marginBottom: 12 }}>Space not found</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.durationChip}>
+          <Text style={{ color: colors.primary, fontWeight: '700', paddingHorizontal: 12 }}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -136,11 +164,11 @@ export default function SpaceDetailScreen() {
         {/* Image Area */}
         <View style={styles.imageArea}>
           <View style={styles.imagePlaceholder}>
-            <Ionicons name="car" size={64} color="#334155" />
+            <Ionicons name="car" size={64} color={colors.border} />
             <Text style={styles.imagePlaceholderText}>{space.name}</Text>
           </View>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color="#F8FAFC" />
+            <Ionicons name="arrow-back" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -155,7 +183,7 @@ export default function SpaceDetailScreen() {
               <View
                 style={[
                   styles.availDot,
-                  { backgroundColor: space.availability.probabilityPercent > 60 ? '#22C55E' : '#F59E0B' },
+                  { backgroundColor: space.availability.probabilityPercent > 60 ? colors.success : colors.warning },
                 ]}
               />
               <Text style={styles.availText}>{space.availability.probabilityPercent}% free</Text>
@@ -173,23 +201,23 @@ export default function SpaceDetailScreen() {
             <Text style={styles.sectionTitle}>Amenities</Text>
             <View style={styles.amenitiesGrid}>
               <View style={styles.amenityItem}>
-                <Ionicons name="flash" size={20} color={space.amenities.evCharging ? '#38BDF8' : '#334155'} />
+                <Ionicons name="flash" size={20} color={space.amenities.evCharging ? colors.primary : colors.border} />
                 <Text style={[styles.amenityLabel, !space.amenities.evCharging && styles.amenityDisabled]}>
                   EV Charging
                 </Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="home" size={20} color={space.amenities.covered ? '#38BDF8' : '#334155'} />
+                <Ionicons name="home" size={20} color={space.amenities.covered ? colors.primary : colors.border} />
                 <Text style={[styles.amenityLabel, !space.amenities.covered && styles.amenityDisabled]}>
                   Covered
                 </Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="shield-checkmark" size={20} color="#38BDF8" />
-                <Text style={styles.amenityLabel}>{SECURITY_LABELS[space.amenities.securityLevel]}</Text>
+                <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+                <Text style={styles.amenityLabel}>{SECURITY_LABELS[space.amenities.securityLevel] || space.amenities.securityLevel}</Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="car" size={20} color="#38BDF8" />
+                <Ionicons name="car" size={20} color={colors.primary} />
                 <Text style={styles.amenityLabel}>{space.totalCapacity} slots</Text>
               </View>
             </View>
@@ -223,9 +251,9 @@ export default function SpaceDetailScreen() {
               <Text style={styles.summaryLabel}>Platform fee</Text>
               <Text style={styles.summaryValue}>₹{Math.round(totalCost * 0.05)}</Text>
             </View>
-            <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: '#334155', paddingTop: 12 }]}>
-              <Text style={[styles.summaryLabel, { color: '#F8FAFC', fontWeight: '700' }]}>Total</Text>
-              <Text style={[styles.summaryValue, { color: '#38BDF8', fontSize: 18 }]}>
+            <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }]}>
+              <Text style={[styles.summaryLabel, { color: colors.text, fontWeight: '700' }]}>Total</Text>
+              <Text style={[styles.summaryValue, { color: colors.primary, fontSize: 18 }]}>
                 ₹{totalCost + Math.round(totalCost * 0.05)}
               </Text>
             </View>
@@ -244,17 +272,17 @@ export default function SpaceDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   imageArea: { height: 220, position: 'relative' },
   imagePlaceholder: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
   },
-  imagePlaceholderText: { color: '#64748B', fontSize: 14, textAlign: 'center', paddingHorizontal: 16 },
+  imagePlaceholderText: { color: colors.textMuted, fontSize: 14, textAlign: 'center', paddingHorizontal: 16 },
   backBtn: {
     position: 'absolute',
     top: 16,
@@ -262,86 +290,86 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(15,23,42,0.8)',
+    backgroundColor: 'rgba(10,20,37,0.85)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: { padding: 20, paddingBottom: 100 },
   header: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  name: { fontSize: 20, fontWeight: '800', color: '#F8FAFC', marginBottom: 4 },
-  address: { fontSize: 13, color: '#64748B', lineHeight: 18 },
+  name: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  address: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
   availBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
     alignSelf: 'flex-start',
   },
   availDot: { width: 8, height: 8, borderRadius: 4 },
-  availText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
+  availText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginBottom: 24 },
-  price: { fontSize: 32, fontWeight: '900', color: '#38BDF8' },
-  priceUnit: { fontSize: 14, color: '#64748B' },
+  price: { fontSize: 32, fontWeight: '900', color: colors.primary },
+  priceUnit: { fontSize: 14, color: colors.textMuted },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#CBD5E1', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
   amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   amenityItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
-  amenityLabel: { color: '#CBD5E1', fontSize: 13, fontWeight: '500' },
-  amenityDisabled: { color: '#475569' },
+  amenityLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  amenityDisabled: { color: colors.textMuted },
   durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   durationChip: {
-    width: 52,
+    minWidth: 52,
     height: 44,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
-  durationChipActive: { backgroundColor: '#38BDF820', borderColor: '#38BDF8' },
-  durationText: { color: '#64748B', fontSize: 14, fontWeight: '600' },
-  durationTextActive: { color: '#38BDF8' },
+  durationChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  durationText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  durationTextActive: { color: colors.primary },
   summary: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     gap: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryLabel: { color: '#94A3B8', fontSize: 14 },
-  summaryValue: { color: '#F8FAFC', fontSize: 14, fontWeight: '600' },
+  summaryLabel: { color: colors.textSecondary, fontSize: 14 },
+  summaryValue: { color: colors.text, fontSize: 14, fontWeight: '600' },
   footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: '#1E293B',
+    borderTopColor: colors.border,
     padding: 16,
     paddingBottom: 32,
   },
   bookBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
   },
-  bookBtnText: { color: '#0F172A', fontSize: 16, fontWeight: '800' },
+  bookBtnText: { color: colors.white, fontSize: 16, fontWeight: '800' },
 });

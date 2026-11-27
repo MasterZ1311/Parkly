@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { searchApi } from '../../src/api/client';
+import { IS_DEMO_MODE, searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -96,7 +96,7 @@ export default function HomeScreen() {
         if (cachedSpaces && cachedSpaces.length > 0) {
           setResults(cachedSpaces);
           setIsOfflineResults(true);
-        } else {
+        } else if (IS_DEMO_MODE) {
           const demoSpaces: SpaceResult[] = [
             {
               id: 'sp-tng-001',
@@ -127,6 +127,9 @@ export default function HomeScreen() {
             },
           ];
           setResults(demoSpaces);
+          setIsOfflineResults(true);
+        } else {
+          setResults([]);
           setIsOfflineResults(true);
         }
       }
@@ -244,7 +247,7 @@ export default function HomeScreen() {
           </Text>
           {/* Quick area chips */}
           <View style={styles.areaSuggestions}>
-            {['T Nagar', 'Anna Nagar', 'Adyar', 'Velachery'].map(area => (
+            {['T Nagar', 'Anna Nagar', 'Adyar', 'Velachery', 'OMR'].map(area => (
               <TouchableOpacity
                 key={area}
                 style={styles.areaSuggestion}

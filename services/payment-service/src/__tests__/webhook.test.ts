@@ -91,6 +91,9 @@ describe('paymentService.handleWebhookCapture', () => {
 
   it('confirms payment and updates booking directly without checkout signature verification', async () => {
     const findFirstSpy = jest.spyOn(prisma.payment, 'findFirst').mockResolvedValue(mockPayment as any);
+    const txSpy = jest
+      .spyOn(prisma, '$transaction')
+      .mockImplementation(async (cb: any) => cb(prisma));
     const updatePaymentSpy = jest.spyOn(prisma.payment, 'update').mockResolvedValue({
       ...mockPayment,
       status: 'completed',
@@ -103,6 +106,7 @@ describe('paymentService.handleWebhookCapture', () => {
       'pay_H6z812kABCDEFG',
     );
 
+    expect(txSpy).toHaveBeenCalledTimes(1);
     expect(findFirstSpy).toHaveBeenCalledWith({ where: { providerOrderId: 'order_H6z812kORDER12' } });
     expect(updatePaymentSpy).toHaveBeenCalledWith({
       where: { id: 'pay-uuid-001' },

@@ -58,7 +58,7 @@ export default function FreeMap({ center, spaces, onMarkerPress }: FreeMapProps)
         <View style={styles.userDotInner} />
       </View>
 
-      <Text style={styles.note}>🗺️ OpenFreeMap renders on web · install native MapLibre for device builds</Text>
+      <Text style={styles.note}>📍 Chennai Bay Map · Tap any price marker to inspect &amp; reserve</Text>
     </View>
   );
 }

@@ -115,6 +115,28 @@ const rateLimiter = rateLimit({
 });
 app.use('/api', rateLimiter);
 
+// Strict rate limiter for OTP endpoints to prevent SMS bombing
+const otpRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env['OTP_RATE_LIMIT_MAX'] || '20', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  passOnStoreError: true,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        code: 'OTP_RATE_LIMIT_EXCEEDED',
+        message: 'Too many OTP requests. Please wait before requesting another code.',
+        retryAfterSeconds: 900,
+      },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  },
+});
+app.use('/api/v1/auth/otp', otpRateLimiter);
+app.use('/auth/otp', otpRateLimiter);
+
 
 // --- Service URLs ---
 const SERVICES = {
@@ -139,7 +161,11 @@ function proxyTo(target: string, basePath: string) {
       return `${basePath}${normalizedPath}`;
     },
     on: {
-
+      proxyReq: (proxyReq, req: any) => {
+        if (req.requestId) {
+          proxyReq.setHeader('x-request-id', String(req.requestId));
+        }
+      },
       error: (err, _req, res) => {
         logger.error({ err, target }, 'Proxy error');
         (res as Response).status(503).json({
@@ -223,11 +249,15 @@ app.use('/search', proxyTo(SERVICES.search, '/search'));
 app.use('/api/v1/pricing', proxyTo(SERVICES.pricing, '/pricing'));
 app.use('/pricing', proxyTo(SERVICES.pricing, '/pricing'));
 
+// Protect concierge routes before public /predict proxy
+app.use('/api/v1/predict/concierge', authenticate, proxyTo(SERVICES.prediction, '/predict/concierge'));
+app.use('/predict/concierge', authenticate, proxyTo(SERVICES.prediction, '/predict/concierge'));
+
 app.use('/api/v1/predict', proxyTo(SERVICES.prediction, '/predict'));
 app.use('/predict', proxyTo(SERVICES.prediction, '/predict'));
 
-app.use('/api/v1/concierge', proxyTo(SERVICES.prediction, '/concierge'));
-app.use('/concierge', proxyTo(SERVICES.prediction, '/concierge'));
+app.use('/api/v1/concierge', authenticate, proxyTo(SERVICES.prediction, '/concierge'));
+app.use('/concierge', authenticate, proxyTo(SERVICES.prediction, '/concierge'));
 
 // --- Public Webhook Routes (No JWT authentication required) ---
 app.use('/api/v1/payments/webhook', proxyTo(SERVICES.payment, '/payments/webhook'));

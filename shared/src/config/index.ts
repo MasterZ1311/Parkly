@@ -73,6 +73,11 @@ export interface AppConfig {
   apnsTeamId?: string;
   apnsBundleId?: string;
 
+  // Security / Internal
+  internalServiceKey?: string;
+  returnDevOtp: boolean;
+  allowMockPayments: boolean;
+
   // Bedrock
   bedrockRegion: string;
   bedrockModelId: string;
@@ -162,11 +167,28 @@ export function getConfig(): AppConfig {
     apnsTeamId: optionalEnv('APNS_TEAM_ID'),
     apnsBundleId: optionalEnv('APNS_BUNDLE_ID'),
 
+    // Security / Internal
+    internalServiceKey: optionalEnv('INTERNAL_SERVICE_KEY'),
+    returnDevOtp:
+      (process.env['NODE_ENV'] || 'development') !== 'production' &&
+      process.env['RETURN_DEV_OTP'] !== 'false',
+    allowMockPayments: process.env['ALLOW_MOCK_PAYMENTS'] === 'true',
+
     // Bedrock
     bedrockRegion: process.env['BEDROCK_REGION'] || 'us-east-1',
     bedrockModelId:
       process.env['BEDROCK_MODEL_ID'] || 'anthropic.claude-3-sonnet-20240229-v1:0',
   };
+
+  if (
+    _config.nodeEnv === 'production' &&
+    (_config.jwtAccessSecret.length < 32 ||
+      _config.jwtAccessSecret.includes('change-me') ||
+      _config.jwtRefreshSecret.length < 32 ||
+      _config.jwtRefreshSecret.includes('change-me'))
+  ) {
+    throw new Error('Production JWT secrets must be at least 32 characters and rotated from defaults');
+  }
 
   return _config;
 }

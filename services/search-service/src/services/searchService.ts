@@ -171,6 +171,7 @@ export class SearchService {
 
       return {
         id: space.id,
+        hostId: space.hostId,
         name: space.name,
         address: space.address,
         coordinates: { lat: Number(space.latitude), lng: Number(space.longitude) },

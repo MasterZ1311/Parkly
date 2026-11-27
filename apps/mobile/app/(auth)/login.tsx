@@ -14,25 +14,31 @@ import {
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from '../../src/store/auth.store';
+import { IS_DEMO_MODE } from '../../src/api/client';
 
 export default function LoginScreen() {
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState('9840012345');
   const { requestOtp, isLoading, error, clearError } = useAuthStore();
 
   const handleSendOtp = async () => {
-    if (!phone || phone.length < 10) {
+    const normalizedDigits = phone.replace(/\D/g, '').slice(-10);
+    if (!normalizedDigits || normalizedDigits.length < 10) {
       Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
       return;
     }
     clearError();
+    const formattedPhone = `+91${normalizedDigits}`;
     try {
-      const formattedPhone = phone.startsWith('+91') ? phone : `+91${phone}`;
       const devOtp = await requestOtp(formattedPhone);
-      router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone, devOtp: devOtp ?? '123456' } });
-    } catch {
-      // Offline / demo fallback: navigate to OTP with devOtp
-      const formattedPhone = phone.startsWith('+91') ? phone : `+91${phone}`;
-      router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone, devOtp: '123456' } });
+      router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone, ...(devOtp ? { devOtp } : {}) } });
+    } catch (err: unknown) {
+      if (IS_DEMO_MODE) {
+        router.push({ pathname: '/(auth)/otp', params: { phone: formattedPhone, devOtp: '123456' } });
+        return;
+      }
+      const message = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message || 'Unable to reach Parkly Auth service. Please check your connection.';
+      Alert.alert('OTP Request Failed', message);
     }
   };
 

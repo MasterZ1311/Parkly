@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { bookingApi } from '../../src/api/client';
+import { IS_DEMO_MODE, bookingApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { colors } from '../../src/constants/theme';
 
 export interface Booking {
   id: string;
@@ -15,14 +16,15 @@ export interface Booking {
   endTime: string;
   totalAmount: number;
   type: string;
+  space?: { name?: string };
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  created: '#F59E0B',
-  confirmed: '#22C55E',
-  active: '#38BDF8',
-  completed: '#64748B',
-  cancelled: '#EF4444',
+  created: colors.warning,
+  confirmed: colors.success,
+  active: colors.info,
+  completed: colors.textMuted,
+  cancelled: colors.danger,
   refunded: '#8B5CF6',
 };
 
@@ -34,17 +36,19 @@ export default function BookingsScreen() {
   const isOffline = useAuthStore((s) => s.isOffline);
 
   useEffect(() => {
-    // 1. Immediate cache hydration
     cacheGet<Booking[]>(CACHE_KEYS.RECENT_BOOKINGS).then((cached) => {
       if (cached && cached.length > 0) {
         setBookings(cached);
         setLoading(false);
       }
     });
-
-    // 2. Fresh background fetch
-    loadBookings();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBookings();
+    }, []),
+  );
 
   const loadBookings = async () => {
     try {
@@ -59,7 +63,7 @@ export default function BookingsScreen() {
       if (cached && cached.length > 0) {
         setBookings(cached);
         setIsOfflineData(true);
-      } else {
+      } else if (IS_DEMO_MODE) {
         const demoBookings: Booking[] = [
           {
             id: 'bk-demo-001',
@@ -81,6 +85,9 @@ export default function BookingsScreen() {
           },
         ];
         setBookings(demoBookings);
+        setIsOfflineData(true);
+      } else {
+        setBookings([]);
         setIsOfflineData(true);
       }
     } finally {
@@ -105,14 +112,14 @@ export default function BookingsScreen() {
     >
       <View style={styles.cardTop}>
         <View style={styles.bookingIcon}>
-          <Ionicons name="car" size={20} color="#38BDF8" />
+          <Ionicons name="car" size={20} color={colors.primary} />
         </View>
         <View style={styles.bookingInfo}>
-          <Text style={styles.bookingId}>Booking #{item.id.slice(-8).toUpperCase()}</Text>
-          <Text style={styles.bookingType}>{item.type.charAt(0).toUpperCase() + item.type.slice(1)}</Text>
+          <Text style={styles.bookingId}>{item.space?.name || `Booking #${item.id.slice(-8).toUpperCase()}`}</Text>
+          <Text style={styles.bookingType}>#{item.id.slice(-8).toUpperCase()} · {item.type.charAt(0).toUpperCase() + item.type.slice(1)}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] + '20' }]}>
-          <Text style={[styles.statusText, { color: STATUS_COLORS[item.status] }]}>
+        <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[item.status] || colors.info) + '20' }]}>
+          <Text style={[styles.statusText, { color: STATUS_COLORS[item.status] || colors.info }]}>
             {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
           </Text>
         </View>
@@ -120,7 +127,7 @@ export default function BookingsScreen() {
 
       <View style={styles.cardDetails}>
         <View style={styles.timeRow}>
-          <Ionicons name="time-outline" size={14} color="#64748B" />
+          <Ionicons name="time-outline" size={14} color={colors.textMuted} />
           <Text style={styles.timeText}>
             {formatDate(item.startTime)} → {formatDate(item.endTime)}
           </Text>
@@ -150,11 +157,11 @@ export default function BookingsScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#38BDF8" size="large" />
+          <ActivityIndicator color={colors.primary} size="large" />
         </View>
       ) : displayed.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="calendar-outline" size={64} color="#334155" />
+          <Ionicons name="calendar-outline" size={64} color={colors.border} />
           <Text style={styles.emptyTitle}>No {activeTab} bookings</Text>
           {activeTab === 'upcoming' && (
             <TouchableOpacity style={styles.findButton} onPress={() => router.push('/(tabs)/home')}>
@@ -165,7 +172,7 @@ export default function BookingsScreen() {
       ) : (
         <FlatList
           data={displayed}
-          keyExtractor={item => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           renderItem={renderBooking}
           contentContainerStyle={styles.list}
           refreshing={loading}
@@ -177,50 +184,50 @@ export default function BookingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
+  container: { flex: 1, backgroundColor: colors.background },
   tabs: { flexDirection: 'row', padding: 16, gap: 8 },
   tab: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
-  activeTab: { backgroundColor: '#38BDF820', borderColor: '#38BDF8' },
-  tabText: { color: '#64748B', fontSize: 13, fontWeight: '600' },
-  activeTabText: { color: '#38BDF8' },
+  activeTab: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  tabText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  activeTabText: { color: colors.primary },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#64748B' },
-  findButton: { backgroundColor: '#38BDF8', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
-  findButtonText: { color: '#0F172A', fontWeight: '700' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.textMuted },
+  findButton: { backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
+  findButtonText: { color: colors.white, fontWeight: '700' },
   list: { paddingHorizontal: 16 },
   card: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   bookingIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#38BDF820',
+    backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
   bookingInfo: { flex: 1 },
-  bookingId: { color: '#F8FAFC', fontSize: 14, fontWeight: '700' },
-  bookingType: { color: '#64748B', fontSize: 12 },
+  bookingId: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  bookingType: { color: colors.textMuted, fontSize: 12 },
   statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '600' },
   cardDetails: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
-  timeText: { color: '#94A3B8', fontSize: 11 },
-  amount: { color: '#38BDF8', fontSize: 16, fontWeight: '800' },
+  timeText: { color: colors.textSecondary, fontSize: 11 },
+  amount: { color: colors.primary, fontSize: 16, fontWeight: '800' },
 });
