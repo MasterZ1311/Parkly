@@ -1,23 +1,31 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../../src/constants/theme';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 6);
+
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: '#0A1425' },
-        headerTintColor: '#EF010C',
-        headerTitleStyle: { fontWeight: '700', color: '#F8FAFC' },
+        animation: 'none',
+        headerStyle: { backgroundColor: colors.navy },
+        headerTintColor: colors.white,
+        headerTitleStyle: { fontWeight: '800', color: colors.white, fontSize: 17 },
         tabBarStyle: {
-          backgroundColor: '#0A1425',
-          borderTopColor: '#263957',
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
-          paddingBottom: 4,
-          height: 60,
+          paddingTop: 6,
+          paddingBottom: bottomPad,
+          height: 58 + bottomPad,
+          elevation: 8,
         },
-        tabBarActiveTintColor: '#EF010C',
-        tabBarInactiveTintColor: '#64748B',
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
       }}
     >
       <Tabs.Screen
@@ -25,18 +33,18 @@ export default function TabsLayout() {
         options={{
           title: 'Find Parking',
           tabBarLabel: 'Find',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="map"
         options={{
-          title: 'Map',
+          title: 'Chennai Grid Map',
           tabBarLabel: 'Map',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
           ),
         }}
       />
@@ -45,28 +53,28 @@ export default function TabsLayout() {
         options={{
           title: 'My Bookings',
           tabBarLabel: 'Bookings',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="concierge"
         options={{
-          title: 'AI Concierge',
+          title: 'Driver Concierge',
           tabBarLabel: 'Concierge',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: 'Account Profile',
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
           ),
         }}
       />

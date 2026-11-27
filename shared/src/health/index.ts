@@ -45,16 +45,26 @@ export function createHealthCheck(
   return async (_req: Request, res: Response): Promise<void> => {
     const dependencies: DependencyCheck[] = [];
 
-    // Run all dependency checks in parallel
+    // Run all dependency checks in parallel with deterministic timeout cleanup
     const results = await Promise.allSettled(
-      checks.map((check) =>
-        Promise.race([
-          check(),
-          new Promise<DependencyCheck>((resolve) =>
-            setTimeout(() => resolve({ name: 'timeout', status: 'unhealthy', message: 'Check timed out (3s)' }), 3000),
-          ),
-        ]),
-      ),
+      checks.map(async (check) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            check(),
+            new Promise<DependencyCheck>((resolve) => {
+              timer = setTimeout(
+                () => resolve({ name: 'timeout', status: 'unhealthy', message: 'Check timed out (3s)' }),
+                3000,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer !== undefined) {
+            clearTimeout(timer);
+          }
+        }
+      }),
     );
 
     for (const result of results) {

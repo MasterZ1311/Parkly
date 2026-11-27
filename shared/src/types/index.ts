@@ -170,6 +170,19 @@ export interface Booking {
   completedAt?: string;
   createdAt: string;
   updatedAt: string;
+  space?: {
+    id: string;
+    name: string;
+    address: string;
+    hourlyRate?: number;
+    latitude?: number;
+    longitude?: number;
+  };
+  vehicle?: {
+    id: string;
+    licensePlate: string;
+    vehicleType: VehicleType;
+  };
 }
 
 // --- Payment ---
@@ -286,6 +299,7 @@ export interface SearchResponse {
 
 export interface ParkingSpaceResult {
   id: string;
+  hostId?: string;
   name: string;
   address: string;
   coordinates: Coordinates;
@@ -406,6 +420,7 @@ export type ParklyEventType =
   | 'BookingConfirmed'
   | 'BookingCancelled'
   | 'BookingCompleted'
+  | 'BookingExtended'
   | 'PaymentCompleted'
   | 'RefundIssued'
   | 'PayoutScheduled'

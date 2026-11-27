@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Breadcrumbs from '../components/Breadcrumbs';
+import Modal from '../components/Modal';
 import { useBookings, HostBooking } from '../hooks/useHostData';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+import { CarIcon, CheckCircleIcon, CalendarIcon, XCircleIcon } from '../components/Icons';
 
 export default function BookingsPage() {
   useDocumentTitle('Reservations & Bookings');
@@ -18,23 +20,27 @@ export default function BookingsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Reservations &amp; Bookings</h1>
-          <p className="page-subtitle">Track active sessions, check-in timestamps, and driver vehicle details.</p>
+          <p className="page-subtitle">
+            Track active parking sessions, check-in timestamps, and driver registration numbers.
+          </p>
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid-4" style={{ marginBottom: 24 }}>
+      {/* Summary Cards */}
+      <div className="grid-4" style={{ marginBottom: 20 }}>
         {[
-          { label: 'Active Now', value: String(activeCount || 1), color: '#38BDF8', bg: '#38BDF820', icon: '🚗' },
-          { label: 'Completed', value: String(completedCount || 3), color: '#22C55E', bg: '#22C55E20', icon: '✅' },
-          { label: 'Total Reservations', value: String(bookings.length || 5), color: '#8B5CF6', bg: '#8B5CF620', icon: '📊' },
-          { label: 'Cancelled', value: String(cancelledCount || 1), color: '#EF4444', bg: '#EF444420', icon: '❌' },
-        ].map((s) => (
-          <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg }}>{s.icon}</div>
+          { label: 'Active Now', value: String(activeCount), Icon: CarIcon, color: 'var(--blue)' },
+          { label: 'Completed', value: String(completedCount), Icon: CheckCircleIcon, color: 'var(--green)' },
+          { label: 'Total Listed', value: String(bookings.length), Icon: CalendarIcon, color: 'var(--text-primary)' },
+          { label: 'Cancelled', value: String(cancelledCount), Icon: XCircleIcon, color: 'var(--red)' },
+        ].map(({ label, value, Icon, color }) => (
+          <div key={label} className="stat-card">
             <div>
-              <div className="stat-value">{s.value}</div>
-              <div className="stat-label">{s.label}</div>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value" style={{ color }}>{value}</div>
+            </div>
+            <div className="stat-icon">
+              <Icon size={18} />
             </div>
           </div>
         ))}
@@ -43,7 +49,9 @@ export default function BookingsPage() {
       <div className="card">
         <div className="table-wrap">
           {loading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading bookings...</div>
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)' }}>
+              Loading reservations...
+            </div>
           ) : (
             <table>
               <thead>
@@ -51,7 +59,7 @@ export default function BookingsPage() {
                   <th>Booking ID</th>
                   <th>Driver</th>
                   <th>Vehicle Plate</th>
-                  <th>Space</th>
+                  <th>Parking Space</th>
                   <th>Start</th>
                   <th>End</th>
                   <th>Amount</th>
@@ -62,23 +70,33 @@ export default function BookingsPage() {
               <tbody>
                 {bookings.map((b) => (
                   <tr key={b.id}>
-                    <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{b.id.slice(0, 8)}</td>
-                    <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{b.driverName || 'Guest Driver'}</td>
+                    <td className="mono-num" style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                      #{b.id.slice(0, 8)}
+                    </td>
+                    <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                      {b.driverName || 'Guest Driver'}
+                    </td>
                     <td>
-                      <span className="badge badge-blue">{b.vehiclePlate || 'TN01AB1234'}</span>
+                      <span className="badge badge-neutral mono-num">{b.vehiclePlate || 'TN01AB1234'}</span>
                     </td>
                     <td>{b.spaceName || 'T Nagar Spot A'}</td>
-                    <td style={{ fontSize: 12 }}>
+                    <td className="mono-num" style={{ fontSize: 12 }}>
                       {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td style={{ fontSize: 12 }}>
+                    <td className="mono-num" style={{ fontSize: 12 }}>
                       {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
+                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      ₹{b.totalAmount}
+                    </td>
                     <td>
                       <span
                         className={`badge badge-${
-                          b.status === 'active' || b.status === 'confirmed' ? 'blue' : b.status === 'completed' ? 'green' : 'red'
+                          b.status === 'active' || b.status === 'confirmed'
+                            ? 'blue'
+                            : b.status === 'completed'
+                            ? 'green'
+                            : 'red'
                         }`}
                       >
                         {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
@@ -86,8 +104,8 @@ export default function BookingsPage() {
                     </td>
                     <td>
                       <button
-                        className="btn btn-outline"
-                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        type="button"
+                        className="btn btn-outline btn-sm"
                         onClick={() => setSelected(b)}
                       >
                         Details
@@ -102,53 +120,71 @@ export default function BookingsPage() {
       </div>
 
       {/* Booking Details Modal */}
-      {selected && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 480 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Booking Details #{selected.id.slice(0, 8)}</h2>
-              <button className="btn btn-outline" style={{ padding: '4px 10px' }} onClick={() => setSelected(null)}>
-                ✕
-              </button>
-            </div>
-            <div className="modal-body" style={{ gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>DRIVER</div>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selected.driverName || 'Arjun K.'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>VEHICLE PLATE</div>
-                  <div style={{ fontWeight: 700, color: 'var(--accent)' }}>{selected.vehiclePlate || 'TN01AB1234'}</div>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>START TIME</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>
-                    {new Date(selected.startTime).toLocaleString()}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>END TIME</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-primary)' }}>
-                    {new Date(selected.endTime).toLocaleString()}
-                  </div>
+      <Modal
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        titleId="booking-detail-title"
+        maxWidth={480}
+        title={
+          selected ? (
+            <>
+              Reservation <span className="mono-num">#{selected.id.slice(0, 8)}</span>
+            </>
+          ) : null
+        }
+        footer={
+          <button type="button" className="btn btn-primary" onClick={() => setSelected(null)}>
+            Close
+          </button>
+        }
+      >
+        {selected && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div className="stat-label">Driver</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {selected.driverName || 'Arjun K.'}
                 </div>
               </div>
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Tariff Paid</span>
-                <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>₹{selected.totalAmount}</span>
+              <div>
+                <div className="stat-label">Vehicle Plate</div>
+                <div className="mono-num" style={{ fontWeight: 700, color: 'var(--accent-cta)', marginTop: 3 }}>
+                  {selected.vehiclePlate || 'TN01AB1234'}
+                </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => setSelected(null)}>
-                Close
-              </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div className="stat-label">Start Time</div>
+                <div className="mono-num" style={{ fontSize: 12.5, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {new Date(selected.startTime).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="stat-label">End Time</div>
+                <div className="mono-num" style={{ fontSize: 12.5, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {new Date(selected.endTime).toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                paddingTop: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Tariff Paid</span>
+              <span className="mono-num" style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
+                ₹{selected.totalAmount}
+              </span>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

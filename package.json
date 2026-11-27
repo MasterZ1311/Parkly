@@ -5,15 +5,15 @@
   "description": "Parkly — Autonomous Multi-Agent Smart City Parking Marketplace",
   "workspaces": [
     "shared",
+    "packages/*",
     "services/*",
     "apps/host-dashboard",
     "apps/admin-portal",
-    "packages/*",
     "infra/cdk"
   ],
   "scripts": {
     "postinstall": "npx prisma generate --schema=infra/prisma/schema.prisma",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w shared && npm run build -w packages/ai-agents && npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:watch": "npm run test:watch --workspaces --if-present",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
@@ -40,7 +40,8 @@
     "migrate:deploy": "npx prisma migrate deploy --schema=infra/prisma/schema.prisma",
     "prisma:generate": "npx prisma generate --schema=infra/prisma/schema.prisma",
     "prisma:studio": "npx prisma studio --schema=infra/prisma/schema.prisma",
-    "seed": "ts-node infra/prisma/seed.ts",
+    "seed:regions": "npm run build -w shared && ts-node infra/prisma/seed-regions.ts",
+    "seed": "npm run build -w shared && ts-node infra/prisma/seed.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
@@ -55,6 +56,7 @@
     "prisma": "^5.16.1",
     "rimraf": "^5.0.7",
     "supertest": "^7.3.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
   "engines": {

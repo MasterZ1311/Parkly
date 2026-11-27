@@ -6,6 +6,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../constants/theme';
 
 interface OfflineBannerProps {
   visible?: boolean;
@@ -20,28 +21,30 @@ export function OfflineBanner({
 
   return (
     <View style={styles.banner}>
-      <Ionicons name="cloud-offline" size={16} color="#F59E0B" />
-      <Text style={styles.text}>{message}</Text>
+      <Ionicons name="cloud-offline-outline" size={16} color={colors.warning} />
+      <Text style={styles.text} numberOfLines={1}>
+        {message}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#78350F',
-    paddingVertical: 7,
+    backgroundColor: colors.warningLight,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#92400E',
+    borderBottomColor: colors.warningBorder,
   },
   text: {
-    color: '#FDE68A',
+    color: colors.warning,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
 });

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T18:35:00Z",
+  "title": "Design System: Parkly — Coromandel Sunlit Ledger",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Signal Crimson CTA",
+        "canonical": "#D90410",
+        "tonalRamp": ["#4A0105", "#820209", "#B8030D", "#D90410", "#EF010C", "#F87171", "#FECACA", "#FEF2F2"]
+      },
+      "harbor-navy": {
+        "role": "secondary",
+        "displayName": "Harbor Navy",
+        "canonical": "#0B1628",
+        "tonalRamp": ["#060E1B", "#0B1628", "#14243D", "#1E3252", "#334155", "#64748B", "#9FB0C7", "#E2E8F0"]
+      },
+      "emerald-available": {
+        "role": "secondary",
+        "displayName": "Bay Emerald",
+        "canonical": "#0F766E",
+        "tonalRamp": ["#06332F", "#094D47", "#0D615B", "#0F766E", "#14B8A6", "#5EEAD4", "#A7F3D0", "#ECFDF5"]
+      },
+      "limestone-ground": {
+        "role": "neutral",
+        "displayName": "Limestone Ground",
+        "canonical": "#F7F6F2",
+        "tonalRamp": ["#5A6678", "#94A3B8", "#C9C5B9", "#DFDDD4", "#EAE7DE", "#F1EFE9", "#F7F6F2", "#FFFFFF"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Manrope Display", "purpose": "Page titles and primary KPI headers without kickers." },
+      "body": { "displayName": "Manrope UI", "purpose": "Operational copy, tables, controls, and dialogs." },
+      "label": { "displayName": "JetBrains Mono Tabular", "purpose": "INR figures, booking tokens, TN plates, and uppercase captions." }
+    },
+    "shadows": [
+      { "name": "surface-subtle", "value": "0 1px 2px rgba(11, 22, 40, 0.04)", "purpose": "Minimal crisp separation for white paper cards on warm limestone." },
+      { "name": "modal-elevated", "value": "0 18px 40px rgba(11, 22, 40, 0.16)", "purpose": "Floating confirmation dialogs, AI audit sheets, and chart tooltips." }
+    ],
+    "motion": [
+      { "name": "ease-control", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Responsive drawer slide and modal state polish, zeroed under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "600px" },
+      { "name": "md", "value": "960px" },
+      { "name": "lg", "value": "1180px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary CTA Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast Signal Crimson button for primary create/submit actions.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><path d=\"M12 5v14M5 12h14\"/></svg>Add New Space</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; min-height: 38px; border-radius: 7px; border: 1px solid transparent; background: #D90410; color: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background-color 140ms ease, transform 80ms ease; } .ds-btn-primary:hover { background: #B8030D; } .ds-btn-primary:focus-visible { outline: 2px solid #D90410; outline-offset: 2px; } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Nav Rail Item (Active)",
+      "kind": "nav",
+      "description": "Dark Harbor Navy navigation item with right crimson dot indicator.",
+      "html": "<div style=\"background:#0B1628;padding:12px;border-radius:10px;width:220px;\"><a class=\"ds-nav-link ds-nav-active\" href=\"#\"><span>Overview</span><span class=\"ds-nav-dot\"></span></a></div>",
+      "css": ".ds-nav-link { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 8px; text-decoration: none; font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 600; color: #FFFFFF; background: #14243D; border: 1px solid rgba(255,255,255,0.14); } .ds-nav-link:focus-visible { outline: 2px solid #EF010C; outline-offset: 2px; } .ds-nav-dot { width: 7px; height: 7px; border-radius: 999px; background: #EF010C; }"
+    },
+    {
+      "name": "Text Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Hairline-bordered paper input with high-contrast placeholder and focus ring.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"e.g. Panagal Park Covered Bay\" />",
+      "css": ".ds-input { width: 100%; background: #FFFFFF; border: 1px solid #C9C5B9; border-radius: 7px; padding: 9px 12px; min-height: 38px; color: #0B1628; caret-color: #D90410; font-family: 'Manrope', sans-serif; font-size: 13.5px; outline: none; transition: border-color 140ms ease, box-shadow 140ms ease; } .ds-input::placeholder { color: #5A6678; } .ds-input:focus { border-color: #0B1628; box-shadow: 0 0 0 3px rgba(11,22,40,0.28); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "description": "Soft-tinted operational status pill with matching hairline border.",
+      "html": "<span class=\"ds-badge-green\">AI Verified</span>",
+      "css": ".ds-badge-green { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 5px; background: #ECFDF5; color: #0F766E; border: 1px solid #A7F3D0; font-family: 'Manrope', sans-serif; font-size: 11.5px; font-weight: 700; }"
+    },
+    {
+      "name": "Bay Capacity Horizon",
+      "kind": "custom",
+      "refersTo": "card-panel",
+      "description": "Signature segmented bay occupancy bar encoding occupied, EV hold, and open stalls.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-bay-track\"><span class=\"ds-bay ds-occ\">A1</span><span class=\"ds-bay ds-occ\">A2</span><span class=\"ds-bay ds-hold\">EV</span><span class=\"ds-bay ds-open\">A4</span></div></div>",
+      "css": ".ds-card { background: #FFFFFF; border: 1px solid #DFDDD4; border-radius: 10px; padding: 14px; } .ds-bay-track { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; } .ds-bay { height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; } .ds-occ { background: #0B1628; color: #FFFFFF; } .ds-hold { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; } .ds-open { background: #ECFDF5; color: #0F766E; border: 1px solid #A7F3D0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Coromandel Sunlit Ledger",
+    "overview": "Parkly's interface pairs a sunlit warm-limestone operational canvas (#F7F6F2) and crisp paper work cards (#FFFFFF) with a committed deep Harbor Navy navigation shell (#0B1628) and Parkly Signal Crimson primary actions (#D90410 CTA, #EF010C pin mark). Every view is built for rapid outdoor and booth-lit scanning by Chennai parking hosts checking bay capacity, INR tariffs, AI onboarding audits, and reservations.\n\nDepth comes from 1px architectural hairlines (#DFDDD4) and crisp tabular numerals (JetBrains Mono / Manrope) rather than blurred shadows or decorative chrome. Emoji glyphs are banned across controls, status tags, and headings in favor of a single unified 1.75px vector icon set.",
+    "keyCharacteristics": [
+      "Warm limestone daylight canvas anchored by a fixed 248px dark Harbor Navy navigation rail.",
+      "Self-hosted Manrope (with dedicated U+20B9 Rupee glyph subsets) paired with JetBrains Mono tabular figures for INR settlements, TN plates, and bay percentages.",
+      "Accessible WCAG AA text, placeholder (#5A6678), and signal-button (#D90410) contrast.",
+      "Zero browser alert/confirm/prompt interruptions; every confirmation renders inside focus-restoring Escape-dismissible dialogs."
+    ],
+    "rules": [
+      { "name": "The Restrained Signal Rule", "body": "Reserve Signal Crimson exclusively for primary commitments, active navigation dots, and critical errors so high-priority controls stand out immediately against Limestone Paper and Harbor Navy.", "section": "colors" },
+      { "name": "The Tabular Ledger Rule", "body": "Set every INR amount, percentage, slot count, booking ID, and Indian license plate with font-variant-numeric: tabular-nums (and --font-mono where aligned in columns) so values align vertically across rows.", "section": "typography" },
+      { "name": "The Hairline First Rule", "body": "Convey containment via crisp 1px borders and clean #F1EFE9 / #FFFFFF tonal steps; never wrap rest cards in wide dark glow shadows or 3px accent borders.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use self-hosted .woff2 Manrope + JetBrains Mono assets under /fonts/ so strict 'self' Nginx CSP headers never break font loading.",
+      "Do route every dialog through the shared Modal wrapper with Escape closing, backdrop click, and trigger focus restoration.",
+      "Do represent status via crisp badges paired with semantic contrast and 1.75px vector icons."
+    ],
+    "donts": [
+      "Don't place kicker/eyebrow labels above h1 page titles or skip h2 heading levels inside cards.",
+      "Don't use Unicode emojis anywhere in navigation, stat icons, chips, buttons, or empty states.",
+      "Don't add border-left: 3px active bars on navigation items or call browser alert/confirm/prompt."
+    ]
+  }
+}

@@ -1,8 +1,14 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { useBookings, useRevenue, useListings } from '../hooks/useHostData';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+import {
+  CurrencyIcon,
+  CalendarIcon,
+  ParkingIcon,
+  GaugeIcon,
+  PlusIcon,
+} from '../components/Icons';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -12,77 +18,205 @@ export default function Dashboard() {
   const { revenueStats } = useRevenue();
   const { listings } = useListings();
 
+  const activeSpaces = listings.filter((l) => l.status === 'active');
+  const leadListing = activeSpaces[0] || listings[0];
+  const leadCapacity = Math.min(leadListing?.totalCapacity || 10, 10);
+  const leadOccupancy = leadListing?.occupancyPercent ?? 72;
+  const occupiedCount = Math.round((leadCapacity * leadOccupancy) / 100);
+
   const statCards = [
-    { icon: '💰', label: 'Total Earnings', value: revenueStats.totalEarnings, change: '+12.5%', color: '#22C55E', bg: '#22C55E20' },
-    { icon: '📅', label: 'Total Bookings', value: bookings.length > 0 ? String(bookings.length + 412) : '416', change: '+8%', color: '#38BDF8', bg: '#38BDF820' },
-    { icon: '🅿️', label: 'Active Spaces', value: listings.length > 0 ? String(listings.filter(l => l.status === 'active').length) : '3', change: '', color: '#8B5CF6', bg: '#8B5CF620' },
-    { icon: '⭐', label: 'Avg Occupancy', value: revenueStats.avgOccupancy, change: '+5%', color: '#F59E0B', bg: '#F59E0B20' },
+    {
+      Icon: CurrencyIcon,
+      label: 'Total Earnings',
+      value: revenueStats.totalEarnings,
+      delta: '+12.5% vs prior cycle',
+      deltaColor: 'var(--green)',
+    },
+    {
+      Icon: CalendarIcon,
+      label: 'Total Bookings',
+      value: bookings.length > 0 ? String(bookings.length + 412) : '416',
+      delta: '+8% demand growth',
+      deltaColor: 'var(--blue)',
+    },
+    {
+      Icon: ParkingIcon,
+      label: 'Active Spaces',
+      value: listings.length > 0 ? String(activeSpaces.length) : '3',
+      delta: `${listings.filter((l) => l.status === 'pending_verification').length} pending AI audit`,
+      deltaColor: 'var(--text-muted)',
+    },
+    {
+      Icon: GaugeIcon,
+      label: 'Avg Occupancy',
+      value: revenueStats.avgOccupancy,
+      delta: '+5% corridor yield',
+      deltaColor: 'var(--green)',
+    },
   ];
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Host Performance Dashboard</h1>
-          <p className="page-subtitle">Real-time Chennai parking space occupancy, dynamic revenue surges &amp; active reservations.</p>
+          <h1 className="page-title">Host Performance Overview</h1>
+          <p className="page-subtitle">
+            Real-time Chennai bay occupancy, dynamic surge revenue, and live reservation stream.
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => navigate('/listings')}>+ Add Listing</button>
+        <button type="button" className="btn btn-primary" onClick={() => navigate('/listings')}>
+          <PlusIcon size={16} />
+          Add New Space
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid-4" style={{ marginBottom: 24 }}>
-        {statCards.map((card) => (
-          <div key={card.label} className="stat-card">
-            <div className="stat-icon" style={{ background: card.bg }}>
-              {card.icon}
-            </div>
+      {/* KPI Metrics */}
+      <div className="grid-4" style={{ marginBottom: 20 }}>
+        {statCards.map(({ Icon, label, value, delta, deltaColor }) => (
+          <div key={label} className="stat-card">
             <div>
-              <div className="stat-value">{card.value}</div>
-              <div className="stat-label">
-                {card.label}
-                {card.change && (
-                  <span style={{ color: '#22C55E', marginLeft: 6, fontSize: 11, fontWeight: 700 }}>
-                    {card.change}
-                  </span>
-                )}
+              <div className="stat-label">{label}</div>
+              <div className="stat-value">{value}</div>
+              <div className="stat-delta" style={{ color: deltaColor }}>
+                {delta}
               </div>
+            </div>
+            <div className="stat-icon">
+              <Icon size={18} />
             </div>
           </div>
         ))}
       </div>
 
-      {/* Charts */}
-      <div className="grid-2" style={{ marginBottom: 24 }}>
+      {/* Bay Capacity Horizon + Tariff Summary */}
+      <div className="split-grid" style={{ marginBottom: 20 }}>
         <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Monthly Revenue (₹)
-          </h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <div className="card-header" style={{ marginBottom: 6 }}>
+            <div>
+              <div className="card-meta">
+                Bay Capacity Horizon · {leadListing?.name || 'T Nagar Parking Complex - Spot A'}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>
+                <span className="mono-num">{leadCapacity}</span> Stalls ·{' '}
+                <span className="mono-num">₹{leadListing?.hourlyRate || 40}/hr</span>
+              </div>
+            </div>
+            <span className={`badge badge-${leadListing?.status === 'pending_verification' ? 'yellow' : 'green'}`}>
+              {leadListing?.status === 'pending_verification' ? 'Pending Verification' : 'AI Verified'}
+            </span>
+          </div>
+
+          <div className="bay-track" role="img" aria-label={`Bay allocation ${occupiedCount} of ${leadCapacity} occupied`}>
+            {Array.from({ length: leadCapacity }).map((_, idx) => {
+              const slotNum = `A${idx + 1}`;
+              const variant =
+                idx < occupiedCount
+                  ? 'bay-cell--occupied'
+                  : idx === occupiedCount && leadCapacity >= 4
+                  ? 'bay-cell--hold'
+                  : 'bay-cell--open';
+              return (
+                <div key={slotNum} className={`bay-cell ${variant}`}>
+                  {idx === occupiedCount && leadCapacity >= 4 ? 'EV' : slotNum}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="bay-legend">
+            <span>
+              <strong style={{ color: 'var(--text-primary)' }} className="mono-num">
+                {occupiedCount}
+              </strong>{' '}
+              occupied
+            </span>
+            <span>
+              <strong style={{ color: 'var(--red)' }} className="mono-num">
+                {leadCapacity >= 4 && occupiedCount < leadCapacity ? 1 : 0}
+              </strong>{' '}
+              EV hold
+            </span>
+            <span>
+              <strong style={{ color: 'var(--green)' }} className="mono-num">
+                {Math.max(0, leadCapacity - occupiedCount - (leadCapacity >= 4 && occupiedCount < leadCapacity ? 1 : 0))}
+              </strong>{' '}
+              open now
+            </span>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div>
+            <div className="card-meta">Dynamic Tariff Band</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>
+              Peak Demand Pricing Active
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 12,
+              borderTop: '1px solid var(--border)',
+              paddingTop: 14,
+              marginTop: 14,
+            }}
+          >
+            <div>
+              <div className="stat-label">Base Rate</div>
+              <div className="mono-num" style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>
+                ₹{leadListing?.hourlyRate || 40}/hr
+              </div>
+            </div>
+            <div>
+              <div className="stat-label">Surge Cap</div>
+              <div className="mono-num" style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-cta)', marginTop: 4 }}>
+                ₹{Math.round((leadListing?.hourlyRate || 40) * 1.4)}/hr
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="grid-2" style={{ marginBottom: 20 }}>
+        <div className="card">
+          <div className="card-header">
+            <h2 className="card-title">Monthly Revenue (₹)</h2>
+            <span className="card-meta">Jan – Jun</span>
+          </div>
+          <ResponsiveContainer width="100%" height={210}>
             <BarChart data={revenueStats.monthlyRevenue}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }}
-              />
-              <Bar dataKey="revenue" fill="#38BDF8" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
+              <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Bar dataKey="revenue" name="Gross (₹)" fill="#0B1628" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Bookings Trend
-          </h3>
-          <ResponsiveContainer width="100%" height={200}>
+          <div className="card-header">
+            <h2 className="card-title">Bookings Velocity</h2>
+            <span className="card-meta">Completed &amp; Live</span>
+          </div>
+          <ResponsiveContainer width="100%" height={210}>
             <LineChart data={revenueStats.monthlyRevenue}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="month" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }}
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
+              <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="bookings"
+                name="Bookings"
+                stroke="#0F766E"
+                strokeWidth={2.5}
+                dot={{ fill: '#0F766E', r: 3.5 }}
+                activeDot={{ r: 5 }}
               />
-              <Line type="monotone" dataKey="bookings" stroke="#22C55E" strokeWidth={2} dot={{ fill: '#22C55E' }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -90,23 +224,27 @@ export default function Dashboard() {
 
       {/* Recent Bookings */}
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Bookings</h3>
-          <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: 12 }} onClick={() => navigate('/bookings')}>
-            View All
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Recent Chennai Reservations</h2>
+          </div>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => navigate('/bookings')}>
+            View All Bookings
           </button>
         </div>
         <div className="table-wrap">
           {bookingsLoading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading bookings...</div>
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+              Loading reservations...
+            </div>
           ) : (
             <table>
               <thead>
                 <tr>
                   <th>Booking ID</th>
-                  <th>Driver / Vehicle</th>
-                  <th>Space</th>
-                  <th>Date &amp; Time</th>
+                  <th>Driver &amp; Plate</th>
+                  <th>Parking Space</th>
+                  <th>Check-In</th>
                   <th>Amount</th>
                   <th>Status</th>
                 </tr>
@@ -114,20 +252,36 @@ export default function Dashboard() {
               <tbody>
                 {bookings.slice(0, 5).map((b) => (
                   <tr key={b.id}>
-                    <td style={{ color: 'var(--accent)', fontWeight: 600 }}>#{b.id.slice(0, 8)}</td>
-                    <td style={{ color: 'var(--text-primary)' }}>
-                      {b.driverName || 'Guest Driver'}
+                    <td className="mono-num" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                      #{b.id.slice(0, 8)}
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {b.driverName || 'Guest Driver'}
+                      </div>
                       {b.vehiclePlate && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{b.vehiclePlate}</div>
+                        <div className="mono-num" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                          {b.vehiclePlate}
+                        </div>
                       )}
                     </td>
                     <td>{b.spaceName || 'T Nagar Spot A'}</td>
-                    <td style={{ fontSize: 12 }}>
+                    <td className="mono-num" style={{ fontSize: 12 }}>
                       {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
+                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      ₹{b.totalAmount}
+                    </td>
                     <td>
-                      <span className={`badge badge-${b.status === 'active' || b.status === 'confirmed' ? 'blue' : b.status === 'completed' ? 'green' : 'red'}`}>
+                      <span
+                        className={`badge badge-${
+                          b.status === 'active' || b.status === 'confirmed'
+                            ? 'blue'
+                            : b.status === 'completed'
+                            ? 'green'
+                            : 'red'
+                        }`}
+                      >
                         {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
                       </span>
                     </td>

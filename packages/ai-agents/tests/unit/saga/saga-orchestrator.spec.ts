@@ -24,13 +24,13 @@ describe('SagaOrchestrator & Compensation Engine', () => {
     const steps: ISagaStep<OrderContext>[] = [
       {
         name: 'ReserveInventory',
-        execute: async (data) => ok({ reserved: true }),
-        compensate: async (data) => ok(undefined),
+        execute: async () => ok({ reserved: true }),
+        compensate: async () => ok(undefined),
       },
       {
         name: 'ChargePayment',
-        execute: async (data) => ok({ charged: true }),
-        compensate: async (data) => ok(undefined),
+        execute: async () => ok({ charged: true }),
+        compensate: async () => ok(undefined),
       },
     ];
 

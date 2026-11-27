@@ -9,6 +9,13 @@
     "test": "jest --passWithNoTests",
     "lint": "eslint src --ext .ts"
   },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/src/__tests__/**/*.test.ts"
+    ]
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/s3-request-presigner": "^3.600.0",

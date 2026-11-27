@@ -1,39 +1,59 @@
 /**
- * Parkly Mobile Design Theme & Palette
- * Derived directly from the brand identity logo:
- * - Navy Dark: #0A1425
- * - Accent Red: #EF010C
+ * Parkly Mobile Design System Tokens
+ * Sunlight-ready daylight operational palette paired with deep Harbor Navy
+ * navigation bars and Signal Crimson primary CTAs.
  */
 
 export const colors = {
-  // Brand
-  primary: '#EF010C',      // Parkly Brand Red
-  primaryDark: '#DC2626',
-  primaryLight: 'rgba(239, 1, 12, 0.12)',
+  // Brand & Actions
+  primary: '#D90410',         // High-contrast Signal Crimson CTA
+  primaryDark: '#B8030D',
+  brandAccent: '#EF010C',     // Parkly Pin Crimson
+  primaryLight: '#FEF2F2',
+  primaryBorder: '#FECACA',
 
-  navy: '#0A1425',         // Parkly Brand Navy
-  navyDark: '#050B14',
-  navySurface: '#111D33',
-  navyElevated: '#162238',
-  navyBorder: '#263957',
+  // Harbor Navy Chrome
+  navy: '#0B1628',
+  navyDark: '#060E1B',
+  navySurface: '#14243D',
+  navyElevated: '#1A2D4A',
+  navyBorder: '#243A5E',
 
-  // Backgrounds
-  background: '#0A1425',
-  card: '#111D33',
-  cardElevated: '#162238',
-  border: '#263957',
+  // Daylight Surfaces
+  background: '#F7F6F2',
+  surface: '#FFFFFF',
+  card: '#FFFFFF',
+  cardElevated: '#F1EFE9',
+  surfaceMuted: '#EFECE4',
+  border: '#DFDDD4',
+  borderStrong: '#C9C5B9',
 
-  // Text
-  text: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
+  // Typography Ink
+  text: '#0B1628',
+  textSecondary: '#334155',
+  textMuted: '#5A6678',
   white: '#FFFFFF',
 
-  // Badges & States
-  success: '#10B981',
-  warning: '#F59E0B',
-  danger: '#EF010C',
-  info: '#3B82F6',
+  // Semantic States
+  success: '#0F766E',
+  successLight: '#ECFDF5',
+  successBorder: '#A7F3D0',
+
+  warning: '#B45309',
+  warningLight: '#FFFBEB',
+  warningBorder: '#FDE68A',
+
+  danger: '#B91C1C',
+  dangerLight: '#FEF2F2',
+  dangerBorder: '#FECACA',
+
+  info: '#0369A1',
+  infoLight: '#F0F9FF',
+  infoBorder: '#BAE6FD',
+
+  // Android Material Ripple tints
+  rippleDark: 'rgba(11, 22, 40, 0.10)',
+  rippleLight: 'rgba(255, 255, 255, 0.22)',
 };
 
 export const theme = {
@@ -50,5 +70,21 @@ export const theme = {
     md: 12,
     lg: 16,
     full: 9999,
+  },
+  elevation: {
+    card: {
+      shadowColor: '#0B1628',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: 1,
+    },
+    sheet: {
+      shadowColor: '#0B1628',
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 12,
+      elevation: 8,
+    },
   },
 };

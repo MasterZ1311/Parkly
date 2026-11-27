@@ -3,22 +3,32 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   FlatList,
   StyleSheet,
-  ActivityIndicator,
-  RefreshControl,
-  Image,
+  ScrollView,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Animated from 'react-native-reanimated';
 import { searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
+import { useDriverStore } from '../../src/store/driver.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { colors, theme } from '../../src/constants/theme';
+import {
+  CHIP_LAYOUT_TRANSITION,
+  ENTER_FADE_UP,
+  PressScale,
+  SkeletonBlock,
+} from '../../src/components/Motion';
+import { ParklyBrandBadge } from '../../src/components/ParklyBrandBadge';
+import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
+import { DEMO_SPACES } from '../../src/data/demoFixtures';
 
 export interface SpaceResult {
   id: string;
+  hostId?: string;
   name: string;
   address: string;
   distance: { value: number; unit: string };
@@ -27,35 +37,54 @@ export interface SpaceResult {
   amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
 }
 
-const FILTERS = ['All', '⚡ EV', '🏠 Covered', '🔒 Secure'] as const;
-type Filter = (typeof FILTERS)[number];
+interface FilterOption {
+  id: 'All' | 'EV' | 'Covered' | 'Secure';
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}
+
+const FILTERS: FilterOption[] = [
+  { id: 'All', label: 'All Spaces', icon: 'apps-outline' },
+  { id: 'EV', label: 'EV Ready', icon: 'flash-outline' },
+  { id: 'Covered', label: 'Covered', icon: 'umbrella-outline' },
+  { id: 'Secure', label: 'Gated', icon: 'shield-checkmark-outline' },
+];
+
+type FilterId = FilterOption['id'];
 
 export default function HomeScreen() {
+  const { area } = useLocalSearchParams<{ area?: string }>();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SpaceResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [isOfflineResults, setIsOfflineResults] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<Filter>('All');
+  const [searchError, setSearchError] = useState<ClassifiedApiError | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterId>('All');
+
   const isOffline = useAuthStore((s) => s.isOffline);
+  const isDemoMode = useAuthStore((s) => s.isDemoMode);
+  const savedPlaces = useDriverStore((s) => s.savedPlaces);
+  const loadSavedPlaces = useDriverStore((s) => s.loadSavedPlaces);
 
   useEffect(() => {
+    loadSavedPlaces().catch(() => {});
     cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH).then((cached) => {
-      if (cached && cached.results && cached.results.length > 0) {
+      if (cached && cached.results && cached.results.length > 0 && !area) {
         setQuery(cached.query || '');
         setResults(cached.results);
         setSearched(true);
       }
     });
-  }, []);
+  }, [loadSavedPlaces, area]);
 
   const matchesFilter = (item: SpaceResult): boolean => {
     switch (activeFilter) {
-      case '⚡ EV':
+      case 'EV':
         return item.amenities.evCharging;
-      case '🏠 Covered':
+      case 'Covered':
         return item.amenities.covered;
-      case '🔒 Secure': {
+      case 'Secure': {
         const level = (item.amenities.securityLevel || '').toLowerCase();
         return level !== '' && level !== 'none' && level !== 'low';
       }
@@ -66,207 +95,374 @@ export default function HomeScreen() {
 
   const visibleResults = results.filter(matchesFilter);
 
-  const handleSearch = useCallback(async (searchQuery?: string) => {
-    const q = (typeof searchQuery === 'string' ? searchQuery : query).trim();
-    if (!q) return;
-    setLoading(true);
-    setSearched(true);
-    try {
-      const { data } = await searchApi.search({
-        location: { type: 'text', value: q },
-        arrivalTime: new Date().toISOString(),
-        duration: 60,
-        radius: 5,
-        page: 1,
-        pageSize: 20,
-      });
-      const searchResults = data?.data?.results || [];
-      setResults(searchResults);
-      setIsOfflineResults(false);
-      await cacheSet(CACHE_KEYS.LAST_SEARCH, { query: q, results: searchResults });
-      await cacheSet(CACHE_KEYS.CACHED_SPACES, searchResults);
-    } catch (error) {
-      console.warn('Search failed, using demo spaces:', error);
-      const cached = await cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH);
-      if (cached && cached.results && cached.results.length > 0) {
-        setResults(cached.results);
-        setIsOfflineResults(true);
-      } else {
-        const cachedSpaces = await cacheGet<SpaceResult[]>(CACHE_KEYS.CACHED_SPACES);
-        if (cachedSpaces && cachedSpaces.length > 0) {
-          setResults(cachedSpaces);
-          setIsOfflineResults(true);
-        } else {
-          const demoSpaces: SpaceResult[] = [
-            {
-              id: 'sp-tng-001',
-              name: 'Express Avenue Premium Parking',
-              address: 'Royapettah / T Nagar Hub, Chennai',
-              distance: { value: 0.4, unit: 'km' },
-              price: { value: 60, currency: 'INR', per: 'hour' },
-              availability: { probabilityPercent: 88, confidencePercent: 95 },
-              amenities: { evCharging: true, covered: true, securityLevel: 'high' },
-            },
-            {
-              id: 'sp-tng-002',
-              name: 'Pondy Bazaar Smart Multi-Level',
-              address: 'Pondy Bazaar, T Nagar, Chennai',
-              distance: { value: 0.8, unit: 'km' },
-              price: { value: 40, currency: 'INR', per: 'hour' },
-              availability: { probabilityPercent: 72, confidencePercent: 90 },
-              amenities: { evCharging: false, covered: true, securityLevel: 'high' },
-            },
-            {
-              id: 'sp-tng-003',
-              name: 'Panagal Park EV Charging Station',
-              address: 'Usman Road, T Nagar, Chennai',
-              distance: { value: 1.2, unit: 'km' },
-              price: { value: 50, currency: 'INR', per: 'hour' },
-              availability: { probabilityPercent: 45, confidencePercent: 82 },
-              amenities: { evCharging: true, covered: false, securityLevel: 'medium' },
-            },
-          ];
-          setResults(demoSpaces);
-          setIsOfflineResults(true);
-        }
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
+  const handleSearch = useCallback(
+    async (searchQuery?: string) => {
+      const q = (typeof searchQuery === 'string' ? searchQuery : query).trim();
+      if (!q) return;
+      setLoading(true);
+      setSearched(true);
+      setSearchError(null);
 
-  const renderItem = ({ item }: { item: SpaceResult }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push({ pathname: '/space/[id]', params: { id: item.id } })}
-      activeOpacity={0.8}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.cardTitleRow}>
-          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-          <View style={styles.availBadge}>
+      if (isDemoMode) {
+        const normalized = q.toLowerCase();
+        const filtered = DEMO_SPACES.filter(
+          (s) =>
+            s.name.toLowerCase().includes(normalized) ||
+            s.address.toLowerCase().includes(normalized) ||
+            normalized === 'chennai',
+        );
+        const finalDemo = filtered.length > 0 ? filtered : DEMO_SPACES;
+        setResults(finalDemo);
+        setIsOfflineResults(false);
+        await cacheSet(CACHE_KEYS.LAST_SEARCH, { query: q, results: finalDemo });
+        await cacheSet(CACHE_KEYS.CACHED_SPACES, finalDemo);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data } = await searchApi.search({
+          location: { type: 'text', value: q },
+          arrivalTime: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+          duration: 60,
+          radius: 8,
+          page: 1,
+          pageSize: 20,
+        });
+        const searchResults: SpaceResult[] = data?.data?.results || [];
+        setResults(searchResults);
+        setIsOfflineResults(false);
+        await cacheSet(CACHE_KEYS.LAST_SEARCH, { query: q, results: searchResults });
+        await cacheSet(CACHE_KEYS.CACHED_SPACES, searchResults);
+      } catch (err: unknown) {
+        const classified = classifyApiError(err, 'Unable to search parking spaces right now.');
+
+        if (classified.kind === 'session-expired') {
+          router.replace('/status/session-expired');
+          return;
+        }
+        if (classified.kind === 'maintenance') {
+          router.replace('/status/maintenance');
+          return;
+        }
+        if (classified.kind === 'server-error') {
+          router.replace('/status/server-error');
+          return;
+        }
+
+        if (classified.kind === 'offline') {
+          const cached = await cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH);
+          if (cached?.results?.length) {
+            setResults(cached.results);
+            setIsOfflineResults(true);
+            return;
+          }
+          const cachedSpaces = await cacheGet<SpaceResult[]>(CACHE_KEYS.CACHED_SPACES);
+          if (cachedSpaces?.length) {
+            setResults(cachedSpaces);
+            setIsOfflineResults(true);
+            return;
+          }
+        }
+
+        setResults([]);
+        setIsOfflineResults(false);
+        setSearchError(classified);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [query, isDemoMode],
+  );
+
+  useEffect(() => {
+    if (area && area.trim()) {
+      setQuery(area);
+      handleSearch(area);
+    }
+  }, [area, handleSearch]);
+
+  const renderItem = ({ item }: { item: SpaceResult }) => {
+    const highAvail = item.availability.probabilityPercent > 60;
+    return (
+      <PressScale
+        onPress={() => router.push({ pathname: '/space/[id]', params: { id: item.id } })}
+        haptic="light"
+        style={styles.card}
+        contentStyle={styles.cardInner}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {item.name}
+            </Text>
             <View
               style={[
-                styles.availDot,
-                { backgroundColor: item.availability.probabilityPercent > 60 ? '#22C55E' : '#F59E0B' },
+                styles.availBadge,
+                {
+                  backgroundColor: highAvail ? colors.successLight : colors.warningLight,
+                  borderColor: highAvail ? colors.successBorder : colors.warningBorder,
+                },
               ]}
-            />
-            <Text style={styles.availText}>{item.availability.probabilityPercent}%</Text>
+            >
+              <View
+                style={[
+                  styles.availDot,
+                  { backgroundColor: highAvail ? colors.success : colors.warning },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.availText,
+                  { color: highAvail ? colors.success : colors.warning },
+                ]}
+              >
+                {item.availability.probabilityPercent}% open
+              </Text>
+            </View>
           </View>
+          <Text style={styles.cardAddress} numberOfLines={1}>
+            {item.address}
+          </Text>
         </View>
-        <Text style={styles.cardAddress} numberOfLines={1}>{item.address}</Text>
-      </View>
 
-      <View style={styles.cardFooter}>
-        <Text style={styles.distance}>
-          <Ionicons name="location" size={12} color="#64748B" /> {item.distance.value} {item.distance.unit}
-        </Text>
-        <View style={styles.amenities}>
-          {item.amenities.evCharging && (
-            <View style={styles.badge}><Text style={styles.badgeText}>⚡ EV</Text></View>
-          )}
-          {item.amenities.covered && (
-            <View style={styles.badge}><Text style={styles.badgeText}>🏠 Covered</Text></View>
-          )}
+        <View style={styles.cardFooter}>
+          <View style={styles.distanceRow}>
+            <Ionicons name="location-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.distance}>
+              {item.distance.value} {item.distance.unit}
+            </Text>
+          </View>
+
+          <View style={styles.amenities}>
+            {item.amenities.evCharging && (
+              <View style={styles.badge}>
+                <Ionicons name="flash-outline" size={11} color={colors.info} />
+                <Text style={styles.badgeText}>EV</Text>
+              </View>
+            )}
+            {item.amenities.covered && (
+              <View style={styles.badge}>
+                <Ionicons name="umbrella-outline" size={11} color={colors.textSecondary} />
+                <Text style={styles.badgeText}>Covered</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.price}>
+            ₹{item.price.value}
+            <Text style={styles.priceUnit}>/hr</Text>
+          </Text>
         </View>
-        <Text style={styles.price}>₹{item.price.value}<Text style={styles.priceUnit}>/hr</Text></Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </PressScale>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <OfflineBanner visible={isOffline || isOfflineResults} message="Offline Mode — Showing cached parking spaces" />
-      {/* Brand Header */}
-      <View style={styles.brandHeader}>
-        <View style={styles.brandLogoCard}>
-          <Image source={require('../../assets/logo.png')} style={styles.brandLogo} resizeMode="contain" />
+      {isDemoMode ? (
+        <View style={styles.demoStrip}>
+          <Ionicons name="sparkles-outline" size={14} color={colors.navy} />
+          <Text style={styles.demoStripText}>DEMO MODE · Showing simulated Chennai parking inventory</Text>
         </View>
-        <View>
-          <Text style={styles.brandTitle}>Parkly</Text>
-          <Text style={styles.brandSubtitle}>Smart City Parking • Chennai</Text>
+      ) : (
+        <OfflineBanner
+          visible={isOffline || isOfflineResults}
+          message="Offline Mode — Showing cached parking spaces"
+        />
+      )}
+
+      {/* Harbor Navy Brand Strip */}
+      <View style={styles.brandHeader}>
+        <ParklyBrandBadge size="sm" darkSurface />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.brandTitle}>Parkly Chennai</Text>
+          <Text style={styles.brandSubtitle}>OFF-STREET BAY DISCOVERY</Text>
         </View>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#64748B" style={styles.searchIcon} />
+          <Ionicons name="search" size={19} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search location (e.g. T Nagar, Chennai)"
-            placeholderTextColor="#64748B"
+            placeholder="Search area (e.g. T Nagar, Anna Nagar)"
+            placeholderTextColor={colors.textMuted}
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => handleSearch()}
             returnKeyType="search"
           />
           {query.length > 0 && (
-            <TouchableOpacity onPress={() => { setQuery(''); setResults([]); setSearched(false); }}>
-              <Ionicons name="close-circle" size={20} color="#64748B" />
-            </TouchableOpacity>
+            <PressScale
+              onPress={() => {
+                setQuery('');
+                setResults([]);
+                setSearched(false);
+                setSearchError(null);
+              }}
+              haptic="selection"
+              contentStyle={styles.clearBtn}
+              accessibilityLabel="Clear search query"
+            >
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </PressScale>
           )}
         </View>
-        <TouchableOpacity style={styles.searchButton} onPress={() => handleSearch()}>
-          <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <PressScale
+          onPress={() => handleSearch()}
+          rippleColor={colors.rippleLight}
+          haptic="medium"
+          style={styles.searchButton}
+          contentStyle={styles.searchButtonContent}
+          accessibilityLabel="Search parking spaces"
+        >
+          <Ionicons name="arrow-forward" size={20} color={colors.white} />
+        </PressScale>
       </View>
 
-      {/* Quick Filters */}
-      <View style={styles.quickFilters}>
-        {FILTERS.map(filter => {
-          const active = activeFilter === filter;
-          return (
-            <TouchableOpacity
-              key={filter}
-              style={[styles.filterChip, active && styles.filterChipActive]}
-              onPress={() => setActiveFilter(filter)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.filterText, active && styles.filterTextActive]}>{filter}</Text>
-            </TouchableOpacity>
-          );
-        })}
+      {/* Filter Chips */}
+      <View style={styles.quickFiltersWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.quickFilters}
+        >
+          {FILTERS.map((filter) => {
+            const active = activeFilter === filter.id;
+            return (
+              <Animated.View key={filter.id} layout={CHIP_LAYOUT_TRANSITION}>
+                <PressScale
+                  onPress={() => setActiveFilter(filter.id)}
+                  haptic="selection"
+                  accessibilityState={{ selected: active }}
+                  rippleColor={active ? colors.rippleLight : colors.rippleDark}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  contentStyle={styles.filterChipContent}
+                >
+                  <Ionicons
+                    name={filter.icon}
+                    size={14}
+                    color={active ? colors.white : colors.textSecondary}
+                  />
+                  <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                    {filter.label}
+                  </Text>
+                </PressScale>
+              </Animated.View>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Results */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#EF010C" />
-          <Text style={styles.loadingText}>Finding parking spaces...</Text>
+        <View style={styles.skeletonList}>
+          <SkeletonBlock height={106} />
+          <SkeletonBlock height={106} />
+          <SkeletonBlock height={106} />
         </View>
-      ) : !searched ? (
+      ) : searchError ? (
         <View style={styles.emptyState}>
-          <Ionicons name="car-outline" size={64} color="#334155" />
-          <Text style={styles.emptyTitle}>Find Parking Near You</Text>
-          <Text style={styles.emptySubtitle}>
-            Search by area, landmark, or address to discover available parking spaces.
+          <View style={[styles.emptyIconBox, { borderColor: colors.dangerBorder, backgroundColor: colors.dangerLight }]}>
+            <Ionicons
+              name={searchError.kind === 'offline' ? 'cloud-offline-outline' : 'alert-circle-outline'}
+              size={34}
+              color={colors.danger}
+            />
+          </View>
+          <Text style={styles.emptyTitle}>
+            {searchError.kind === 'offline' ? 'Connection Unavailable' : 'Search Request Failed'}
           </Text>
-          {/* Quick area chips */}
-          <View style={styles.areaSuggestions}>
-            {['T Nagar', 'Anna Nagar', 'Adyar', 'Velachery'].map(area => (
-              <TouchableOpacity
-                key={area}
-                style={styles.areaSuggestion}
-                onPress={() => { setQuery(area); handleSearch(area); }}
+          <Text style={styles.emptySubtitle}>{searchError.message}</Text>
+          <View style={styles.errorActionRow}>
+            <PressScale
+              style={styles.retryBtn}
+              contentStyle={styles.retryBtnInner}
+              rippleColor={colors.rippleLight}
+              onPress={() => handleSearch()}
+            >
+              <Text style={styles.retryBtnText}>Retry Search</Text>
+            </PressScale>
+            {searchError.statusRoute && (
+              <PressScale
+                style={styles.diagBtn}
+                contentStyle={styles.retryBtnInner}
+                onPress={() => router.push(searchError.statusRoute!)}
               >
-                <Text style={styles.areaSuggestionText}>{area}</Text>
-              </TouchableOpacity>
-            ))}
+                <Text style={styles.diagBtnText}>Service Notice</Text>
+              </PressScale>
+            )}
           </View>
         </View>
+      ) : !searched ? (
+        <Animated.View entering={ENTER_FADE_UP} style={styles.emptyState}>
+          <View style={styles.emptyIconBox}>
+            <Ionicons name="car-sport-outline" size={38} color={colors.navy} />
+          </View>
+          <Text style={styles.emptyTitle}>Find Parking Across Chennai</Text>
+          <Text style={styles.emptySubtitle}>
+            Tap a neighborhood below or search any street to see live hourly rates and bay availability.
+          </Text>
+          <View style={styles.areaSuggestions}>
+            {['T Nagar', 'Anna Nagar', 'Adyar', 'Velachery'].map((hood) => (
+              <PressScale
+                key={hood}
+                style={styles.areaSuggestion}
+                contentStyle={styles.areaSuggestionContent}
+                haptic="selection"
+                onPress={() => {
+                  setQuery(hood);
+                  handleSearch(hood);
+                }}
+              >
+                <Text style={styles.areaSuggestionText}>{hood}</Text>
+              </PressScale>
+            ))}
+          </View>
+
+          {savedPlaces.length > 0 && (
+            <View style={styles.savedPlacesWrap}>
+              <Text style={styles.savedLabel}>SAVED PLACES</Text>
+              <View style={styles.areaSuggestions}>
+                {savedPlaces.slice(0, 3).map((place) => (
+                  <PressScale
+                    key={place.id}
+                    style={styles.savedChip}
+                    contentStyle={styles.savedChipInner}
+                    haptic="selection"
+                    onPress={() => {
+                      setQuery(place.areaQuery);
+                      handleSearch(place.areaQuery);
+                    }}
+                  >
+                    <Ionicons name="bookmark-outline" size={14} color={colors.navy} />
+                    <Text style={styles.savedChipText}>{place.label}</Text>
+                  </PressScale>
+                ))}
+              </View>
+            </View>
+          )}
+        </Animated.View>
       ) : results.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="sad-outline" size={64} color="#334155" />
+          <View style={styles.emptyIconBox}>
+            <Ionicons name="search-outline" size={34} color={colors.textMuted} />
+          </View>
           <Text style={styles.emptyTitle}>No Spaces Found</Text>
-          <Text style={styles.emptySubtitle}>Try a different location or expand your search radius.</Text>
+          <Text style={styles.emptySubtitle}>
+            Try another Chennai neighborhood or clear your filters.
+          </Text>
         </View>
       ) : visibleResults.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="filter-outline" size={64} color="#334155" />
-          <Text style={styles.emptyTitle}>No Matches for "{activeFilter}"</Text>
+          <View style={styles.emptyIconBox}>
+            <Ionicons name="options-outline" size={34} color={colors.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>No Matches for &ldquo;{activeFilter}&rdquo;</Text>
           <Text style={styles.emptySubtitle}>
-            {results.length} space{results.length === 1 ? '' : 's'} found nearby. Tap "All" to see them.
+            {results.length} space{results.length === 1 ? '' : 's'} nearby. Tap &ldquo;All Spaces&rdquo; to view them.
           </Text>
         </View>
       ) : (
@@ -278,7 +474,7 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <Text style={styles.resultCount}>
-              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} found
+              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} available
               {activeFilter !== 'All' ? ` · ${activeFilter}` : ''}
             </Text>
           }
@@ -289,127 +485,214 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A1425' },
+  container: { flex: 1, backgroundColor: colors.background },
+  demoStrip: {
+    backgroundColor: colors.warningLight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.warningBorder,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  demoStripText: { color: colors.navy, fontSize: 11.5, fontWeight: '800', letterSpacing: 0.2 },
   brandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 4,
+    paddingBottom: 14,
     gap: 12,
-    backgroundColor: '#0A1425',
-  },
-  brandLogoCard: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-    padding: 3,
-  },
-  brandLogo: {
-    width: 36,
-    height: 36,
+    backgroundColor: colors.navy,
   },
   brandTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#F8FAFC',
+    color: colors.white,
     letterSpacing: -0.3,
   },
   brandSubtitle: {
-    fontSize: 11,
-    color: '#EF010C',
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontSize: 10.5,
+    color: '#9FB0C7',
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    marginTop: 2,
   },
   searchContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 14,
+    paddingBottom: 10,
     gap: 8,
-    backgroundColor: '#0A1425',
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111D33',
+    backgroundColor: colors.surface,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 6,
+    minHeight: 48,
     borderWidth: 1,
-    borderColor: '#263957',
+    borderColor: colors.borderStrong,
   },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, color: '#F8FAFC', fontSize: 14 },
+  searchInput: { flex: 1, color: colors.navy, fontSize: 14.5, fontWeight: '500', minHeight: 44 },
+  clearBtn: { width: 48, minHeight: 48, justifyContent: 'center', alignItems: 'center' },
   searchButton: {
-    backgroundColor: '#EF010C',
+    backgroundColor: colors.primary,
     borderRadius: 12,
-    width: 44,
+    width: 48,
+    overflow: 'hidden',
+  },
+  searchButtonContent: {
+    width: 48,
+    minHeight: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  quickFiltersWrap: { marginBottom: 8 },
   quickFilters: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 8,
   },
   filterChip: {
-    backgroundColor: '#111D33',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#263957',
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
-  filterText: { color: '#CBD5E1', fontSize: 12 },
-  filterChipActive: { backgroundColor: '#EF010C', borderColor: '#EF010C' },
-  filterTextActive: { color: '#FFFFFF', fontWeight: '700' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingText: { color: '#94A3B8', fontSize: 14 },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 12 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#F8FAFC', textAlign: 'center' },
-  emptySubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center', lineHeight: 20 },
-  areaSuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
+  filterChipContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    minHeight: 48,
+  },
+  filterText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  filterChipActive: { backgroundColor: colors.navy, borderColor: colors.navy },
+  filterTextActive: { color: colors.white },
+  skeletonList: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28, gap: 10 },
+  emptyIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.navy, textAlign: 'center' },
+  emptySubtitle: { fontSize: 13.5, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  areaSuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginTop: 8 },
   areaSuggestion: {
-    backgroundColor: '#111D33',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EF010C',
+    borderColor: colors.primary,
+    overflow: 'hidden',
   },
-  areaSuggestionText: { color: '#EF010C', fontSize: 13, fontWeight: '600' },
-  list: { paddingHorizontal: 16, paddingBottom: 16 },
-  resultCount: { color: '#64748B', fontSize: 13, marginBottom: 12 },
+  areaSuggestionContent: {
+    paddingHorizontal: 18,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  areaSuggestionText: { color: colors.primary, fontSize: 13.5, fontWeight: '700' },
+  savedPlacesWrap: { marginTop: 14, alignItems: 'center', width: '100%' },
+  savedLabel: { color: colors.textMuted, fontSize: 10.5, fontWeight: '800', letterSpacing: 1 },
+  savedChip: {
+    backgroundColor: colors.cardElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden',
+  },
+  savedChipInner: {
+    minHeight: 48,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  savedChipText: { color: colors.navy, fontSize: 13, fontWeight: '700' },
+  errorActionRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  retryBtn: { backgroundColor: colors.primary, borderRadius: 10, overflow: 'hidden' },
+  diagBtn: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden',
+  },
+  retryBtnInner: { minHeight: 48, paddingHorizontal: 18, justifyContent: 'center', alignItems: 'center' },
+  retryBtnText: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  diagBtnText: { color: colors.navy, fontSize: 14, fontWeight: '700' },
+  list: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 },
+  resultCount: {
+    color: colors.textMuted,
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   card: {
-    backgroundColor: '#111D33',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#263957',
+    borderColor: colors.border,
+    overflow: 'hidden',
+    ...theme.elevation.card,
+  },
+  cardInner: {
+    padding: 16,
   },
   cardHeader: { marginBottom: 12 },
-  cardTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardName: { flex: 1, fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginRight: 8 },
-  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#0A1425', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  availDot: { width: 8, height: 8, borderRadius: 4 },
-  availText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
-  cardAddress: { color: '#64748B', fontSize: 13 },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  distance: { color: '#64748B', fontSize: 12, flex: 1 },
-  amenities: { flexDirection: 'row', gap: 4 },
-  badge: { backgroundColor: '#0A1425', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeText: { color: '#94A3B8', fontSize: 10 },
-  price: { color: '#EF010C', fontSize: 16, fontWeight: '800' },
-  priceUnit: { color: '#64748B', fontSize: 11, fontWeight: '400' },
+  cardTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 8 },
+  cardName: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.navy },
+  availBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  availDot: { width: 7, height: 7, borderRadius: 3.5 },
+  availText: { fontSize: 11.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  cardAddress: { color: colors.textMuted, fontSize: 13 },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardElevated,
+  },
+  distanceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
+  distance: { color: colors.textMuted, fontSize: 12.5, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  amenities: { flexDirection: 'row', gap: 6 },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.cardElevated,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  badgeText: { color: colors.textSecondary, fontSize: 11, fontWeight: '700' },
+  price: { color: colors.primary, fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  priceUnit: { color: colors.textMuted, fontSize: 11.5, fontWeight: '600' },
 });

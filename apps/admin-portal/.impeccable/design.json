@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T18:35:00Z",
+  "title": "Design System: Parkly — Coromandel Sunlit Ledger (Admin Portal)",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Signal Crimson CTA", "canonical": "#D90410", "tonalRamp": ["#4A0105", "#820209", "#B8030D", "#D90410", "#EF010C", "#F87171", "#FECACA", "#FEF2F2"] },
+      "harbor-navy": { "role": "secondary", "displayName": "Harbor Navy", "canonical": "#0B1628", "tonalRamp": ["#060E1B", "#0B1628", "#14243D", "#1E3252", "#334155", "#64748B", "#9FB0C7", "#E2E8F0"] },
+      "limestone-ground": { "role": "neutral", "displayName": "Limestone Ground", "canonical": "#F7F6F2", "tonalRamp": ["#5A6678", "#94A3B8", "#C9C5B9", "#DFDDD4", "#EAE7DE", "#F1EFE9", "#F7F6F2", "#FFFFFF"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Manrope Display", "purpose": "Admin view headlines." },
+      "body": { "displayName": "Manrope UI", "purpose": "Verification cards and admin tables." },
+      "label": { "displayName": "JetBrains Mono", "purpose": "Booking IDs, audit timestamps, IP logs, and corridor metrics." }
+    },
+    "shadows": [
+      { "name": "surface-subtle", "value": "0 1px 2px rgba(11, 22, 40, 0.04)", "purpose": "Default card containment." },
+      { "name": "modal-elevated", "value": "0 18px 40px rgba(11, 22, 40, 0.16)", "purpose": "Review modals and chart tooltips." }
+    ],
+    "motion": [
+      { "name": "ease-control", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Drawer transition respecting prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "600px" },
+      { "name": "md", "value": "960px" },
+      { "name": "lg", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary CTA Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "High-contrast Signal Crimson admin trigger.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Approve Space</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; min-height: 38px; border-radius: 7px; border: 1px solid transparent; background: #D90410; color: #FFFFFF; font-family: 'Manrope', sans-serif; font-size: 13.5px; font-weight: 700; cursor: pointer; } .ds-btn-primary:hover { background: #B8030D; }"
+    },
+    {
+      "name": "Corridor Relief Tile",
+      "kind": "custom",
+      "refersTo": "card-panel",
+      "description": "Daylight zone peak-hour diversion gauge strip.",
+      "html": "<div class=\"ds-tile\"><div class=\"ds-row\"><span>T Nagar</span><span class=\"ds-pct\">38%</span></div><div class=\"ds-bar\"><div class=\"ds-fill\" style=\"width:38%\"></div></div></div>",
+      "css": ".ds-tile { background: #F1EFE9; border: 1px solid #DFDDD4; border-radius: 8px; padding: 12px 14px; font-family: 'Manrope', sans-serif; } .ds-row { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 700; color: #0B1628; } .ds-pct { color: #D90410; font-family: 'JetBrains Mono', monospace; } .ds-bar { height: 6px; border-radius: 999px; background: #DFDDD4; margin-top: 8px; overflow: hidden; } .ds-fill { height: 100%; background: #D90410; border-radius: 999px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Coromandel Sunlit Ledger",
+    "overview": "Parkly's Admin Portal shares the exact daylight warm-limestone (#F7F6F2), elevated white (#FFFFFF), Harbor Navy navigation rail (#0B1628), and Signal Crimson (#D90410 / #EF010C) token system as the Host Portal and Android app—extending it for dense multi-tab KYC queues, AI dispute arbitration cards, RBAC user tables, and Chennai GCC corridor mobility analytics.",
+    "keyCharacteristics": [
+      "Split Operations & System sections inside a fixed 248px Harbor Navy sidebar collapsing into an Escape-dismissible drawer below 960px.",
+      "Monospaced tabular columns (JetBrains Mono) paired with Manrope typography bundled directly under /fonts/ to obey strict Nginx 'self' CSP rules.",
+      "Accessible Modal dialogs for rejection notes, RBAC role changes, and suspension audit reasons with zero blocking browser prompts."
+    ],
+    "rules": [
+      { "name": "The Restrained Signal Rule", "body": "Critical crimson badges and borders mark unresolved disputes and critical alerts cleanly; resolved items shift immediately to verified emerald.", "section": "colors" }
+    ],
+    "dos": [
+      "Do enforce WCAG AA contrast across badges, tables, and placeholders (#5A6678).",
+      "Do keep h1 -> h2 heading levels sequential across every route card."
+    ],
+    "donts": [
+      "Don't render emojis or window.prompt/alert inside admin workflows.",
+      "Don't add border-left: 3px active link borders or unstyled dark chart tooltips."
+    ]
+  }
+}

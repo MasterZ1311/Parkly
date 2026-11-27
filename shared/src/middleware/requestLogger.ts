@@ -16,12 +16,14 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
 
   const start = Date.now();
 
+  const requestPath = (req.originalUrl || req.url || req.path || '').split('?')[0] || req.path;
+
   // Log incoming request (no body to avoid PII leakage)
   logger.info(
     {
       requestId,
       method: req.method,
-      path: req.path,
+      path: requestPath,
       query: req.query,
       ip: req.ip,
       userAgent: req.headers['user-agent'],
@@ -33,7 +35,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     const duration = Date.now() - start;
     const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
     logger[level](
-      { requestId, method: req.method, path: req.path, statusCode: res.statusCode, durationMs: duration },
+      { requestId, method: req.method, path: requestPath, statusCode: res.statusCode, durationMs: duration },
       'Request completed',
     );
   });

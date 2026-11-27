@@ -56,9 +56,10 @@ const listingSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   address: z.string().min(5).max(500),
-  city: z.string().min(1),
-  state: z.string().min(1),
+  city: z.string().trim().min(1),
+  state: z.string().trim().min(1),
   pincode: z.string().length(6),
+  regionId: z.string().trim().min(1).max(64).optional(),
   totalCapacity: z.number().int().min(1).max(1000),
   vehicleTypes: z.array(z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck'])).min(1),
   evCharging: z.boolean().default(false),
@@ -68,13 +69,75 @@ const listingSchema = z.object({
   hourlyRate: z.number().positive().max(10000),
   dynamicPricing: z.boolean().default(false),
   minBookingHours: z.number().int().min(1).default(1),
-  maxBookingHours: z.number().int().max(72).default(24),
+  maxBookingHours: z.number().int().min(1).max(72).default(24),
   availabilitySchedule: z.array(z.object({
     dayOfWeek: z.number().int().min(0).max(6),
     startTime: z.string().regex(/^\d{2}:\d{2}$/),
     endTime: z.string().regex(/^\d{2}:\d{2}$/),
   })).optional(),
+}).refine((val) => val.maxBookingHours >= val.minBookingHours, {
+  message: 'maxBookingHours must be greater than or equal to minBookingHours',
+  path: ['maxBookingHours'],
 });
+
+export async function resolveRegionForListing(
+  db: Pick<PrismaClient, 'region'>,
+  city: string,
+  requestedRegionId?: string,
+): Promise<string> {
+  const trimmedCity = city.trim();
+  const trimmedRegionId = requestedRegionId?.trim();
+
+  if (trimmedRegionId) {
+    const explicitRegion = await db.region.findFirst({
+      where: { id: trimmedRegionId, isActive: true },
+      select: { id: true },
+    });
+    if (!explicitRegion) {
+      throw new ValidationError(
+        `Unsupported or inactive regionId "${trimmedRegionId}".`,
+        'regionId',
+      );
+    }
+    return explicitRegion.id;
+  }
+
+  const citySlug = trimmedCity.toLowerCase().replace(/\s+/g, '-');
+  // Resolve exact city / slug match before prefix fallback so sub-region prefixes cannot shadow canonical region rows.
+  const exactRegion = await db.region.findFirst({
+    where: {
+      isActive: true,
+      OR: [
+        { city: { equals: trimmedCity, mode: 'insensitive' } },
+        { id: citySlug },
+      ],
+    },
+    orderBy: { id: 'asc' },
+    select: { id: true },
+  });
+
+  if (exactRegion) {
+    return exactRegion.id;
+  }
+
+  const prefixRegion = await db.region.findFirst({
+    where: {
+      isActive: true,
+      id: { startsWith: `${citySlug}-`, mode: 'insensitive' },
+    },
+    orderBy: { id: 'asc' },
+    select: { id: true },
+  });
+
+  if (!prefixRegion) {
+    throw new ValidationError(
+      `Unsupported or inactive region for city "${trimmedCity}".`,
+      'city',
+    );
+  }
+
+  return prefixRegion.id;
+}
 
 const hostService = {
   async getOrCreateHost(userId: string): Promise<{ id: string }> {
@@ -88,6 +151,7 @@ const hostService = {
   },
 
   async createListing(userId: string, data: z.infer<typeof listingSchema>): Promise<ParkingSpace> {
+    const regionId = await resolveRegionForListing(prisma, data.city, data.regionId);
     const host = await this.getOrCreateHost(userId);
     const geohash = encodeGeohash(data.latitude, data.longitude, 7);
 
@@ -104,7 +168,7 @@ const hostService = {
         city: data.city,
         state: data.state,
         pincode: data.pincode,
-        regionId: data.city.toLowerCase().replace(/\s+/g, '-'),
+        regionId,
         totalCapacity: data.totalCapacity,
         vehicleTypes: data.vehicleTypes,
         evCharging: data.evCharging,

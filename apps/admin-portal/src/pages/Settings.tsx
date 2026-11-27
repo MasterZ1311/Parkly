@@ -26,43 +26,75 @@ export default function Settings() {
       <div className="page-header">
         <div>
           <h1 className="page-title">System &amp; Operational Settings</h1>
-          <p className="page-subtitle">Platform configuration</p>
+          <p className="page-subtitle">Regional commission parameters, onboarding controls, and operational toggles.</p>
         </div>
       </div>
 
       <form className="card" style={{ maxWidth: 560 }} onSubmit={handleSave}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>General</h3>
+        <h2 className="card-title" style={{ marginBottom: 18 }}>General Parameters</h2>
 
         <div className="form-group">
-          <label className="form-label">Platform Name</label>
-          <input className="form-input" value={form.platformName} onChange={e => setForm({ ...form, platformName: e.target.value })} />
+          <label className="form-label" htmlFor="cfg-name">Platform Name</label>
+          <input
+            id="cfg-name"
+            className="form-input"
+            value={form.platformName}
+            onChange={(e) => setForm({ ...form, platformName: e.target.value })}
+          />
         </div>
         <div className="form-group">
-          <label className="form-label">Support Email</label>
-          <input className="form-input" type="email" value={form.supportEmail} onChange={e => setForm({ ...form, supportEmail: e.target.value })} />
+          <label className="form-label" htmlFor="cfg-email">Support Email</label>
+          <input
+            id="cfg-email"
+            className="form-input"
+            type="email"
+            value={form.supportEmail}
+            onChange={(e) => setForm({ ...form, supportEmail: e.target.value })}
+          />
         </div>
         <div className="form-group">
-          <label className="form-label">Active City</label>
-          <input className="form-input" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+          <label className="form-label" htmlFor="cfg-city">Active Region / City</label>
+          <input
+            id="cfg-city"
+            className="form-input"
+            value={form.city}
+            onChange={(e) => setForm({ ...form, city: e.target.value })}
+          />
         </div>
         <div className="form-group">
-          <label className="form-label">Platform Fee (%)</label>
-          <input className="form-input" type="number" value={form.platformFee} onChange={e => setForm({ ...form, platformFee: e.target.value })} />
+          <label className="form-label" htmlFor="cfg-fee">Platform Fee (%)</label>
+          <input
+            id="cfg-fee"
+            className="form-input mono-num"
+            type="number"
+            value={form.platformFee}
+            onChange={(e) => setForm({ ...form, platformFee: e.target.value })}
+          />
         </div>
 
-        <h3 style={{ fontSize: 15, fontWeight: 700, margin: '20px 0', color: 'var(--text-primary)' }}>Operations</h3>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}>
-          <input type="checkbox" checked={form.autoApprove} onChange={e => setForm({ ...form, autoApprove: e.target.checked })} />
-          <span style={{ color: 'var(--text-primary)', fontSize: 14 }}>Auto-approve verified hosts</span>
+        <h2 className="card-title" style={{ margin: '22px 0 12px' }}>Operational Controls</h2>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={form.autoApprove}
+            onChange={(e) => setForm({ ...form, autoApprove: e.target.checked })}
+          />
+          <span>Auto-approve KYC verified hosts</span>
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, cursor: 'pointer' }}>
-          <input type="checkbox" checked={form.maintenanceMode} onChange={e => setForm({ ...form, maintenanceMode: e.target.checked })} />
-          <span style={{ color: 'var(--text-primary)', fontSize: 14 }}>Maintenance mode</span>
+        <label className="checkbox-row" style={{ marginBottom: 20 }}>
+          <input
+            type="checkbox"
+            checked={form.maintenanceMode}
+            onChange={(e) => setForm({ ...form, maintenanceMode: e.target.checked })}
+          />
+          <span>Maintenance mode (pause new bookings)</span>
         </label>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="btn btn-primary" type="submit">Save Changes</button>
-          {saved && <span style={{ color: 'var(--green)', fontSize: 13, fontWeight: 600 }}>✅ Saved</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }} aria-live="polite">
+          <button className="btn btn-primary" type="submit">
+            Save Changes
+          </button>
+          {saved && <span className="badge badge-green">Configuration saved</span>}
         </div>
       </form>
     </div>

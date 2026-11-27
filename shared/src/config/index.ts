@@ -98,6 +98,21 @@ function intEnv(key: string, defaultVal: number): number {
 
 let _config: AppConfig | null = null;
 
+export function getJwtConfig(): {
+  jwtAccessSecret: string;
+  jwtRefreshSecret: string;
+  jwtAccessTtl: number;
+  jwtRefreshTtl: number;
+} {
+  const config = getConfig();
+  return {
+    jwtAccessSecret: config.jwtAccessSecret,
+    jwtRefreshSecret: config.jwtRefreshSecret,
+    jwtAccessTtl: config.jwtAccessTtl,
+    jwtRefreshTtl: config.jwtRefreshTtl,
+  };
+}
+
 export function getConfig(): AppConfig {
   if (_config) return _config;
 
@@ -107,9 +122,13 @@ export function getConfig(): AppConfig {
     logLevel: process.env['LOG_LEVEL'] || 'info',
     cityDefault: process.env['CITY_DEFAULT'] || 'chennai',
 
-    // JWT
-    jwtAccessSecret: requireEnv('JWT_ACCESS_SECRET'),
-    jwtRefreshSecret: requireEnv('JWT_REFRESH_SECRET'),
+    // JWT (evaluated lazily on property read so non-JWT callers do not crash when omitted)
+    get jwtAccessSecret(): string {
+      return requireEnv('JWT_ACCESS_SECRET');
+    },
+    get jwtRefreshSecret(): string {
+      return requireEnv('JWT_REFRESH_SECRET');
+    },
     jwtAccessTtl: intEnv('JWT_ACCESS_TTL', 900),
     jwtRefreshTtl: intEnv('JWT_REFRESH_TTL', 2592000),
 

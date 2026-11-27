@@ -1,10 +1,15 @@
 // ============================================================
 // Auth Service — Routes
-// POST /auth/otp/request
-// POST /auth/otp/verify
-// POST /auth/refresh
-// POST /auth/logout
-// GET  /auth/me
+// POST   /auth/otp/request
+// POST   /auth/otp/verify
+// POST   /auth/refresh
+// POST   /auth/logout
+// GET    /auth/me
+// PATCH  /auth/me
+// GET    /auth/vehicles
+// POST   /auth/vehicles
+// PUT    /auth/vehicles/:id/default
+// DELETE /auth/vehicles/:id
 // ============================================================
 
 import { Router, Request, Response, NextFunction } from 'express';
@@ -12,6 +17,7 @@ import { z } from 'zod';
 import { otpService } from '../services/otpService';
 import { jwtService } from '../services/jwtService';
 import { userService } from '../services/userService';
+import { vehicleService } from '../services/vehicleService';
 import {
   authenticate,
   ValidationError,
@@ -48,6 +54,40 @@ const otpVerifySchema = z.object({
 const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
+
+const updateMeSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name cannot be empty').max(100, 'Name must be 100 characters or less').optional(),
+    email: z
+      .union([
+        z.string().trim().email('Invalid email format').max(255),
+        z.literal(''),
+        z.null(),
+      ])
+      .optional(),
+  })
+  .refine((data) => data.name !== undefined || data.email !== undefined, {
+    message: 'Provide name or email to update',
+  });
+
+const INDIAN_PLATE_REGEX = /^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$/;
+
+const createVehicleSchema = z.object({
+  licensePlate: z
+    .string()
+    .trim()
+    .transform((s) => s.toUpperCase().replace(/\s+/g, ''))
+    .refine((s) => INDIAN_PLATE_REGEX.test(s), {
+      message: 'Invalid Indian license plate format (e.g. TN01AB1234)',
+    }),
+  vehicleType: z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck']),
+  make: z.string().trim().max(50).optional(),
+  model: z.string().trim().max(50).optional(),
+  color: z.string().trim().max(30).optional(),
+  isDefault: z.boolean().optional(),
+});
+
+const vehicleIdParamSchema = z.string().uuid('Invalid vehicle ID');
 
 // --- POST /auth/otp/request ---
 authRouter.post('/otp/request', async (req: Request, res: Response, next: NextFunction) => {
@@ -184,6 +224,103 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response, next: Ne
     res.status(200).json({
       success: true,
       data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- PATCH /auth/me ---
+authRouter.patch('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = updateMeSchema.safeParse(req.body);
+    if (!result.success) {
+      throw new ValidationError(
+        result.error.errors[0]?.message || 'Invalid profile update input',
+        result.error.errors[0]?.path.join('.'),
+      );
+    }
+
+    const user = await userService.updateUser(req.user!.sub, result.data);
+
+    res.status(200).json({
+      success: true,
+      data: { user },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- GET /auth/vehicles ---
+authRouter.get('/vehicles', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const vehicles = await vehicleService.listVehicles(req.user!.sub);
+    res.status(200).json({
+      success: true,
+      data: { vehicles },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- POST /auth/vehicles ---
+authRouter.post('/vehicles', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = createVehicleSchema.safeParse(req.body);
+    if (!result.success) {
+      throw new ValidationError(
+        result.error.errors[0]?.message || 'Invalid vehicle payload',
+        result.error.errors[0]?.path.join('.'),
+      );
+    }
+
+    const vehicle = await vehicleService.createVehicle(req.user!.sub, result.data);
+    res.status(201).json({
+      success: true,
+      data: { vehicle },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- PUT /auth/vehicles/:id/default ---
+authRouter.put('/vehicles/:id/default', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idCheck = vehicleIdParamSchema.safeParse(req.params['id']);
+    if (!idCheck.success) {
+      throw new ValidationError('Invalid vehicle ID', 'id');
+    }
+
+    const vehicle = await vehicleService.setDefaultVehicle(req.user!.sub, idCheck.data);
+    res.status(200).json({
+      success: true,
+      data: { vehicle },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- DELETE /auth/vehicles/:id ---
+authRouter.delete('/vehicles/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const idCheck = vehicleIdParamSchema.safeParse(req.params['id']);
+    if (!idCheck.success) {
+      throw new ValidationError('Invalid vehicle ID', 'id');
+    }
+
+    const deleted = await vehicleService.deleteVehicle(req.user!.sub, idCheck.data);
+    res.status(200).json({
+      success: true,
+      data: deleted,
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     } as ApiResponse);
   } catch (err) {

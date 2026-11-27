@@ -88,6 +88,7 @@ model Host {
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   spaces        ParkingSpace[]
+  bookings      Booking[]
   payouts       Payout[]
 
   @@index([deletedAt])
@@ -134,6 +135,7 @@ model ParkingSpace {
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   host              Host           @relation(fields: [hostId], references: [id])
+  region            Region         @relation(fields: [regionId], references: [id], onDelete: Restrict)
   availabilitySlots AvailabilitySlot[]
   bookings          Booking[]
   pricingRules      PricingRule[]
@@ -141,6 +143,7 @@ model ParkingSpace {
   @@index([geohash])
   @@index([city])
   @@index([status])
+  @@index([regionId])
   @@map("parking_spaces")
 }
 
@@ -200,11 +203,13 @@ model Booking {
   user    User         @relation(fields: [userId], references: [id])
   space   ParkingSpace @relation(fields: [spaceId], references: [id])
   vehicle Vehicle      @relation(fields: [vehicleId], references: [id])
+  host    Host         @relation(fields: [hostId], references: [id], onDelete: Restrict)
   payment Payment?
   dispute Dispute?
 
   @@index([userId])
   @@index([spaceId])
+  @@index([hostId])
   @@index([status])
   @@index([startTime, endTime])
   @@index([deletedAt])
@@ -248,9 +253,11 @@ model Payment {
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
   booking Booking @relation(fields: [bookingId], references: [id])
+  payout  Payout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status])
+  @@index([payoutId])
   @@map("payments")
 }
 
@@ -273,7 +280,8 @@ model Payout {
   processedAt        DateTime?    @map("processed_at")
   createdAt          DateTime     @default(now()) @map("created_at")
 
-  host Host @relation(fields: [hostId], references: [id])
+  host     Host      @relation(fields: [hostId], references: [id])
+  payments Payment[]
 
   @@index([hostId])
   @@map("payouts")
@@ -347,6 +355,8 @@ model Region {
   geohashPrefixes  String[] @map("geohash_prefixes")
   adjacentRegions  String[] @map("adjacent_regions")
   isActive         Boolean  @default(true) @map("is_active")
+
+  spaces ParkingSpace[]
 
   @@map("regions")
 }

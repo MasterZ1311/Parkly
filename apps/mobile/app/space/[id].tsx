@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import Animated from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchApi, pricingApi } from '../../src/api/client';
+import { colors, theme } from '../../src/constants/theme';
+import { ENTER_FADE_UP, PressScale, SkeletonBlock } from '../../src/components/Motion';
 
 interface SpaceDetails {
   id: string;
@@ -25,11 +22,11 @@ interface SpaceDetails {
 }
 
 const SECURITY_LABELS: Record<string, string> = {
-  none: 'None',
-  basic: 'Basic',
-  monitored: 'Monitored',
-  staffed: 'Staffed',
-  gated: 'Gated',
+  none: 'Standard',
+  basic: 'Basic Guard',
+  monitored: 'CCTV Monitored',
+  staffed: 'Attendant Staffed',
+  gated: 'Boom Gated',
 };
 
 export default function SpaceDetailScreen() {
@@ -37,16 +34,21 @@ export default function SpaceDetailScreen() {
   const [space, setSpace] = useState<SpaceDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedHours, setSelectedHours] = useState(2);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     loadSpace();
   }, [id]);
 
   const loadSpace = async () => {
+    if (!id || id === 'not-found' || id === 'unavailable') {
+      setSpace(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      if (!id) return;
-      // Fetch space details from search API
       const response = await searchApi.getSpace(id);
       const data = response.data?.data;
       if (data) {
@@ -57,7 +59,7 @@ export default function SpaceDetailScreen() {
             priceVal = priceResp.data.data.effectiveRate;
           }
         } catch {
-          // Dynamic pricing fetch failed; fallback to base rate
+          // Dynamic pricing fallback
         }
 
         setSpace({
@@ -83,7 +85,6 @@ export default function SpaceDetailScreen() {
       setLoading(false);
     }
 
-    // Graceful fallback for offline / mock space IDs
     setSpace({
       id: id!,
       name: id === 'sp-tng-001' ? 'Express Avenue Premium Parking' : 'T Nagar Parking Complex',
@@ -98,6 +99,7 @@ export default function SpaceDetailScreen() {
   };
 
   const totalCost = space ? space.price.value * selectedHours : 0;
+  const feeAmount = Math.round(totalCost * 0.05);
 
   const handleBook = () => {
     if (!space) return;
@@ -116,53 +118,143 @@ export default function SpaceDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#38BDF8" />
+      <View style={[styles.container, { paddingTop: Math.max(insets.top + 16, 32), paddingHorizontal: 16, gap: 16 }]}>
+        <StatusBar style="dark" backgroundColor={colors.background} />
+        <SkeletonBlock height={180} borderRadius={16} />
+        <SkeletonBlock height={110} />
+        <SkeletonBlock height={140} />
       </View>
     );
   }
 
   if (!space) {
     return (
-      <View style={styles.center}>
-        <Text style={{ color: '#F8FAFC' }}>Space not found</Text>
-      </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: Math.max(insets.top + 16, 36),
+          paddingBottom: Math.max(insets.bottom + 24, 36),
+          paddingHorizontal: 18,
+          justifyContent: 'center',
+        }}
+      >
+        <StatusBar style="dark" backgroundColor={colors.background} />
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 24,
+            alignItems: 'center',
+            gap: 10,
+            ...theme.elevation.card,
+          }}
+        >
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 16,
+              backgroundColor: colors.primaryLight,
+              borderWidth: 1,
+              borderColor: colors.primaryBorder,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 4,
+            }}
+          >
+            <Ionicons name="alert-circle-outline" size={30} color={colors.primary} />
+          </View>
+          <Text style={{ color: colors.navy, fontSize: 20, fontWeight: '800', textAlign: 'center' }}>
+            Parking Space Unavailable
+          </Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 8 }}>
+            This Chennai bay listing is currently offline, unlisted by its host, or the shared link is invalid.
+          </Text>
+          <View style={{ width: '100%', gap: 10 }}>
+            <PressScale
+              style={{ backgroundColor: colors.primary, borderRadius: 12, overflow: 'hidden' }}
+              contentStyle={{ minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
+              rippleColor={colors.rippleLight}
+              onPress={() => router.replace('/(tabs)/map')}
+            >
+              <Text style={{ color: colors.white, fontSize: 15, fontWeight: '800' }}>Explore Nearby Map</Text>
+            </PressScale>
+            <PressScale
+              style={{
+                backgroundColor: colors.surface,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
+                overflow: 'hidden',
+              }}
+              contentStyle={{ minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}
+            >
+              <Text style={{ color: colors.navy, fontSize: 14.5, fontWeight: '700' }}>Back to Search</Text>
+            </PressScale>
+          </View>
+        </View>
+      </ScrollView>
     );
   }
 
+  const highAvail = space.availability.probabilityPercent > 60;
+
   return (
     <View style={styles.container}>
+      <StatusBar style="light" backgroundColor={colors.navy} />
+
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Image Area */}
-        <View style={styles.imageArea}>
-          <View style={styles.imagePlaceholder}>
-            <Ionicons name="car" size={64} color="#334155" />
-            <Text style={styles.imagePlaceholderText}>{space.name}</Text>
+        {/* Architectural Facility Header */}
+        <View style={[styles.imageArea, { paddingTop: Math.max(insets.top + 8, 20) }]}>
+          <PressScale
+            style={styles.backBtn}
+            contentStyle={styles.backBtnContent}
+            rippleColor={colors.rippleLight}
+            onPress={() => router.back()}
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="arrow-back" size={20} color={colors.white} />
+          </PressScale>
+
+          <View style={styles.heroBanner}>
+            <View style={styles.heroIconWrap}>
+              <Ionicons name="car-sport" size={40} color={colors.navy} />
+            </View>
+            <Text style={styles.heroTag}>VERIFIED OFF-STREET HUB · {space.totalCapacity} BAYS</Text>
           </View>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color="#F8FAFC" />
-          </TouchableOpacity>
         </View>
 
-        <View style={styles.content}>
-          {/* Header */}
+        <Animated.View entering={ENTER_FADE_UP} style={[styles.content, { paddingBottom: 110 + insets.bottom }]}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{space.name}</Text>
               <Text style={styles.address}>{space.address}</Text>
             </View>
-            <View style={styles.availBadge}>
+            <View
+              style={[
+                styles.availBadge,
+                {
+                  backgroundColor: highAvail ? colors.successLight : colors.warningLight,
+                  borderColor: highAvail ? colors.successBorder : colors.warningBorder,
+                },
+              ]}
+            >
               <View
                 style={[
                   styles.availDot,
-                  { backgroundColor: space.availability.probabilityPercent > 60 ? '#22C55E' : '#F59E0B' },
+                  { backgroundColor: highAvail ? colors.success : colors.warning },
                 ]}
               />
-              <Text style={styles.availText}>{space.availability.probabilityPercent}% free</Text>
+              <Text style={[styles.availText, { color: highAvail ? colors.success : colors.warning }]}>
+                {space.availability.probabilityPercent}% free
+              </Text>
             </View>
           </View>
 
-          {/* Price */}
           <View style={styles.priceRow}>
             <Text style={styles.price}>₹{space.price.value}</Text>
             <Text style={styles.priceUnit}>/hour</Text>
@@ -170,26 +262,36 @@ export default function SpaceDetailScreen() {
 
           {/* Amenities */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Amenities</Text>
+            <Text style={styles.sectionTitle}>Facility Amenities</Text>
             <View style={styles.amenitiesGrid}>
               <View style={styles.amenityItem}>
-                <Ionicons name="flash" size={20} color={space.amenities.evCharging ? '#38BDF8' : '#334155'} />
+                <Ionicons
+                  name="flash"
+                  size={18}
+                  color={space.amenities.evCharging ? colors.info : colors.textMuted}
+                />
                 <Text style={[styles.amenityLabel, !space.amenities.evCharging && styles.amenityDisabled]}>
                   EV Charging
                 </Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="home" size={20} color={space.amenities.covered ? '#38BDF8' : '#334155'} />
+                <Ionicons
+                  name="umbrella"
+                  size={18}
+                  color={space.amenities.covered ? colors.navy : colors.textMuted}
+                />
                 <Text style={[styles.amenityLabel, !space.amenities.covered && styles.amenityDisabled]}>
                   Covered
                 </Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="shield-checkmark" size={20} color="#38BDF8" />
-                <Text style={styles.amenityLabel}>{SECURITY_LABELS[space.amenities.securityLevel]}</Text>
+                <Ionicons name="shield-checkmark" size={18} color={colors.success} />
+                <Text style={styles.amenityLabel}>
+                  {SECURITY_LABELS[space.amenities.securityLevel] || 'Gated'}
+                </Text>
               </View>
               <View style={styles.amenityItem}>
-                <Ionicons name="car" size={20} color="#38BDF8" />
+                <Ionicons name="car" size={18} color={colors.navy} />
                 <Text style={styles.amenityLabel}>{space.totalCapacity} slots</Text>
               </View>
             </View>
@@ -199,149 +301,207 @@ export default function SpaceDetailScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Duration</Text>
             <View style={styles.durationRow}>
-              {[1, 2, 3, 4, 6, 8].map(h => (
-                <TouchableOpacity
-                  key={h}
-                  style={[styles.durationChip, selectedHours === h && styles.durationChipActive]}
-                  onPress={() => setSelectedHours(h)}
-                >
-                  <Text style={[styles.durationText, selectedHours === h && styles.durationTextActive]}>
-                    {h}h
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {[1, 2, 3, 4, 6, 8].map((h) => {
+                const active = selectedHours === h;
+                return (
+                  <PressScale
+                    key={h}
+                    haptic="selection"
+                    accessibilityState={{ selected: active }}
+                    rippleColor={active ? colors.rippleLight : colors.rippleDark}
+                    style={[styles.durationChip, active && styles.durationChipActive]}
+                    contentStyle={styles.durationChipContent}
+                    onPress={() => setSelectedHours(h)}
+                  >
+                    <Text style={[styles.durationText, active && styles.durationTextActive]}>
+                      {h}h
+                    </Text>
+                  </PressScale>
+                );
+              })}
             </View>
           </View>
 
-          {/* Summary */}
+          {/* Tariff Breakdown */}
           <View style={styles.summary}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>₹{space.price.value} × {selectedHours} hours</Text>
+              <Text style={styles.summaryLabel}>
+                Parking (₹{space.price.value} × {selectedHours} hours)
+              </Text>
               <Text style={styles.summaryValue}>₹{totalCost}</Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Platform fee</Text>
-              <Text style={styles.summaryValue}>₹{Math.round(totalCost * 0.05)}</Text>
+              <Text style={styles.summaryLabel}>Platform fee (5%)</Text>
+              <Text style={styles.summaryValue}>₹{feeAmount}</Text>
             </View>
-            <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: '#334155', paddingTop: 12 }]}>
-              <Text style={[styles.summaryLabel, { color: '#F8FAFC', fontWeight: '700' }]}>Total</Text>
-              <Text style={[styles.summaryValue, { color: '#38BDF8', fontSize: 18 }]}>
-                ₹{totalCost + Math.round(totalCost * 0.05)}
-              </Text>
+            <View style={styles.summaryTotalRow}>
+              <Text style={styles.summaryTotalLabel}>Total Payable</Text>
+              <Text style={styles.summaryTotalValue}>₹{totalCost + feeAmount}</Text>
             </View>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
 
-      {/* Book Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.bookBtn} onPress={handleBook}>
-          <Text style={styles.bookBtnText}>Book Now — ₹{totalCost + Math.round(totalCost * 0.05)}</Text>
-        </TouchableOpacity>
+      {/* Sticky Footer */}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 12, 20) }]}>
+        <PressScale
+          style={styles.bookBtn}
+          contentStyle={styles.bookBtnContent}
+          rippleColor={colors.rippleLight}
+          haptic="medium"
+          onPress={handleBook}
+        >
+          <Text style={styles.bookBtnText}>Book Bay — ₹{totalCost + feeAmount}</Text>
+        </PressScale>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F172A' },
-  imageArea: { height: 220, position: 'relative' },
-  imagePlaceholder: {
-    flex: 1,
-    backgroundColor: '#1E293B',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  imageArea: {
+    backgroundColor: colors.navy,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
-  imagePlaceholderText: { color: '#64748B', fontSize: 14, textAlign: 'center', paddingHorizontal: 16 },
   backBtn: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(15,23,42,0.8)',
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.navySurface,
+    borderWidth: 1,
+    borderColor: colors.navyBorder,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  backBtnContent: {
+    width: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  content: { padding: 20, paddingBottom: 100 },
-  header: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  name: { fontSize: 20, fontWeight: '800', color: '#F8FAFC', marginBottom: 4 },
-  address: { fontSize: 13, color: '#64748B', lineHeight: 18 },
+  heroBanner: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  heroIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroTag: {
+    color: '#9FB0C7',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  content: { padding: 18 },
+  header: { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'flex-start' },
+  name: { fontSize: 21, fontWeight: '800', color: colors.navy, marginBottom: 4 },
+  address: { fontSize: 13.5, color: colors.textMuted, lineHeight: 19 },
   availBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#1E293B',
+    gap: 5,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
-  availDot: { width: 8, height: 8, borderRadius: 4 },
-  availText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
-  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginBottom: 24 },
-  price: { fontSize: 32, fontWeight: '900', color: '#38BDF8' },
-  priceUnit: { fontSize: 14, color: '#64748B' },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#CBD5E1', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.8 },
-  amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  availDot: { width: 7, height: 7, borderRadius: 3.5 },
+  availText: { fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginBottom: 22 },
+  price: { fontSize: 32, fontWeight: '800', color: colors.primary, fontVariant: ['tabular-nums'] },
+  priceUnit: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  section: { marginBottom: 22 },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textMuted,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   amenityItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
-  amenityLabel: { color: '#CBD5E1', fontSize: 13, fontWeight: '500' },
-  amenityDisabled: { color: '#475569' },
+  amenityLabel: { color: colors.navy, fontSize: 13, fontWeight: '700' },
+  amenityDisabled: { color: colors.textMuted, fontWeight: '500' },
   durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   durationChip: {
-    width: 52,
-    height: 44,
+    minWidth: 54,
     borderRadius: 10,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden',
+  },
+  durationChipContent: {
+    minHeight: 48,
+    paddingHorizontal: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
   },
-  durationChipActive: { backgroundColor: '#38BDF820', borderColor: '#38BDF8' },
-  durationText: { color: '#64748B', fontSize: 14, fontWeight: '600' },
-  durationTextActive: { color: '#38BDF8' },
+  durationChipActive: { backgroundColor: colors.navy, borderColor: colors.navy },
+  durationText: { color: colors.textSecondary, fontSize: 14.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  durationTextActive: { color: colors.white },
   summary: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     padding: 16,
     gap: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
+    ...theme.elevation.card,
   },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryLabel: { color: '#94A3B8', fontSize: 14 },
-  summaryValue: { color: '#F8FAFC', fontSize: 14, fontWeight: '600' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { color: colors.textMuted, fontSize: 13.5, fontWeight: '500' },
+  summaryValue: { color: colors.navy, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  summaryTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 12,
+  },
+  summaryTotalLabel: { color: colors.navy, fontSize: 15, fontWeight: '800' },
+  summaryTotalValue: { color: colors.primary, fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'] },
   footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-    padding: 16,
-    paddingBottom: 32,
+    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   bookBtn: {
-    backgroundColor: '#38BDF8',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  bookBtnText: { color: '#0F172A', fontSize: 16, fontWeight: '800' },
+  bookBtnContent: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookBtnText: { color: colors.white, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
 });

@@ -8,12 +8,16 @@
 const pinoLib = require('pino');
 import { pinoTraceMixin } from '../tracing';
 
-const isDev = process.env['NODE_ENV'] !== 'production';
+const nodeEnv = process.env['NODE_ENV'] || 'development';
+const usePrettyTransport = nodeEnv !== 'production' && nodeEnv !== 'test';
 
 export const logger = pinoLib({
   level: process.env['LOG_LEVEL'] || 'info',
-  mixin: () => pinoTraceMixin(),
-  transport: isDev
+  mixin: () => ({
+    service: process.env['SERVICE_NAME'] || 'parkly',
+    ...pinoTraceMixin(),
+  }),
+  transport: usePrettyTransport
     ? {
         target: 'pino-pretty',
         options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
@@ -22,9 +26,7 @@ export const logger = pinoLib({
   formatters: {
     level: (label: string) => ({ level: label }),
   },
-  base: {
-    service: process.env['SERVICE_NAME'] || 'parkly',
-  },
+  base: null,
   redact: {
     paths: [
       'password',

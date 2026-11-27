@@ -9,7 +9,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { Router, Request, Response, NextFunction } from 'express';
-import { PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { z } from 'zod';
+import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { initializeApp, cert, App } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
@@ -27,6 +28,7 @@ import {
   getDocClient,
   getSNSClient,
   generateId,
+  ValidationError,
   ApiResponse,
   Notification,
   NotificationType,
@@ -231,7 +233,105 @@ const notificationService = {
 
     logger.info({ userId, notificationId }, 'Notification marked as read');
   },
+
+  async registerDevice(userId: string, token: string, platform: string): Promise<{ registered: boolean; platform: string }> {
+    const config = getConfig();
+    const now = new Date().toISOString();
+    try {
+      await getDocClient().send(
+        new PutCommand({
+          TableName: config.dynamoTableNotifications,
+          Item: {
+            pk: `USER#${userId}`,
+            sk: `DEVICE#${token}`,
+            userId,
+            token,
+            platform,
+            updatedAt: now,
+          },
+        }),
+      );
+    } catch (err) {
+      logger.warn({ err, userId, platform }, 'DynamoDB unavailable while registering push device token');
+    }
+    return { registered: true, platform };
+  },
+
+  async getPreferences(userId: string): Promise<{
+    bookingReminders: boolean;
+    gateAlerts: boolean;
+    paymentReceipts: boolean;
+    promoOffers: boolean;
+  }> {
+    const defaults = {
+      bookingReminders: true,
+      gateAlerts: true,
+      paymentReceipts: true,
+      promoOffers: false,
+    };
+    const config = getConfig();
+    try {
+      const res = await getDocClient().send(
+        new GetCommand({
+          TableName: config.dynamoTableNotifications,
+          Key: { pk: `USER#${userId}`, sk: 'PREFS#notifications' },
+        }),
+      );
+      if (res.Item) {
+        return {
+          bookingReminders: Boolean(res.Item['bookingReminders'] ?? defaults.bookingReminders),
+          gateAlerts: Boolean(res.Item['gateAlerts'] ?? defaults.gateAlerts),
+          paymentReceipts: Boolean(res.Item['paymentReceipts'] ?? defaults.paymentReceipts),
+          promoOffers: Boolean(res.Item['promoOffers'] ?? defaults.promoOffers),
+        };
+      }
+    } catch (err) {
+      logger.warn({ err, userId }, 'DynamoDB unavailable while fetching notification preferences');
+    }
+    return defaults;
+  },
+
+  async updatePreferences(
+    userId: string,
+    prefs: {
+      bookingReminders: boolean;
+      gateAlerts: boolean;
+      paymentReceipts: boolean;
+      promoOffers: boolean;
+    },
+  ) {
+    const config = getConfig();
+    try {
+      await getDocClient().send(
+        new PutCommand({
+          TableName: config.dynamoTableNotifications,
+          Item: {
+            pk: `USER#${userId}`,
+            sk: 'PREFS#notifications',
+            userId,
+            ...prefs,
+            updatedAt: new Date().toISOString(),
+          },
+        }),
+      );
+    } catch (err) {
+      logger.warn({ err, userId }, 'DynamoDB unavailable while saving notification preferences');
+    }
+    return prefs;
+  },
 };
+
+const registerDeviceSchema = z.object({
+  token: z.string().trim().min(1, 'Push token is required').max(512),
+  platform: z.enum(['expo', 'android', 'ios', 'web']).default('expo'),
+});
+
+const preferencesSchema = z.object({
+  bookingReminders: z.boolean(),
+  gateAlerts: z.boolean(),
+  paymentReceipts: z.boolean(),
+  promoOffers: z.boolean(),
+});
 
 // ============================================================
 // Routes
@@ -239,6 +339,48 @@ const notificationService = {
 
 const notificationRouter = Router();
 notificationRouter.use(authenticate);
+
+// GET /notifications/preferences
+notificationRouter.get('/preferences', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const preferences = await notificationService.getPreferences(req.user!.sub);
+    res.json({ success: true, data: { preferences } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /notifications/preferences
+notificationRouter.put('/preferences', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = preferencesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid notification preferences');
+    }
+    const preferences = await notificationService.updatePreferences(req.user!.sub, parsed.data);
+    res.json({ success: true, data: { preferences } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /notifications/devices — register device Expo/FCM push token
+notificationRouter.post('/devices', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = registerDeviceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid push device payload');
+    }
+    const result = await notificationService.registerDevice(
+      req.user!.sub,
+      parsed.data.token,
+      parsed.data.platform,
+    );
+    res.status(201).json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /notifications — list user notifications
 notificationRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {

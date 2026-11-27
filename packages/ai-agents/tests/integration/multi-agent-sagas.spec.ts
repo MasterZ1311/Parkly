@@ -152,7 +152,7 @@ describe('Multi-Agent Distributed Sagas & Event Choreography', () => {
       const disputeAgent = new DisputeMediationAgent({ sensorTool, ledgerTool, notificationTool });
 
       let disputeResolvedEvent = false;
-      eventBus.subscribe(DOMAIN_EVENTS.DISPUTE_RESOLVED, (ev) => {
+      eventBus.subscribe(DOMAIN_EVENTS.DISPUTE_RESOLVED, () => {
         disputeResolvedEvent = true;
       });
 

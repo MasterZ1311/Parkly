@@ -80,6 +80,43 @@ bookingRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
   }
 });
 
+const extendBookingSchema = z
+  .object({
+    hours: z.number().int().min(1, 'Minimum extension is 1 hour').max(24, 'Maximum extension is 24 hours').optional(),
+    additionalMinutes: z
+      .number()
+      .int()
+      .min(15, 'Minimum extension is 15 minutes')
+      .max(1440, 'Maximum extension is 24 hours')
+      .optional(),
+  })
+  .refine(
+    (data) => !(data.hours !== undefined && data.additionalMinutes !== undefined),
+    { message: 'Provide either hours or additionalMinutes, not both' },
+  );
+
+// PUT /bookings/:id/extend — Extend an active or confirmed booking
+bookingRouter.put('/:id/extend', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = extendBookingSchema.safeParse(req.body ?? {});
+    if (!result.success) {
+      throw new ValidationError(result.error.errors[0]?.message || 'Invalid extension request');
+    }
+
+    const additionalMinutes =
+      result.data.additionalMinutes ?? (result.data.hours ?? 1) * 60;
+
+    const booking = await bookingService.extendBooking(
+      req.params['id']!,
+      req.user!.sub,
+      additionalMinutes,
+    );
+    res.json({ success: true, data: booking } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /bookings/:id/cancel — Cancel a booking
 bookingRouter.put('/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
   try {

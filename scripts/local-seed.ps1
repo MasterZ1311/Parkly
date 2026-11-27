@@ -1,16 +1,17 @@
-# ============================================================
+﻿# ============================================================
 # Parkly — Local Infrastructure & Database Seed Script (PowerShell)
 # ============================================================
 
 Write-Host "🚀 Starting Parkly local infrastructure..." -ForegroundColor Cyan
 docker compose up postgres dynamodb-local dynamodb-setup -d
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "⏳ Waiting for PostgreSQL to be healthy..." -ForegroundColor Yellow
 $healthy = $false
 $retries = 15
 while (-not $healthy -and $retries -gt 0) {
     try {
-        $result = docker exec parkly-postgres pg_isready -U parkly 2>$null
+        docker exec parkly-postgres pg_isready -U parkly -d parkly 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $healthy = $true
         } else {
@@ -23,17 +24,26 @@ while (-not $healthy -and $retries -gt 0) {
     }
 }
 
-if ($healthy) {
-    Write-Host "✅ PostgreSQL is ready." -ForegroundColor Green
-} else {
-    Write-Host "⚠️ Proceeding with migration..." -ForegroundColor DarkYellow
+if (-not $healthy) {
+    Write-Error "❌ PostgreSQL failed to become healthy within 30s. Aborting without running migrations or seeds."
+    exit 1
 }
+Write-Host "✅ PostgreSQL is ready." -ForegroundColor Green
 
-Write-Host "📦 Running Prisma migrations..." -ForegroundColor Cyan
+# Pin explicitly to local Docker Postgres in development mode (never inherit remote DATABASE_URL)
+$env:NODE_ENV = "development"
+$env:DATABASE_URL = "postgresql://parkly:password@localhost:5432/parkly?schema=public"
+
+Write-Host "📦 Building @parkly/shared & running Prisma migrations..." -ForegroundColor Cyan
+npm run build -w shared
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 npx prisma migrate deploy --schema=infra/prisma/schema.prisma
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "🌱 Seeding Chennai sample parking spaces, users, and rates..." -ForegroundColor Cyan
 npx ts-node infra/prisma/seed.ts
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""
 Write-Host "🎉 Parkly local environment successfully initialized!" -ForegroundColor Green

@@ -17,7 +17,6 @@ import {
   CircuitBreaker,
   ExecutionContext,
   EventBridgeEvent,
-  encodeGeohash,
 } from './helpers/e2e-harness';
 
 describe('Tier 1: Feature Coverage E2E Test Suite (65 tests)', () => {
@@ -618,8 +617,10 @@ describe('Tier 1: Feature Coverage E2E Test Suite (65 tests)', () => {
 
       const dlq = harness.getDLQ();
       expect(dlq.length).toBe(1);
-      expect(dlq[0].event['detail-type']).toBe('Failing.Topic');
-      expect(dlq[0].reason).toContain('Subscriber handler threw an exception');
+      const entry = dlq[0];
+      if (!entry) throw new Error('Expected DLQ entry');
+      expect(entry.event['detail-type']).toBe('Failing.Topic');
+      expect(entry.reason).toContain('Subscriber handler threw an exception');
     });
 
     it('T1.8.5: Concurrent event handling: Handles multiple simultaneous events without cross-contamination', async () => {
@@ -1087,7 +1088,9 @@ describe('Tier 1: Feature Coverage E2E Test Suite (65 tests)', () => {
       expect(healthySubscriberRan).toBe(true);
       const dlq = harness.getDLQ();
       expect(dlq.length).toBe(1);
-      expect(dlq[0].event['detail-type']).toBe('Partial.Failure');
+      const entry = dlq[0];
+      if (!entry) throw new Error('Expected DLQ entry');
+      expect(entry.event['detail-type']).toBe('Partial.Failure');
     });
   });
 });

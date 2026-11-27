@@ -26,7 +26,7 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate --schema=infra/prisma/schema.prisma
 
-      - name: Run Autonomous Multi-Agent Tests (333 tests)
+      - name: Run Autonomous Multi-Agent Tests (360 tests)
         run: npm test -w packages/ai-agents
 
       - name: Typecheck Microservices & Libraries
@@ -102,7 +102,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U parkly -d parkly_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
@@ -127,12 +127,20 @@ jobs:
       - name: Verify No Migration Drift (Schema vs Migrations Directory)
         env:
           DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
-        run: npx prisma migrate diff --from-migrations infra/prisma/migrations --to-schema-datamodel infra/prisma/schema.prisma --exit-code
+          SHADOW_DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_shadow?schema=public
+        run: |
+          echo "CREATE DATABASE parkly_shadow;" | npx prisma db execute --stdin --url "$DATABASE_URL"
+          npx prisma migrate diff --from-migrations infra/prisma/migrations --to-schema-datamodel infra/prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --exit-code
 
       - name: Apply Migrations Cleanly to Test Database
         env:
           DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+          NODE_ENV: test
         run: |
+          npm run build -w shared
           npx prisma migrate deploy --schema=infra/prisma/schema.prisma
           npx prisma migrate status --schema=infra/prisma/schema.prisma
+          npx ts-node infra/prisma/seed-regions.ts
+          npx ts-node infra/prisma/seed.ts
+          npx ts-node infra/prisma/seed.ts
 

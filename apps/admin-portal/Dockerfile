@@ -32,7 +32,7 @@ EXPOSE 8080
 
 # Health check to ensure Nginx serves requests
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -q -O /dev/null http://localhost:8080/health || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1
 
 # Launch Nginx in foreground as unprivileged user 'nginx' (UID 101)
 USER 101

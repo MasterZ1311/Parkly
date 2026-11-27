@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Breadcrumbs from '../components/Breadcrumbs';
+import Modal from '../components/Modal';
 import { useAllBookings, AdminBooking } from '../hooks/useAdminData';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+import { CarIcon, CheckCircleIcon, AlertTriangleIcon, CurrencyIcon } from '../components/Icons';
 
 const statusColors: Record<string, string> = {
   active: 'blue',
@@ -24,11 +26,11 @@ export default function BookingsAdmin() {
 
   const filteredBookings = bookings.filter((b: AdminBooking) => {
     const term = search.toLowerCase();
-    const matchesSearch =
+    return (
       b.id.toLowerCase().includes(term) ||
       b.driverId.toLowerCase().includes(term) ||
-      b.spaceId.toLowerCase().includes(term);
-    return matchesSearch;
+      b.spaceId.toLowerCase().includes(term)
+    );
   });
 
   const activeCount = bookings.filter((b) => b.status === 'active' || b.status === 'confirmed').length;
@@ -41,19 +43,21 @@ export default function BookingsAdmin() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Global Booking Management</h1>
-          <p className="page-subtitle">Platform-wide real-time parking reservations and audit trails.</p>
+          <p className="page-subtitle">Platform-wide parking reservations, tariffs, and dispute audit status.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
             className="form-input"
-            placeholder="Search by ID..."
-            style={{ width: 180 }}
+            placeholder="Search booking, driver, or space ID..."
+            aria-label="Search bookings"
+            style={{ width: 220 }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select
             className="form-select"
-            style={{ width: 140 }}
+            aria-label="Filter by booking status"
+            style={{ width: 150 }}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -67,18 +71,25 @@ export default function BookingsAdmin() {
         </div>
       </div>
 
-      <div className="grid-4" style={{ marginBottom: 24 }}>
+      <div className="grid-4" style={{ marginBottom: 20 }}>
         {[
-          { icon: '🚗', label: 'Active Sessions', value: String(activeCount || 1), color: 'var(--accent-light)', bg: '#6366F120' },
-          { icon: '✅', label: 'Completed', value: String(completedCount || 2), color: '#22C55E', bg: '#22C55E20' },
-          { icon: '⚠️', label: 'Disputed', value: String(disputedCount || 1), color: '#EF4444', bg: '#EF444420' },
-          { icon: '💰', label: 'Total Volume', value: `₹${bookings.reduce((sum, b) => sum + b.totalAmount, 0) || 265}`, color: '#F59E0B', bg: '#F59E0B20' },
-        ].map((s) => (
-          <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg, fontSize: 20 }}>{s.icon}</div>
+          { Icon: CarIcon, label: 'Active Sessions', value: String(activeCount), color: 'var(--blue)' },
+          { Icon: CheckCircleIcon, label: 'Completed', value: String(completedCount), color: 'var(--green)' },
+          { Icon: AlertTriangleIcon, label: 'Disputed', value: String(disputedCount), color: 'var(--red)' },
+          {
+            Icon: CurrencyIcon,
+            label: 'Total Volume',
+            value: `₹${bookings.reduce((sum, b) => sum + b.totalAmount, 0)}`,
+            color: 'var(--text-primary)',
+          },
+        ].map(({ Icon, label, value, color }) => (
+          <div key={label} className="stat-card">
             <div>
-              <div className="stat-value" style={{ color: s.color, fontSize: 20 }}>{s.value}</div>
-              <div className="stat-label">{s.label}</div>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value" style={{ color }}>{value}</div>
+            </div>
+            <div className="stat-icon">
+              <Icon size={18} />
             </div>
           </div>
         ))}
@@ -103,23 +114,54 @@ export default function BookingsAdmin() {
                 </tr>
               </thead>
               <tbody>
+                {filteredBookings.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
+                      No bookings match the current search or status filter.{' '}
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ marginLeft: 8 }}
+                        onClick={() => {
+                          setSearch('');
+                          setStatusFilter('All Statuses');
+                        }}
+                      >
+                        Reset Filters
+                      </button>
+                    </td>
+                  </tr>
+                )}
                 {filteredBookings.map((b) => (
                   <tr key={b.id}>
-                    <td style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }} onClick={() => setSelected(b)}>
-                      #{b.id.slice(0, 10)}
+                    <td className="mono-num">
+                      <button
+                        type="button"
+                        onClick={() => setSelected(b)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: 'var(--accent-cta)',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        #{b.id.slice(0, 10)}
+                      </button>
                     </td>
-                    <td style={{ color: 'var(--text-primary)' }}>{b.driverId}</td>
-                    <td>{b.spaceId}</td>
-                    <td style={{ fontSize: 12 }}>{new Date(b.startTime).toLocaleString()}</td>
-                    <td style={{ fontSize: 12 }}>{new Date(b.endTime).toLocaleString()}</td>
-                    <td style={{ color: '#22C55E', fontWeight: 700 }}>₹{b.totalAmount}</td>
+                    <td className="mono-num" style={{ color: 'var(--text-primary)' }}>{b.driverId}</td>
+                    <td className="mono-num">{b.spaceId}</td>
+                    <td className="mono-num" style={{ fontSize: 12 }}>{new Date(b.startTime).toLocaleString()}</td>
+                    <td className="mono-num" style={{ fontSize: 12 }}>{new Date(b.endTime).toLocaleString()}</td>
+                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
                     <td>
                       <span className={`badge badge-${statusColors[b.status] || 'blue'}`}>
                         {b.status.toUpperCase()}
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setSelected(b)}>
+                      <button type="button" className="btn btn-outline btn-sm" onClick={() => setSelected(b)}>
                         Inspect
                       </button>
                     </td>
@@ -131,50 +173,71 @@ export default function BookingsAdmin() {
         </div>
       </div>
 
-      {/* Booking Detail Modal */}
-      {selected && (
-        <div className="modal-backdrop">
-          <div className="modal" style={{ maxWidth: 460 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Booking #{selected.id.slice(0, 12)}</h2>
-              <button className="btn btn-outline" style={{ padding: '4px 10px' }} onClick={() => setSelected(null)}>
-                ✕
-              </button>
-            </div>
-            <div className="modal-body" style={{ gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>SPACE ID</div>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selected.spaceId}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>DRIVER ID</div>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{selected.driverId}</div>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>START TIME</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>{new Date(selected.startTime).toLocaleString()}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>END TIME</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>{new Date(selected.endTime).toLocaleString()}</div>
+      <Modal
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        titleId="admin-booking-modal-title"
+        maxWidth={460}
+        title={
+          selected ? (
+            <>
+              Booking <span className="mono-num">#{selected.id.slice(0, 12)}</span>
+            </>
+          ) : null
+        }
+        footer={
+          <button type="button" className="btn btn-primary" onClick={() => setSelected(null)}>
+            Close
+          </button>
+        }
+      >
+        {selected && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div className="stat-label">Space ID</div>
+                <div className="mono-num" style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {selected.spaceId}
                 </div>
               </div>
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Tariff Paid</span>
-                <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>₹{selected.totalAmount}</span>
+              <div>
+                <div className="stat-label">Driver ID</div>
+                <div className="mono-num" style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {selected.driverId}
+                </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => setSelected(null)}>
-                Close
-              </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div className="stat-label">Start Time</div>
+                <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {new Date(selected.startTime).toLocaleString()}
+                </div>
+              </div>
+              <div>
+                <div className="stat-label">End Time</div>
+                <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 3 }}>
+                  {new Date(selected.endTime).toLocaleString()}
+                </div>
+              </div>
+            </div>
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                paddingTop: 12,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Tariff Paid</span>
+              <span className="mono-num" style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
+                ₹{selected.totalAmount}
+              </span>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

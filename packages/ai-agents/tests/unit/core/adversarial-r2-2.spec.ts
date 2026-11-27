@@ -6,7 +6,6 @@ import {
   createChildContext,
   ExecutionContextSchema,
 } from '../../../src/core/context';
-import { AgentError } from '../../../src/core/result';
 
 describe('Adversarial Verification Suite: Challenger M1 R2.2', () => {
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

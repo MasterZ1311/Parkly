@@ -1,0 +1,174 @@
+import type { AuthUser } from '../store/auth.store';
+import type { VehicleClass } from '../components/VehicleIllustration';
+
+export interface DemoSpaceItem {
+  id: string;
+  hostId: string;
+  name: string;
+  address: string;
+  coordinates: { lat: number; lng: number };
+  distance: { value: number; unit: string };
+  price: { value: number; currency: string; per: string };
+  availability: { probabilityPercent: number; confidencePercent: number };
+  amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
+  totalCapacity: number;
+}
+
+export interface DemoVehicle {
+  id: string;
+  userId: string;
+  licensePlate: string;
+  vehicleType: VehicleClass;
+  make?: string;
+  model?: string;
+  color?: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface DemoBooking {
+  id: string;
+  spaceId: string;
+  hostId: string;
+  vehicleId: string;
+  spaceName: string;
+  spaceAddress: string;
+  vehiclePlate: string;
+  vehicleType: VehicleClass;
+  status: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  totalAmount: number;
+  hourlyRate: number;
+  type: string;
+  slotNumber: string;
+}
+
+export const DEMO_USER: AuthUser = {
+  id: '00000000-0000-4000-8000-000000000003',
+  name: 'Arjun Kumar (Demo)',
+  phone: '+919876543211',
+  email: 'arjun.demo@parkly.in',
+  role: 'driver',
+};
+
+export const DEMO_HOST_ID = '00000000-0000-4000-8000-000000000101';
+
+export const DEMO_SPACES: DemoSpaceItem[] = [
+  {
+    id: '00000000-0000-4000-8000-000000001001',
+    hostId: DEMO_HOST_ID,
+    name: 'T Nagar Parking Complex - Spot A',
+    address: '23, Panagal Park Road, T Nagar, Chennai 600017',
+    coordinates: { lat: 13.0418, lng: 80.2341 },
+    distance: { value: 0.4, unit: 'km' },
+    price: { value: 40, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 88, confidencePercent: 95 },
+    amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
+    totalCapacity: 24,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000001002',
+    hostId: DEMO_HOST_ID,
+    name: 'Pondy Bazaar Smart Multi-Level',
+    address: '25, Panagal Park Road, T Nagar, Chennai 600017',
+    coordinates: { lat: 13.042, lng: 80.2345 },
+    distance: { value: 0.8, unit: 'km' },
+    price: { value: 35, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 72, confidencePercent: 90 },
+    amenities: { evCharging: false, covered: true, securityLevel: 'staffed' },
+    totalCapacity: 18,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000001003',
+    hostId: DEMO_HOST_ID,
+    name: 'Adyar Smart Park',
+    address: '12, Gandhi Nagar, Adyar, Chennai 600020',
+    coordinates: { lat: 13.0067, lng: 80.2566 },
+    distance: { value: 1.5, unit: 'km' },
+    price: { value: 35, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 65, confidencePercent: 86 },
+    amenities: { evCharging: true, covered: false, securityLevel: 'monitored' },
+    totalCapacity: 15,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000001004',
+    hostId: DEMO_HOST_ID,
+    name: 'Velachery EV Parking Hub',
+    address: '89, 100 Feet Road, Velachery, Chennai 600042',
+    coordinates: { lat: 12.9791, lng: 80.2204 },
+    distance: { value: 2.3, unit: 'km' },
+    price: { value: 50, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 45, confidencePercent: 82 },
+    amenities: { evCharging: true, covered: true, securityLevel: 'staffed' },
+    totalCapacity: 20,
+  },
+];
+
+export const DEMO_VEHICLES: DemoVehicle[] = [
+  {
+    id: '00000000-0000-4000-8000-000000000201',
+    userId: DEMO_USER.id,
+    licensePlate: 'TN01AB1234',
+    vehicleType: 'sedan',
+    make: 'Honda',
+    model: 'City',
+    color: 'Pearl White',
+    isDefault: true,
+    createdAt: '2026-11-01T10:00:00.000Z',
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000202',
+    userId: DEMO_USER.id,
+    licensePlate: 'TN09CD5678',
+    vehicleType: 'motorcycle',
+    make: 'TVS',
+    model: 'iQube EV',
+    color: 'Harbor Blue',
+    isDefault: false,
+    createdAt: '2026-11-05T10:00:00.000Z',
+  },
+];
+
+export function createDemoBookings(): DemoBooking[] {
+  const now = Date.now();
+  return [
+    {
+      id: '11111111-1111-4111-8111-000000000001',
+      spaceId: DEMO_SPACES[0].id,
+      hostId: DEMO_HOST_ID,
+      vehicleId: DEMO_VEHICLES[0].id,
+      spaceName: DEMO_SPACES[0].name,
+      spaceAddress: DEMO_SPACES[0].address,
+      vehiclePlate: 'TN01AB1234',
+      vehicleType: 'sedan',
+      status: 'confirmed',
+      startTime: new Date(now).toISOString(),
+      endTime: new Date(now + 2 * 3600000).toISOString(),
+      durationMinutes: 120,
+      totalAmount: 84,
+      hourlyRate: 40,
+      type: 'instant',
+      slotNumber: 'Bay A-04',
+    },
+    {
+      id: '11111111-1111-4111-8111-000000000002',
+      spaceId: DEMO_SPACES[1].id,
+      hostId: DEMO_HOST_ID,
+      vehicleId: DEMO_VEHICLES[0].id,
+      spaceName: DEMO_SPACES[1].name,
+      spaceAddress: DEMO_SPACES[1].address,
+      vehiclePlate: 'TN01AB1234',
+      vehicleType: 'sedan',
+      status: 'completed',
+      startTime: new Date(now - 86400000).toISOString(),
+      endTime: new Date(now - 86400000 + 3600000).toISOString(),
+      durationMinutes: 60,
+      totalAmount: 37,
+      hourlyRate: 35,
+      type: 'instant',
+      slotNumber: 'Bay B-12',
+    },
+  ];
+}

@@ -58,7 +58,10 @@ export class SearchService {
 
     const now = new Date();
     const maxTime = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    if (arrivalTime < now) throw new ValidationError('arrivalTime must be in the future', 'arrivalTime');
+    // Allow 60s network/clock skew grace for "arrive now" searches
+    if (arrivalTime.getTime() < now.getTime() - 60 * 1000) {
+      throw new ValidationError('arrivalTime must be in the future', 'arrivalTime');
+    }
     if (arrivalTime > maxTime) throw new ValidationError('arrivalTime must be within 7 days', 'arrivalTime');
 
     // --- Validate duration ---
@@ -171,6 +174,7 @@ export class SearchService {
 
       return {
         id: space.id,
+        hostId: space.hostId,
         name: space.name,
         address: space.address,
         coordinates: { lat: Number(space.latitude), lng: Number(space.longitude) },
@@ -218,10 +222,15 @@ export class SearchService {
     // Known Chennai areas — also used as a dev fallback when no/invalid Maps key.
     const mockLocations: Record<string, Coordinates> = {
       default: { lat: 13.0827, lng: 80.2707 }, // Chennai
+      chennai: { lat: 13.0827, lng: 80.2707 },
       't nagar': { lat: 13.0418, lng: 80.2341 },
       'anna nagar': { lat: 13.0849, lng: 80.2101 },
-      'adyar': { lat: 13.0067, lng: 80.2566 },
-      'velachery': { lat: 12.9791, lng: 80.2204 },
+      adyar: { lat: 13.0067, lng: 80.2566 },
+      velachery: { lat: 12.9791, lng: 80.2204 },
+      omr: { lat: 12.9345, lng: 80.2361 },
+      guindy: { lat: 13.0067, lng: 80.2206 },
+      royapettah: { lat: 13.0558, lng: 80.2643 },
+      mylapore: { lat: 13.0339, lng: 80.2676 },
     };
 
     if (!config.googleMapsApiKey || config.googleMapsApiKey === 'replace-with-google-maps-api-key') {

@@ -39,7 +39,8 @@ logs/
 coverage/
 
 # Prisma
-prisma/migrations/  
+# Note: Migrations under infra/prisma/migrations/ MUST remain tracked in Git.
+/prisma/migrations/
 
 # CDK
 infra/cdk/cdk.out/

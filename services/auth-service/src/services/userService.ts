@@ -2,33 +2,35 @@
 // Auth Service — User Service (Prisma/PostgreSQL)
 // ============================================================
 
-import { PrismaClient } from '@prisma/client';
-import { User, UserRole, generateId } from '@parkly/shared';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { User, UserRole, generateId, ConflictError, NotFoundError } from '@parkly/shared';
 
-const prisma = new PrismaClient();
+const defaultPrisma = new PrismaClient();
 
 export class UserService {
+  constructor(private readonly prisma: PrismaClient = defaultPrisma) {}
+
   /**
    * Find a user by phone number.
    */
   async findByPhone(phone: string): Promise<User | null> {
-    const user = await prisma.user.findUnique({ where: { phone } });
-    return user ? this.mapUser(user) : null;
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+    return user && !user.deletedAt ? this.mapUser(user) : null;
   }
 
   /**
    * Find a user by ID.
    */
   async findById(id: string): Promise<User | null> {
-    const user = await prisma.user.findUnique({ where: { id } });
-    return user ? this.mapUser(user) : null;
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    return user && !user.deletedAt ? this.mapUser(user) : null;
   }
 
   /**
    * Create a new user (driver by default).
    */
   async createUser(phone: string, name: string, role: UserRole = 'driver'): Promise<User> {
-    const user = await prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         id: generateId(),
         phone,
@@ -54,12 +56,37 @@ export class UserService {
   /**
    * Update user profile.
    */
-  async updateUser(id: string, data: Partial<Pick<User, 'name' | 'email'>>): Promise<User> {
-    const user = await prisma.user.update({
-      where: { id },
-      data,
-    });
-    return this.mapUser(user);
+  async updateUser(
+    id: string,
+    data: { name?: string; email?: string | null },
+  ): Promise<User> {
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing || existing.deletedAt) {
+      throw new NotFoundError('User not found');
+    }
+
+    const updateData: Prisma.UserUpdateInput = {};
+    if (data.name !== undefined) {
+      updateData.name = data.name.trim();
+    }
+    if (data.email !== undefined) {
+      const normalizedEmail = data.email ? data.email.trim().toLowerCase() : null;
+      updateData.email = normalizedEmail || null;
+    }
+
+    try {
+      const user = await this.prisma.user.update({
+        where: { id },
+        data: updateData,
+      });
+      return this.mapUser(user);
+    } catch (err: unknown) {
+      const prismaCode = (err as { code?: string })?.code;
+      if (prismaCode === 'P2002') {
+        throw new ConflictError('Email address is already in use', 'email');
+      }
+      throw err;
+    }
   }
 
   private mapUser(raw: {

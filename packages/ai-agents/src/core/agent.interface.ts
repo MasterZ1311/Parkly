@@ -141,9 +141,6 @@ export abstract class BaseAgent<TInput, TOutput> {
             )
           );
         }, this.timeoutMs);
-        if (typeof timer.unref === 'function') {
-          timer.unref();
-        }
       });
 
       const executionPromise = Promise.resolve().then(() =>

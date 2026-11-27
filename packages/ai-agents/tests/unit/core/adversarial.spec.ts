@@ -3,7 +3,7 @@
  * Milestone 1: CircuitBreaker, BaseAgent & Result Monad
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import {
   CircuitBreaker,
@@ -242,6 +242,7 @@ describe('Adversarial Verification: Milestone 1', () => {
       expect(results.length).toBe(50);
       for (let i = 0; i < 50; i++) {
         const res = results[i];
+        if (!res) throw new Error(`Expected execution result at index ${i}`);
         if (i % 4 === 0) {
           // Timeout case
           expect(res.success).toBe(false);

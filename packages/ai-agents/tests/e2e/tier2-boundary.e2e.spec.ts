@@ -12,7 +12,6 @@ import {
   expectFailure,
   CHENNAI_LOCATIONS,
   MOCK_DOCUMENTS,
-  MOCK_PHOTOS,
   CircuitBreaker,
   ExecutionContext,
 } from './helpers/e2e-harness';
@@ -606,7 +605,9 @@ describe('Tier 2: Boundary & Corner Cases E2E Test Suite (65 tests)', () => {
 
       const dlq = harness.getDLQ();
       expect(dlq.length).toBe(1);
-      expect(dlq[0].error.message).toContain('String error');
+      const entry = dlq[0];
+      if (!entry) throw new Error('Expected DLQ entry');
+      expect(entry.error.message).toContain('String error');
     });
 
     it('T2.8.5: Context propagation across nested hops preserves root correlationId', async () => {
@@ -974,7 +975,9 @@ describe('Tier 2: Boundary & Corner Cases E2E Test Suite (65 tests)', () => {
 
       const dlq = harness.getDLQ();
       expect(dlq.length).toBe(1);
-      expect(dlq[0].error.message).toContain('404');
+      const entry = dlq[0];
+      if (!entry) throw new Error('Expected DLQ entry');
+      expect(entry.error.message).toContain('404');
     });
 
     it('T2.13.4: Event published with no subscribers silently ignored without error', async () => {

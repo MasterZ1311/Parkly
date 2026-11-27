@@ -5,13 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#F7F6F2"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "updates": {
       "enabled": false
     },
@@ -19,6 +21,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.zeustechnologies.parkly",
       "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true,
         "NSLocationWhenInUseUsageDescription": "Parkly needs your location to find nearby parking spaces.",
         "NSLocationAlwaysUsageDescription": "Parkly uses your location to find parking near you."
       }
@@ -31,7 +34,8 @@
       "package": "com.zeustechnologies.parkly",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -46,7 +50,15 @@
         {
           "faceIDPermission": "Allow Parkly to use Face ID for secure login."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#D90410",
+          "defaultChannel": "parkly_default"
+        }
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "scheme": "parkly"
   }

@@ -12,7 +12,7 @@ interface BreadcrumbsProps {
 
 export default function Breadcrumbs({ items }: BreadcrumbsProps) {
   return (
-    <nav aria-label="Breadcrumb" style={{ marginBottom: 16 }}>
+    <nav aria-label="Breadcrumb" style={{ marginBottom: 12 }}>
       <ol
         style={{
           display: 'flex',
@@ -21,25 +21,25 @@ export default function Breadcrumbs({ items }: BreadcrumbsProps) {
           listStyle: 'none',
           padding: 0,
           margin: 0,
-          fontSize: 13,
+          fontSize: 12.5,
           color: 'var(--text-muted)',
         }}
       >
         <li>
-          <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
+          <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500 }}>
             Overview
           </Link>
         </li>
         {items.map((item, idx) => (
           <React.Fragment key={idx}>
-            <li aria-hidden="true" style={{ color: 'var(--border)', userSelect: 'none' }}>/</li>
+            <li aria-hidden="true" style={{ color: 'var(--border-strong)', userSelect: 'none' }}>/</li>
             <li>
               {item.path ? (
-                <Link to={item.path} style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
+                <Link to={item.path} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500 }}>
                   {item.label}
                 </Link>
               ) : (
-                <span aria-current="page" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                <span aria-current="page" style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
                   {item.label}
                 </span>
               )}

@@ -3,53 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Parkly Admin — Smart City Operations & Mobility Command Center</title>
-    <meta name="description" content="Centralized operations, AI host verifications, telematics dispute mediation, and city-scale parking mobility analytics for Parkly in Chennai." />
-    <meta name="theme-color" content="#0A1425" />
-    <!-- Protect internal administrative command center from search crawlers -->
+    <title>Parkly Admin Portal — City Operations &amp; Telemetry</title>
+    <meta
+      name="description"
+      content="Parkly Administration Console for Chennai parking network oversight, space verifications, AI dispute arbitration, and GCC mobility analytics."
+    />
     <meta name="robots" content="noindex, nofollow" />
-    <link rel="canonical" href="https://admin.parkly.in/" />
 
-    <!-- Favicon & Icons -->
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <!-- Favicon & App Icons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
 
-    <!-- Open Graph -->
+    <!-- Theme & Mobile WebApp -->
+    <meta name="theme-color" content="#0B1628" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Parkly Admin" />
+
+    <!-- Open Graph / Social -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Parkly Admin Portal" />
-    <meta property="og:url" content="https://admin.parkly.in/" />
-    <meta property="og:title" content="Parkly Admin — Smart City Operations & Mobility Command Center" />
-    <meta property="og:description" content="Centralized operations, AI verification audits, and city-scale mobility telemetry for Parkly." />
-    <meta property="og:image" content="https://admin.parkly.in/logo.png" />
+    <meta property="og:title" content="Parkly Admin Portal — City Operations Command" />
+    <meta property="og:description" content="Enterprise command console for smart parking verification, dispute resolution, and Chennai corridor telemetry." />
+    <meta property="og:image" content="/og-image.svg" />
 
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="https://admin.parkly.in/" />
-    <meta name="twitter:title" content="Parkly Admin Portal" />
-    <meta name="twitter:description" content="Smart City Operations & Mobility Command Center" />
-    <meta name="twitter:image" content="https://admin.parkly.in/og-image.svg" />
+    <!-- Preload Self-Hosted Fonts (CSP 'self' compliant) -->
+    <link rel="preload" href="/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin />
 
-    <!-- Typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
-    <!-- Structured Data (JSON-LD) -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Parkly Admin Command Portal",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "publisher": {
-        "@type": "Organization",
-        "name": "Parkly Technologies India",
-        "url": "https://parkly.in"
-      }
-    }
-    </script>
+    <!-- Security & Privacy -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
   </head>
   <body>
     <div id="root"></div>

@@ -342,9 +342,11 @@ describe('Real Tool Providers Unit & Contract Tests', () => {
 
       const logs = notificationProvider.getAuditLogs();
       expect(logs).toHaveLength(1);
-      expect(logs[0].recipient).toBe('+919876543210');
-      expect(logs[0].channel).toBe('SMS');
-      expect(logs[0].urgency).toBe('HIGH');
+      const firstLog = logs[0];
+      if (!firstLog) throw new Error('Expected audit log entry');
+      expect(firstLog.recipient).toBe('+919876543210');
+      expect(firstLog.channel).toBe('SMS');
+      expect(firstLog.urgency).toBe('HIGH');
     });
 
     it('delivers Expo Push notification and stores audit entry', async () => {
@@ -363,8 +365,10 @@ describe('Real Tool Providers Unit & Contract Tests', () => {
 
       const logs = notificationProvider.getAuditLogs();
       expect(logs).toHaveLength(1);
-      expect(logs[0].channel).toBe('PUSH');
-      expect(logs[0].title).toBe('Booking Confirmed');
+      const firstLog = logs[0];
+      if (!firstLog) throw new Error('Expected audit log entry');
+      expect(firstLog.channel).toBe('PUSH');
+      expect(firstLog.title).toBe('Booking Confirmed');
     });
 
     it('clears audit logs cleanly', async () => {

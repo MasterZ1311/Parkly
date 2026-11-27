@@ -15,8 +15,6 @@ import {
   EventBridgeEvent,
   CHENNAI_LOCATIONS,
   MOCK_DOCUMENTS,
-  MOCK_PHOTOS,
-  MOCK_TELEMETRY,
 } from '../e2e/helpers/e2e-harness';
 import { ok, err, AgentError } from '../../src/core/index';
 
@@ -114,9 +112,9 @@ describe('EMPIRICAL CHALLENGE 1: setup-offline.ts Network Interceptor Defect Ana
         expect(e.target).toBe('fetch(https://dynamodb.ap-south-1.amazonaws.com/)');
       }
 
-      // Test with request object
+      // Test with request object (intentionally duck-typed `{ url }` input verified at runtime)
       try {
-        await globalThis.fetch({ url: 'https://events.amazonaws.com' });
+        await globalThis.fetch({ url: 'https://events.amazonaws.com' } as unknown as Request);
       } catch (e: any) {
         expect(e.target).toBe('fetch(https://events.amazonaws.com)');
       }
@@ -237,17 +235,19 @@ describe('EMPIRICAL CHALLENGE 2: E2ETestHarness Core Functionality', () => {
     // Assert DLQ captured all 3 errors
     const dlq = harness.getDLQ();
     expect(dlq).toHaveLength(3);
+    const [dlq0, dlq1, dlq2] = dlq;
+    if (!dlq0 || !dlq1 || !dlq2) throw new Error('Expected 3 DLQ entries');
 
-    expect(dlq[0].event.id).toBe('evt_dlq_test');
-    expect(dlq[0].error.message).toContain('Sync database connection failed');
-    expect(dlq[0].reason).toBe('Subscriber handler threw an exception');
+    expect(dlq0.event.id).toBe('evt_dlq_test');
+    expect(dlq0.error.message).toContain('Sync database connection failed');
+    expect(dlq0.reason).toBe('Subscriber handler threw an exception');
 
-    expect(dlq[1].event.id).toBe('evt_dlq_test');
-    expect(dlq[1].error).toBeInstanceOf(AgentError);
-    expect((dlq[1].error as AgentError).code).toBe('DOWNSTREAM_FAILURE');
+    expect(dlq1.event.id).toBe('evt_dlq_test');
+    expect(dlq1.error).toBeInstanceOf(AgentError);
+    expect((dlq1.error as AgentError).code).toBe('DOWNSTREAM_FAILURE');
 
-    expect(dlq[2].event.id).toBe('evt_dlq_test');
-    expect(dlq[2].error.message).toContain('Raw string error in subscriber');
+    expect(dlq2.event.id).toBe('evt_dlq_test');
+    expect(dlq2.error.message).toContain('Raw string error in subscriber');
 
     // Test clear DLQ
     harness.eventBus.clearDeadLetterQueue();

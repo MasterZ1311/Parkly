@@ -154,7 +154,7 @@ export function useBookings(status?: string) {
 }
 
 export function useRevenue() {
-  const [revenueStats, setRevenueStats] = useState({
+  const [revenueStats] = useState({
     totalEarnings: '₹1,04,800',
     totalBookings: 416,
     activeSpaces: 3,
@@ -168,7 +168,7 @@ export function useRevenue() {
       { month: 'Jun', revenue: 19800, bookings: 79 },
     ],
   });
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   return { revenueStats, loading };
 }

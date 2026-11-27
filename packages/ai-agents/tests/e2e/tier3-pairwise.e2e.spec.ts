@@ -36,6 +36,7 @@ describe('Tier 3: Cross-Feature Combinations E2E Test Suite (15 tests)', () => {
     expect(searchRes.data.length).toBeGreaterThan(0);
 
     const topSpace = searchRes.data[0];
+    if (!topSpace) throw new Error('Expected at least one space from search');
     const pricingRes = await harness.agents.dynamicPricing.execute({
       spaceId: topSpace.id,
       baseHourlyRate: topSpace.hourlyRate,
@@ -166,7 +167,23 @@ describe('Tier 3: Cross-Feature Combinations E2E Test Suite (15 tests)', () => {
     };
     const fallbackOp = async () => ({
       inspectionResult: 'APPROVED' as const,
+      detectedAttributes: {
+        isCovered: true,
+        surfaceType: 'concrete',
+        estimatedWidthMeters: 2.5,
+        estimatedLengthMeters: 5.0,
+        gateClearanceAdequate: true,
+        cctvVisible: false,
+        lightingAdequate: true,
+        evChargerDetected: false,
+      },
+      privacyActions: {
+        licensePlatesBlurred: 0,
+        facesBlurred: 0,
+      },
       generatedDescription: 'Secure covered residential parking bay (cached fallback heuristic).',
+      obstructions: [],
+      feedbackMessages: [],
     });
 
     // 3 failures trip circuit
@@ -249,7 +266,9 @@ describe('Tier 3: Cross-Feature Combinations E2E Test Suite (15 tests)', () => {
 
     const notifs = harness.mocks.notification.getSentNotifications();
     expect(notifs.length).toBe(1);
-    expect(notifs[0].message).toContain('manual review');
+    const notif = notifs[0];
+    if (!notif) throw new Error('Expected notification entry');
+    expect(notif.message).toContain('manual review');
   });
 
   // Pairwise 11: DriverConciergeAgent + Emergency Backup Relocation
@@ -322,7 +341,9 @@ describe('Tier 3: Cross-Feature Combinations E2E Test Suite (15 tests)', () => {
     expect(siblingReceived).toBe(true);
     const dlq = harness.getDLQ();
     expect(dlq.length).toBe(1);
-    expect(dlq[0].event['detail-type']).toBe('Orchestrated.Event');
+    const entry = dlq[0];
+    if (!entry) throw new Error('Expected DLQ entry');
+    expect(entry.event['detail-type']).toBe('Orchestrated.Event');
   });
 
   // Pairwise 15: Booking Hold Saga + Slot Release Compensation

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -14,12 +14,13 @@ import {
 import { adminApi } from '../utils/apiClient';
 import Breadcrumbs from '../components/Breadcrumbs';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+import { ParkingIcon, ClockIcon, LeafIcon, GaugeIcon, ZapIcon } from '../components/Icons';
 
 export default function CityAnalytics() {
   useDocumentTitle('City Mobility & Carbon Analytics');
 
   const [period, setPeriod] = useState('2026-W36');
-  const [selectedZone, setSelectedZone] = useState('all');
+  const [selectedZone] = useState('all');
   const [loading, setLoading] = useState(false);
 
   const [analyticsData, setAnalyticsData] = useState({
@@ -28,10 +29,10 @@ export default function CityAnalytics() {
     co2AbatedKg: 1842.5,
     activeCorridorsCount: 8,
     chokePoints: [
-      { name: 'Panagal Park North Intersection', zone: 'T Nagar', severity: 'HIGH', cruisingMinutes: 18400, delayRelief: '38%' },
-      { name: 'Roundtana 2nd Avenue Junction', zone: 'Anna Nagar', severity: 'MODERATE', cruisingMinutes: 14200, delayRelief: '27%' },
-      { name: 'Madhya Kailash Tech Junction', zone: 'OMR Corridor', severity: 'HIGH', cruisingMinutes: 12600, delayRelief: '31%' },
-      { name: 'Lattice Bridge Road Cross', zone: 'Adyar', severity: 'LOW', cruisingMinutes: 7200, delayRelief: '19%' },
+      { name: 'Panagal Park North Intersection', zone: 'T Nagar', severity: 'HIGH', cruisingMinutes: 18400, delayRelief: '38%', pct: 38 },
+      { name: 'Roundtana 2nd Avenue Junction', zone: 'Anna Nagar', severity: 'MODERATE', cruisingMinutes: 14200, delayRelief: '27%', pct: 27 },
+      { name: 'Madhya Kailash Tech Junction', zone: 'OMR Corridor', severity: 'HIGH', cruisingMinutes: 12600, delayRelief: '31%', pct: 31 },
+      { name: 'Lattice Bridge Road Cross', zone: 'Adyar', severity: 'LOW', cruisingMinutes: 7200, delayRelief: '19%', pct: 19 },
     ],
     zonePerformance: [
       { zone: 'T Nagar', offStreetHrs: 5200, co2Abated: 680, cruisingSaved: 21000 },
@@ -72,86 +73,122 @@ export default function CityAnalytics() {
       <Breadcrumbs items={[{ label: 'City Mobility Analytics' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Chennai Mobility &amp; Urban Carbon Analytics</h1>
+          <h1 className="page-title">Chennai Mobility &amp; Carbon Analytics</h1>
           <p className="page-subtitle">
-            Autonomous multi-zone cruising reduction, off-street hour absorption &amp; CMDA carbon credits audit.
+            Multi-zone cruising reduction, off-street hour absorption, and CMDA carbon credits audit.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <select
             className="form-select"
+            aria-label="Analytics Period"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            style={{ width: 140 }}
+            style={{ width: 155 }}
           >
             <option value="2026-W36">2026 - Week 36</option>
             <option value="2026-W35">2026 - Week 35</option>
             <option value="2026-W34">2026 - Week 34</option>
           </select>
-          <button className="btn btn-primary" onClick={handleRunAnalysis} disabled={loading}>
-            {loading ? 'Analyzing...' : '⚡ Run City Analysis'}
+          <button type="button" className="btn btn-primary" onClick={handleRunAnalysis} disabled={loading}>
+            <ZapIcon size={15} />
+            {loading ? 'Analyzing...' : 'Run City Analysis'}
           </button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid-4" style={{ marginBottom: 24 }}>
+      <div className="grid-4" style={{ marginBottom: 20 }}>
         {[
-          { label: 'Off-Street Hours Supplied', value: `${analyticsData.offStreetHoursSupplied.toLocaleString()} hrs`, icon: '🅿️', color: '#38BDF8', bg: '#38BDF820' },
-          { label: 'Cruising Minutes Saved', value: `${analyticsData.cruisingMinutesReduced.toLocaleString()} min`, icon: '⏱️', color: '#22C55E', bg: '#22C55E20' },
-          { label: 'CO2 Abated (GCC)', value: `${analyticsData.co2AbatedKg.toLocaleString()} kg`, icon: '🌱', color: '#8B5CF6', bg: '#8B5CF620' },
-          { label: 'Congestion Relief Score', value: '88.4 / 100', icon: '🚦', color: '#F59E0B', bg: '#F59E0B20' },
-        ].map((s) => (
-          <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg }}>{s.icon}</div>
+          { label: 'Off-Street Hours Supplied', value: `${analyticsData.offStreetHoursSupplied.toLocaleString()} hrs`, Icon: ParkingIcon, color: 'var(--blue)' },
+          { label: 'Cruising Minutes Saved', value: `${analyticsData.cruisingMinutesReduced.toLocaleString()} min`, Icon: ClockIcon, color: 'var(--green)' },
+          { label: 'CO2 Abated (GCC)', value: `${analyticsData.co2AbatedKg.toLocaleString()} kg`, Icon: LeafIcon, color: 'var(--green)' },
+          { label: 'Congestion Relief', value: '88.4 / 100', Icon: GaugeIcon, color: 'var(--text-primary)' },
+        ].map(({ label, value, Icon, color }) => (
+          <div key={label} className="stat-card">
             <div>
-              <div className="stat-value">{s.value}</div>
-              <div className="stat-label">{s.label}</div>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value" style={{ color, fontSize: 22 }}>{value}</div>
+            </div>
+            <div className="stat-icon">
+              <Icon size={18} />
             </div>
           </div>
         ))}
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid-2" style={{ marginBottom: 24 }}>
+      {/* Corridor Relief Strip */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header">
+          <h2 className="card-title">Corridor Diversion Horizon</h2>
+          <span className="card-meta">Peak Hour Choke Relief</span>
+        </div>
+        <div className="corridor-strip">
+          {analyticsData.chokePoints.map((cp) => (
+            <div key={cp.name} className="corridor-tile">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>{cp.zone}</span>
+                <span className="mono-num" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent-cta)' }}>
+                  {cp.delayRelief}
+                </span>
+              </div>
+              <div className="corridor-bar-track">
+                <div
+                  className="corridor-bar-fill"
+                  style={{
+                    width: `${cp.pct}%`,
+                    background: cp.severity === 'HIGH' ? 'var(--accent-cta)' : cp.severity === 'MODERATE' ? 'var(--yellow)' : 'var(--green)',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Corridor Cruising Minutes Saved by Zone
-          </h3>
+          <div className="card-header">
+            <h2 className="card-title">Corridor Cruising Minutes Saved by Zone</h2>
+            <span className="card-meta">Minutes Reduced</span>
+          </div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={analyticsData.zonePerformance}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="zone" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }} />
-              <Bar dataKey="cruisingSaved" fill="#EF010C" name="Cruising Saved (min)" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
+              <XAxis dataKey="zone" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
+              <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Bar dataKey="cruisingSaved" fill="#D90410" name="Cruising Saved (min)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 20, color: 'var(--text-primary)' }}>
-            Carbon Credits &amp; Off-Street Hours
-          </h3>
+          <div className="card-header">
+            <h2 className="card-title">Carbon Credits &amp; Off-Street Hours</h2>
+            <span className="card-meta">GCC Telemetry</span>
+          </div>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={analyticsData.zonePerformance}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
-              <XAxis dataKey="zone" tick={{ fill: '#64748B', fontSize: 12 }} />
-              <YAxis tick={{ fill: '#64748B', fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, color: '#F8FAFC' }} />
-              <Legend wrapperStyle={{ color: '#94A3B8', fontSize: 12 }} />
-              <Line type="monotone" dataKey="co2Abated" name="CO2 Abated (kg)" stroke="#22C55E" strokeWidth={2} />
-              <Line type="monotone" dataKey="offStreetHrs" name="Off-Street Hours" stroke="#38BDF8" strokeWidth={2} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
+              <XAxis dataKey="zone" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
+              <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Legend wrapperStyle={{ color: '#334155', fontSize: 12 }} />
+              <Line type="monotone" dataKey="co2Abated" name="CO2 Abated (kg)" stroke="#0F766E" strokeWidth={2.25} />
+              <Line type="monotone" dataKey="offStreetHrs" name="Off-Street Hours" stroke="#0B1628" strokeWidth={2.25} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Critical Choke Points */}
+      {/* Choke Points Table */}
       <div className="card">
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
-          🚨 Chennai GCC Corridor Choke Points &amp; Diversion Efficiency
-        </h3>
+        <div className="card-header">
+          <h2 className="card-title">Chennai GCC Corridor Choke Points &amp; Diversion Efficiency</h2>
+          <span className="card-meta">Period {period}</span>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -166,7 +203,7 @@ export default function CityAnalytics() {
             <tbody>
               {analyticsData.chokePoints.map((cp) => (
                 <tr key={cp.name}>
-                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{cp.name}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{cp.name}</td>
                   <td>
                     <span className="badge badge-blue">{cp.zone}</span>
                   </td>
@@ -175,10 +212,12 @@ export default function CityAnalytics() {
                       {cp.severity}
                     </span>
                   </td>
-                  <td style={{ color: 'var(--green)', fontWeight: 700 }}>
+                  <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
                     {cp.cruisingMinutes.toLocaleString()} min
                   </td>
-                  <td style={{ fontWeight: 700, color: 'var(--accent)' }}>{cp.delayRelief}</td>
+                  <td className="mono-num" style={{ fontWeight: 700, color: 'var(--accent-cta)' }}>
+                    {cp.delayRelief}
+                  </td>
                 </tr>
               ))}
             </tbody>

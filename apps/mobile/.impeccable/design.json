@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T18:35:00Z",
+  "title": "Design System: Parkly Mobile — The Sunlight Commuter Pass",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Signal Crimson", "canonical": "#D90410", "tonalRamp": ["#4A0105", "#820209", "#B8030D", "#D90410", "#EF010C", "#F87171", "#FECACA", "#FEF2F2"] },
+      "navy": { "role": "secondary", "displayName": "Harbor Navy", "canonical": "#0B1628", "tonalRamp": ["#060E1B", "#0B1628", "#14243D", "#243A5E", "#334155", "#5A6678", "#9FB0C7", "#E2E8F0"] },
+      "background": { "role": "neutral", "displayName": "Limestone Ground", "canonical": "#F7F6F2", "tonalRamp": ["#5A6678", "#94A3B8", "#C9C5B9", "#DFDDD4", "#EFECE4", "#F1EFE9", "#F7F6F2", "#FFFFFF"] }
+    },
+    "typographyMeta": {
+      "title-lg": { "displayName": "Mobile Title", "purpose": "Facility headings and confirmation banners." },
+      "price": { "displayName": "Tabular Tariff", "purpose": "Hourly INR rates and totals." }
+    },
+    "shadows": [
+      { "name": "card-elevation", "value": "0 1px 3px rgba(11, 22, 40, 0.05)", "purpose": "Material elevation level 1 for daylight list cards." },
+      { "name": "sheet-elevation", "value": "0 -4px 12px rgba(11, 22, 40, 0.12)", "purpose": "Bottom sheet detachment over OpenFreeMap." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "Reanimated 4 UI-thread settle and entering ease." },
+      { "name": "sheet-spring", "value": "spring(duration: 300ms, dampingRatio: 0.8)", "purpose": "Velocity-preserving Pan gesture release." }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "390px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Bar Button",
+      "kind": "button",
+      "refersTo": "press-primary",
+      "description": "48dp+ tactile press-scale & ripple CTA for booking/checkout.",
+      "html": "<button class=\"ds-m-btn\" type=\"button\">Book Bay — ₹126</button>",
+      "css": ".ds-m-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; border-radius: 12px; border: none; background: #D90410; color: #FFFFFF; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 800; }"
+    },
+    {
+      "name": "Space Listing Card",
+      "kind": "card",
+      "refersTo": "card-space",
+      "description": "Daylight parking lot card with availability indicator and tabular tariff.",
+      "html": "<div class=\"ds-m-card\"><div class=\"ds-m-top\"><strong>Express Avenue Parking</strong><span class=\"ds-m-open\">88% open</span></div><div class=\"ds-m-foot\"><span>0.4 km · EV · Covered</span><span class=\"ds-m-price\">₹60/hr</span></div></div>",
+      "css": ".ds-m-card { background: #FFFFFF; border: 1px solid #DFDDD4; border-radius: 14px; padding: 16px; font-family: system-ui, sans-serif; } .ds-m-top { display: flex; justify-content: space-between; align-items: center; color: #0B1628; font-size: 15px; } .ds-m-open { background: #ECFDF5; border: 1px solid #A7F3D0; color: #0F766E; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; } .ds-m-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid #F1EFE9; color: #5A6678; font-size: 12.5px; } .ds-m-price { color: #D90410; font-size: 17px; font-weight: 800; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Sunlight Commuter Pass",
+    "overview": "Built Android-first for outdoor Chennai glare and one-handed barrier gate checks, Parkly Mobile brings Coromandel Sunlit Ledger onto Expo SDK 54: warm limestone surfaces (#F7F6F2), crisp elevated white cards (#FFFFFF), Harbor Navy headers (#0B1628), and Signal Crimson CTAs (#D90410), animated strictly on the UI thread via react-native-reanimated 4, react-native-gesture-handler, and expo-haptics.",
+    "keyCharacteristics": [
+      "48dp minimum interactive targets (PressScale with Android ripple + 0.97 scale settle in 120ms) and safe-area window insets across custom headers and bottom sticky bars.",
+      "Draggable Map bottom sheet driven by Gesture.Pan() + withSpring plus accessible tap header fallback.",
+      "Respects system reduced motion in Stack transitions, press curves, loading skeletons, and chat scrolling."
+    ],
+    "rules": [
+      { "name": "The Sunlight Legibility Rule", "body": "Avoid low-contrast dark-slate cards in outdoors use; anchor active pricing and QR gate tokens in dark #0B1628 ink on #FFFFFF and #F7F6F2 surfaces.", "section": "colors" }
+    ],
+    "dos": [
+      "Do guard every shared-value read/write behind .get()/.set() and run haptics from worklet handlers only via scheduleOnRN.",
+      "Do keep FlatList row items free of entering mount animations so fast scroll virtualization never glitches."
+    ],
+    "donts": [
+      "Don't drop below 48dp hit size on interactive mobile controls or omit useReducedMotion() fallbacks.",
+      "Don't mix legacy #0A1425 / #0F172A / #38BDF8 dark-mode colors into sunlit screens."
+    ]
+  }
+}

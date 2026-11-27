@@ -5,7 +5,7 @@ process.env['JWT_REFRESH_SECRET'] = 'test-jwt-refresh-secret-for-booking-service
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { app } from '../index';
-import { bookingService } from '../services/bookingService';
+import { bookingService, BookingService } from '../services/bookingService';
 
 // Mock PrismaClient to prevent live DB connections in unit/integration tests
 jest.mock('@prisma/client', () => {
@@ -173,6 +173,149 @@ describe('Booking Service Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('cancelled');
+    });
+
+    it('extends an active/confirmed booking via PUT /bookings/:id/extend', async () => {
+      const extendedEndTime = new Date('2026-12-01T13:00:00Z').toISOString();
+      const spy = jest.spyOn(bookingService, 'extendBooking').mockResolvedValue({
+        ...mockBooking,
+        status: 'confirmed',
+        endTime: extendedEndTime,
+        durationMinutes: 180,
+        totalAmount: 162,
+      } as any);
+
+      const res = await request(app)
+        .put(`/bookings/${mockBooking.id}/extend`)
+        .set('Authorization', `Bearer ${validToken}`)
+        .send({ hours: 1 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.endTime).toBe(extendedEndTime);
+      expect(res.body.data.totalAmount).toBe(162);
+      expect(spy).toHaveBeenCalledWith(mockBooking.id, testUserId, 60);
+    });
+
+    it('rejects PUT /bookings/:id/extend with invalid hours', async () => {
+      const res = await request(app)
+        .put(`/bookings/${mockBooking.id}/extend`)
+        .set('Authorization', `Bearer ${validToken}`)
+        .send({ hours: 0 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('BookingService.extendBooking unit invariants', () => {
+    it('rejects extending a cancelled booking', async () => {
+      const txMock = {
+        booking: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: mockBooking.id,
+            userId: testUserId,
+            spaceId: mockBooking.spaceId,
+            status: 'cancelled',
+            deletedAt: null,
+            startTime: new Date('2026-12-01T10:00:00Z'),
+            endTime: new Date('2026-12-01T12:00:00Z'),
+            durationMinutes: 120,
+            totalAmount: 120,
+          }),
+        },
+      };
+      const svc = new BookingService({
+        $transaction: jest.fn().mockImplementation((fn) => fn(txMock)),
+      } as any);
+
+      await expect(svc.extendBooking(mockBooking.id, testUserId, 60)).rejects.toThrow(
+        'Cannot extend a booking in cancelled status',
+      );
+    });
+
+    it('throws ConflictError when extension overlaps next driver reservation', async () => {
+      const txMock = {
+        booking: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: mockBooking.id,
+            userId: testUserId,
+            spaceId: mockBooking.spaceId,
+            status: 'confirmed',
+            deletedAt: null,
+            startTime: new Date('2026-12-01T10:00:00Z'),
+            endTime: new Date('2026-12-01T12:00:00Z'),
+            durationMinutes: 120,
+            totalAmount: 120,
+            space: { hourlyRate: 40 },
+          }),
+          findFirst: jest.fn().mockResolvedValue({ id: 'other-booking' }),
+        },
+      };
+      const svc = new BookingService({
+        $transaction: jest.fn().mockImplementation((fn) => fn(txMock)),
+      } as any);
+
+      await expect(svc.extendBooking(mockBooking.id, testUserId, 60)).rejects.toThrow(
+        'Cannot extend: the next slot is already reserved by another driver.',
+      );
+    });
+
+    it('extends confirmed booking endTime, durationMinutes, and totalAmount accurately', async () => {
+      const now = new Date();
+      const startTime = new Date('2026-12-01T10:00:00Z');
+      const endTime = new Date('2026-12-01T12:00:00Z');
+      const txMock = {
+        booking: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: mockBooking.id,
+            userId: testUserId,
+            spaceId: mockBooking.spaceId,
+            vehicleId: mockBooking.vehicleId,
+            hostId: mockBooking.hostId,
+            type: 'scheduled',
+            status: 'confirmed',
+            deletedAt: null,
+            startTime,
+            endTime,
+            durationMinutes: 120,
+            totalAmount: 84,
+            createdAt: now,
+            updatedAt: now,
+            space: { id: mockBooking.spaceId, name: 'Spot A', address: 'T Nagar', hourlyRate: 40 },
+            vehicle: { id: mockBooking.vehicleId, licensePlate: 'TN01AB1234', vehicleType: 'sedan' },
+          }),
+          findFirst: jest.fn().mockResolvedValue(null),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              id: mockBooking.id,
+              userId: testUserId,
+              spaceId: mockBooking.spaceId,
+              vehicleId: mockBooking.vehicleId,
+              hostId: mockBooking.hostId,
+              type: 'scheduled',
+              status: 'confirmed',
+              startTime,
+              endTime: data.endTime,
+              durationMinutes: data.durationMinutes,
+              totalAmount: data.totalAmount,
+              createdAt: now,
+              updatedAt: now,
+              space: { id: mockBooking.spaceId, name: 'Spot A', address: 'T Nagar', hourlyRate: 40 },
+              vehicle: { id: mockBooking.vehicleId, licensePlate: 'TN01AB1234', vehicleType: 'sedan' },
+            }),
+          ),
+        },
+      };
+      const svc = new BookingService({
+        $transaction: jest.fn().mockImplementation((fn) => fn(txMock)),
+      } as any);
+
+      const extended = await svc.extendBooking(mockBooking.id, testUserId, 60);
+      expect(extended.durationMinutes).toBe(180);
+      expect(extended.endTime).toBe('2026-12-01T13:00:00.000Z');
+      // 40 + round(40*0.05) = 42 added to 84 => 126
+      expect(extended.totalAmount).toBe(126);
     });
   });
 });

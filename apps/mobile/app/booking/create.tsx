@@ -4,16 +4,20 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import Animated from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bookingApi, paymentApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
+import { colors, theme } from '../../src/constants/theme';
+import { ENTER_FADE_UP, PressScale, triggerHaptic } from '../../src/components/Motion';
 
 export default function BookingCreateScreen() {
   const { spaceId, spaceName, hostId, hours, totalAmount, hourlyRate } = useLocalSearchParams<{
@@ -30,9 +34,53 @@ export default function BookingCreateScreen() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'details' | 'payment' | 'success'>('details');
   const [confirmedBookingId, setConfirmedBookingId] = useState<string>('');
+  const insets = useSafeAreaInsets();
 
-  const feeAmount = Math.round(Number(totalAmount) * 0.05);
-  const grandTotal = Number(totalAmount) + feeAmount;
+  const parsedAmount = Number(totalAmount);
+  const parsedHours = Number(hours || 1);
+  const hasValidParams = Boolean(spaceId) && Number.isFinite(parsedAmount) && parsedAmount > 0 && Number.isFinite(parsedHours) && parsedHours > 0;
+
+  if (!hasValidParams) {
+    return (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: 'center',
+          paddingTop: Math.max(insets.top + 20, 40),
+          paddingBottom: Math.max(insets.bottom + 24, 36),
+          paddingHorizontal: 18,
+        }}
+      >
+        <StatusBar style="dark" backgroundColor={colors.background} />
+        <View style={styles.card}>
+          <Ionicons name="hourglass-outline" size={32} color={colors.warning} />
+          <Text style={[styles.cardTitle, { marginTop: 8 }]}>Checkout Session Expired or Incomplete</Text>
+          <Text style={styles.cardDetail}>
+            Missing parking space selection or pricing quote. Select a space again to lock a fresh bay hold.
+          </Text>
+          <PressScale
+            style={[styles.confirmBtn, { marginTop: 14 }]}
+            contentStyle={styles.confirmBtnContent}
+            rippleColor={colors.rippleLight}
+            onPress={() => router.replace('/(tabs)/home')}
+          >
+            <Text style={styles.confirmBtnText}>Find Parking Bay</Text>
+          </PressScale>
+          <PressScale
+            style={[styles.backHomeBtn, { marginTop: 6 }]}
+            contentStyle={styles.backHomeContent}
+            onPress={() => router.replace('/(tabs)/bookings')}
+          >
+            <Text style={styles.linkText}>Open My Bookings</Text>
+          </PressScale>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  const feeAmount = Math.round(parsedAmount * 0.05);
+  const grandTotal = parsedAmount + feeAmount;
 
   const INDIAN_PLATE_REGEX = /^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$/;
 
@@ -56,7 +104,6 @@ export default function BookingCreateScreen() {
       const startTime = new Date().toISOString();
       const endTime = new Date(Date.now() + Number(hours) * 3600000).toISOString();
 
-      // Step 1: Create booking
       const { data: bookingResp } = await bookingApi.create({
         spaceId: spaceId!,
         vehicleId: `veh-${cleanedPlate}`,
@@ -70,7 +117,6 @@ export default function BookingCreateScreen() {
       const bookingId = bookingResp?.data?.booking?.id || `bk-${Date.now()}`;
       setConfirmedBookingId(bookingId);
 
-      // Cache newly created booking for offline access
       try {
         const newBooking = bookingResp?.data?.booking || {
           id: bookingId,
@@ -87,13 +133,13 @@ export default function BookingCreateScreen() {
         console.warn('Failed to cache new booking:', cacheErr);
       }
 
-      // Step 2: Initiate payment
       try {
         await paymentApi.initiate(bookingId, grandTotal);
       } catch (payErr) {
         console.warn('Payment initiation warning:', payErr);
       }
 
+      triggerHaptic('success');
       setStep('success');
     } catch (err: any) {
       console.warn('Booking API offline, proceeding with verified demo booking:', err);
@@ -115,6 +161,7 @@ export default function BookingCreateScreen() {
       } catch (cacheErr) {
         console.warn('Failed to cache demo booking:', cacheErr);
       }
+      triggerHaptic('success');
       setStep('success');
     } finally {
       setLoading(false);
@@ -125,77 +172,97 @@ export default function BookingCreateScreen() {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=PARKLY:${confirmedBookingId}:${vehiclePlate.toUpperCase()}`;
 
     return (
-      <View style={styles.successContainer}>
-        <View style={styles.successIcon}>
-          <Ionicons name="checkmark-circle" size={72} color="#22C55E" />
-        </View>
-        <Text style={styles.successTitle}>Booking Confirmed! 🎉</Text>
-        <Text style={styles.successSubtitle}>
-          Your parking spot is ready at{'\n'}
-          <Text style={{ fontWeight: '700', color: '#EF010C' }}>{spaceName}</Text>
-        </Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.successContainer,
+          { paddingTop: Math.max(insets.top + 20, 40), paddingBottom: Math.max(insets.bottom + 24, 36) },
+        ]}
+      >
+        <StatusBar style="dark" backgroundColor={colors.background} />
 
-        {/* QR Entry Pass */}
-        <View style={styles.qrCard}>
-          <Text style={styles.qrCardHeader}>Scan at Entry Gate</Text>
-          <Image
-            source={{ uri: qrUrl }}
-            style={styles.qrImage}
-            resizeMode="contain"
-          />
-          <Text style={styles.qrTokenText}>#{confirmedBookingId.slice(0, 12)}</Text>
-        </View>
+        <Animated.View entering={ENTER_FADE_UP} style={styles.successInner}>
+          <View style={styles.successBadge}>
+            <Ionicons name="checkmark-circle" size={48} color={colors.success} />
+          </View>
+          <Text style={styles.successTitle}>Bay Reserved</Text>
+          <Text style={styles.successSubtitle}>
+            Your gate pass is ready for{'\n'}
+            <Text style={{ fontWeight: '800', color: colors.navy }}>{spaceName}</Text>
+          </Text>
 
-        <View style={styles.successCard}>
-          <View style={styles.detailRow}>
-            <Text style={styles.successCardLabel}>Vehicle Plate</Text>
-            <Text style={styles.successCardValue}>{vehiclePlate.toUpperCase()}</Text>
+          <View style={styles.qrCard}>
+            <Text style={styles.qrCardHeader}>Scan At Entry Barrier</Text>
+            <Image source={{ uri: qrUrl }} style={styles.qrImage} resizeMode="contain" />
+            <Text style={styles.qrTokenText}>#{confirmedBookingId.slice(0, 12).toUpperCase()}</Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.successCardLabel}>Duration</Text>
-            <Text style={styles.successCardValue}>{hours} hours</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.successCardLabel}>Total Paid</Text>
-            <Text style={[styles.successCardValue, { color: '#22C55E' }]}>₹{grandTotal}</Text>
-          </View>
-        </View>
 
-        <TouchableOpacity
-          style={styles.successBtn}
-          onPress={() => router.replace('/(tabs)/bookings')}
-        >
-          <Text style={styles.successBtnText}>View My Bookings</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/home')}>
-          <Text style={styles.linkText}>Back to Home</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.successCard}>
+            <View style={styles.detailRow}>
+              <Text style={styles.successCardLabel}>Vehicle Plate</Text>
+              <Text style={[styles.successCardValue, styles.mono]}>{vehiclePlate.toUpperCase()}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.successCardLabel}>Duration</Text>
+              <Text style={[styles.successCardValue, styles.mono]}>{hours} hours</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.successCardLabel}>Total Paid</Text>
+              <Text style={[styles.successCardValue, styles.mono, { color: colors.success }]}>₹{grandTotal}</Text>
+            </View>
+          </View>
+
+          <PressScale
+            style={styles.successBtn}
+            contentStyle={styles.successBtnContent}
+            rippleColor={colors.rippleLight}
+            haptic="medium"
+            onPress={() => router.replace('/(tabs)/bookings')}
+          >
+            <Text style={styles.successBtnText}>Open My Bookings</Text>
+          </PressScale>
+
+          <PressScale
+            style={styles.backHomeBtn}
+            contentStyle={styles.backHomeContent}
+            haptic="selection"
+            onPress={() => router.replace('/(tabs)/home')}
+          >
+            <Text style={styles.linkText}>Return to Find Parking</Text>
+          </PressScale>
+        </Animated.View>
+      </ScrollView>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
-        {/* Header */}
-        <View style={styles.bookingHeader}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#38BDF8" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Confirm Booking</Text>
-          <View style={{ width: 24 }} />
-        </View>
+      <StatusBar style="light" backgroundColor={colors.navy} />
 
+      <View style={[styles.bookingHeader, { paddingTop: Math.max(insets.top + 8, 18) }]}>
+        <PressScale
+          style={styles.headerBackBtn}
+          contentStyle={styles.headerBackContent}
+          rippleColor={colors.rippleLight}
+          onPress={() => router.back()}
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={20} color={colors.white} />
+        </PressScale>
+        <Text style={styles.headerTitle}>Confirm Reservation</Text>
+        <View style={{ width: 48 }} />
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ padding: 18, paddingBottom: 130 + insets.bottom }}
+      >
         {/* Spot Summary */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{spaceName}</Text>
           <View style={styles.row}>
-            <Ionicons name="time-outline" size={16} color="#64748B" />
-            <Text style={styles.cardDetail}>Duration: {hours} hours</Text>
-          </View>
-          <View style={styles.row}>
-            <Ionicons name="car-outline" size={16} color="#64748B" />
-            <Text style={styles.cardDetail}>Starts now — ends in {hours}h</Text>
+            <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.cardDetail}>Duration: {hours} hours · Starts immediately</Text>
           </View>
         </View>
 
@@ -210,7 +277,7 @@ export default function BookingCreateScreen() {
               value={vehiclePlate}
               onChangeText={setVehiclePlate}
               placeholder="TN01AB1234"
-              placeholderTextColor="#64748B"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="characters"
               maxLength={12}
             />
@@ -218,26 +285,35 @@ export default function BookingCreateScreen() {
 
           <Text style={styles.label}>Vehicle Type</Text>
           <View style={styles.vehicleTypes}>
-            {(['motorcycle', 'compact', 'sedan', 'suv'] as const).map(type => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.typeChip, vehicleType === type && styles.typeChipActive]}
-                onPress={() => setVehicleType(type)}
-              >
-                <Text style={[styles.typeText, vehicleType === type && styles.typeTextActive]}>
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(['motorcycle', 'compact', 'sedan', 'suv'] as const).map((type) => {
+              const active = vehicleType === type;
+              return (
+                <PressScale
+                  key={type}
+                  haptic="selection"
+                  accessibilityState={{ selected: active }}
+                  rippleColor={active ? colors.rippleLight : colors.rippleDark}
+                  style={[styles.typeChip, active && styles.typeChipActive]}
+                  contentStyle={styles.typeChipContent}
+                  onPress={() => setVehicleType(type)}
+                >
+                  <Text style={[styles.typeText, active && styles.typeTextActive]}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
+                </PressScale>
+              );
+            })}
           </View>
         </View>
 
-        {/* Payment */}
+        {/* Payment Summary */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Summary</Text>
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Parking (₹{hourlyRate} × {hours}h)</Text>
+              <Text style={styles.summaryLabel}>
+                Parking (₹{hourlyRate} × {hours}h)
+              </Text>
               <Text style={styles.summaryVal}>₹{totalAmount}</Text>
             </View>
             <View style={styles.summaryRow}>
@@ -245,7 +321,7 @@ export default function BookingCreateScreen() {
               <Text style={styles.summaryVal}>₹{feeAmount}</Text>
             </View>
             <View style={[styles.summaryRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>Total Payable</Text>
               <Text style={styles.totalVal}>₹{grandTotal}</Text>
             </View>
           </View>
@@ -253,127 +329,217 @@ export default function BookingCreateScreen() {
           <View style={styles.paymentMethods}>
             <Text style={styles.label}>Payment Method</Text>
             <View style={styles.paymentOption}>
-              <Ionicons name="phone-portrait" size={20} color="#38BDF8" />
-              <Text style={styles.paymentText}>UPI / Mobile Wallet</Text>
-              <Ionicons name="radio-button-on" size={20} color="#38BDF8" />
+              <Ionicons name="phone-portrait-outline" size={20} color={colors.navy} />
+              <Text style={styles.paymentText}>UPI / Instant Wallet</Text>
+              <Ionicons name="radio-button-on" size={20} color={colors.primary} />
             </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Confirm Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 12, 20) }]}>
+        <PressScale
           style={[styles.confirmBtn, loading && styles.btnDisabled]}
+          contentStyle={styles.confirmBtnContent}
+          rippleColor={colors.rippleLight}
+          haptic="medium"
           onPress={handleConfirmBooking}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#0F172A" />
+            <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.confirmBtnText}>Confirm & Pay ₹{grandTotal}</Text>
+            <Text style={styles.confirmBtnText}>Confirm &amp; Pay ₹{grandTotal}</Text>
           )}
-        </TouchableOpacity>
-        <Text style={styles.disclaimer}>By booking, you agree to the Parkly Terms of Service.</Text>
+        </PressScale>
+        <Text style={styles.disclaimer}>Protected by Parkly Booking Guarantee &amp; UPI Instant Refunds.</Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A' },
-  successContainer: { flex: 1, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center', padding: 32 },
-  successIcon: { marginBottom: 24 },
-  successTitle: { fontSize: 26, fontWeight: '800', color: '#F8FAFC', marginBottom: 12, textAlign: 'center' },
-  successSubtitle: { fontSize: 15, color: '#94A3B8', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  qrCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+  container: { flex: 1, backgroundColor: colors.background },
+  mono: { fontVariant: ['tabular-nums'] },
+  bookingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    backgroundColor: colors.navy,
   },
-  qrCardHeader: { fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
-  qrImage: { width: 160, height: 160, backgroundColor: '#FFFFFF' },
-  qrTokenText: { fontSize: 13, fontWeight: '700', color: '#0F172A', marginTop: 8, fontFamily: 'monospace' },
-  successCard: { backgroundColor: '#1E293B', borderRadius: 16, padding: 18, width: '100%', marginBottom: 20, gap: 10 },
+  headerBackBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  headerBackContent: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: { fontSize: 17.5, fontWeight: '800', color: colors.white },
+  successContainer: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  successInner: { width: '100%', alignItems: 'center' },
+  successBadge: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successTitle: { fontSize: 25, fontWeight: '800', color: colors.navy, marginBottom: 6, textAlign: 'center' },
+  successSubtitle: { fontSize: 14.5, color: colors.textMuted, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
+  qrCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    padding: 18,
+    alignItems: 'center',
+    marginBottom: 18,
+    ...theme.elevation.card,
+  },
+  qrCardHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    letterSpacing: 0.8,
+  },
+  qrImage: { width: 170, height: 170, backgroundColor: colors.white },
+  qrTokenText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: colors.navy,
+    marginTop: 10,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 1,
+  },
+  successCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    width: '100%',
+    marginBottom: 20,
+    gap: 10,
+  },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  successCardLabel: { fontSize: 13, color: '#64748B' },
-  successCardValue: { fontSize: 15, fontWeight: '700', color: '#F8FAFC' },
-  successBtn: { backgroundColor: '#EF010C', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32, marginBottom: 12, width: '100%', alignItems: 'center' },
-  successBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  linkText: { color: '#64748B', fontSize: 14 },
-  bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#F8FAFC' },
+  successCardLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  successCardValue: { fontSize: 15, fontWeight: '800', color: colors.navy },
+  successBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    marginBottom: 8,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  successBtnContent: { minHeight: 50, alignItems: 'center', justifyContent: 'center' },
+  successBtnText: { color: colors.white, fontSize: 16, fontWeight: '800' },
+  backHomeBtn: { width: '100%', borderRadius: 10, overflow: 'hidden' },
+  backHomeContent: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  linkText: { color: colors.navy, fontSize: 14, fontWeight: '700' },
   card: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
     marginBottom: 20,
-    gap: 8,
+    gap: 6,
+    ...theme.elevation.card,
   },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#F8FAFC', marginBottom: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardDetail: { color: '#94A3B8', fontSize: 13 },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 },
-  formGroup: { marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', color: '#CBD5E1', marginBottom: 8 },
+  cardTitle: { fontSize: 16.5, fontWeight: '800', color: colors.navy },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardDetail: { color: colors.textMuted, fontSize: 13.5, fontWeight: '500' },
+  section: { marginBottom: 22 },
+  sectionTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  formGroup: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 },
   input: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#F8FAFC',
-    fontSize: 14,
+    minHeight: 48,
+    color: colors.navy,
+    fontSize: 15.5,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.borderStrong,
   },
   vehicleTypes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  typeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
-  typeChipActive: { backgroundColor: '#38BDF820', borderColor: '#38BDF8' },
-  typeText: { color: '#64748B', fontSize: 13, fontWeight: '600' },
-  typeTextActive: { color: '#38BDF8' },
-  summaryCard: { backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#334155', gap: 10 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryLabel: { color: '#94A3B8', fontSize: 14 },
-  summaryVal: { color: '#F8FAFC', fontSize: 14, fontWeight: '600' },
-  totalRow: { borderTopWidth: 1, borderTopColor: '#334155', paddingTop: 10 },
-  totalLabel: { color: '#F8FAFC', fontSize: 16, fontWeight: '700' },
-  totalVal: { color: '#38BDF8', fontSize: 18, fontWeight: '800' },
+  typeChip: {
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden',
+  },
+  typeChipContent: { paddingHorizontal: 14, minHeight: 48, justifyContent: 'center' },
+  typeChipActive: { backgroundColor: colors.navy, borderColor: colors.navy },
+  typeText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  typeTextActive: { color: colors.white },
+  summaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+    ...theme.elevation.card,
+  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { color: colors.textMuted, fontSize: 13.5, fontWeight: '500' },
+  summaryVal: { color: colors.navy, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  totalRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
+  totalLabel: { color: colors.navy, fontSize: 15.5, fontWeight: '800' },
+  totalVal: { color: colors.primary, fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'] },
   paymentMethods: { marginTop: 16 },
   paymentOption: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#38BDF820',
+    backgroundColor: colors.surface,
     borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#38BDF8',
+    paddingHorizontal: 14,
+    minHeight: 52,
+    borderWidth: 1.5,
+    borderColor: colors.navy,
   },
-  paymentText: { flex: 1, color: '#F8FAFC', fontSize: 14, fontWeight: '500' },
+  paymentText: { flex: 1, color: colors.navy, fontSize: 14, fontWeight: '700' },
   footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#1E293B',
-    padding: 16,
-    paddingBottom: 32,
+    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     gap: 8,
   },
-  confirmBtn: { backgroundColor: '#38BDF8', borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  btnDisabled: { opacity: 0.7 },
-  confirmBtnText: { color: '#0F172A', fontSize: 16, fontWeight: '800' },
-  disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center' },
+  confirmBtn: { backgroundColor: colors.primary, borderRadius: 12, overflow: 'hidden' },
+  confirmBtnContent: { minHeight: 52, alignItems: 'center', justifyContent: 'center' },
+  btnDisabled: { opacity: 0.65 },
+  confirmBtnText: { color: colors.white, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  disclaimer: { color: colors.textMuted, fontSize: 11, textAlign: 'center' },
 });
