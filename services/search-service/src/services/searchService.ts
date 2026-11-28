@@ -176,6 +176,8 @@ export class SearchService {
         id: space.id,
         hostId: space.hostId,
         name: space.name,
+        spaceType: space.spaceType as ParkingSpaceResult['spaceType'],
+        entryInstructions: space.entryInstructions || undefined,
         address: space.address,
         coordinates: { lat: Number(space.latitude), lng: Number(space.longitude) },
         distance: { value: distValue, unit: distUnit },
@@ -274,6 +276,14 @@ export class SearchService {
       if (filters.vehicleType) {
         const types = space['vehicleTypes'] as string[];
         if (!types.includes(filters.vehicleType)) return false;
+      }
+      if (filters.spaceType) {
+        const st = space.spaceType || 'commercial';
+        if (filters.spaceType === 'private') {
+          if (st === 'commercial') return false;
+        } else if (st !== filters.spaceType) {
+          return false;
+        }
       }
       if (filters.evCharging === true && !space['evCharging']) return false;
       if (filters.coveredParking === true && !space['covered']) return false;

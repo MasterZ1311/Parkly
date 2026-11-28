@@ -20,6 +20,10 @@ export interface CreateVehicleInput {
   make?: string;
   model?: string;
   color?: string;
+  rcNumber?: string;
+  rcDocumentUrl?: string;
+  insuranceNumber?: string;
+  pucValidUntil?: string;
   isDefault?: boolean;
 }
 
@@ -71,6 +75,10 @@ export class VehicleService {
               make: input.make?.trim() || null,
               model: input.model?.trim() || null,
               color: input.color?.trim() || null,
+              rcNumber: input.rcNumber?.trim().toUpperCase() || null,
+              rcDocumentUrl: input.rcDocumentUrl?.trim() || null,
+              insuranceNumber: input.insuranceNumber?.trim().toUpperCase() || null,
+              pucValidUntil: input.pucValidUntil ? new Date(input.pucValidUntil) : null,
               isDefault: shouldBeDefault,
             },
           });
@@ -93,6 +101,10 @@ export class VehicleService {
           make: input.make?.trim() || null,
           model: input.model?.trim() || null,
           color: input.color?.trim() || null,
+          rcNumber: input.rcNumber?.trim().toUpperCase() || null,
+          rcDocumentUrl: input.rcDocumentUrl?.trim() || null,
+          insuranceNumber: input.insuranceNumber?.trim().toUpperCase() || null,
+          pucValidUntil: input.pucValidUntil ? new Date(input.pucValidUntil) : null,
           isDefault: shouldBeDefault,
         },
       });
@@ -182,6 +194,11 @@ export class VehicleService {
     make: string | null;
     model: string | null;
     color: string | null;
+    rcNumber?: string | null;
+    rcDocumentUrl?: string | null;
+    insuranceNumber?: string | null;
+    pucValidUntil?: Date | null;
+    verificationStatus?: string;
     isDefault: boolean;
     createdAt: Date;
   }): Vehicle {
@@ -193,6 +210,11 @@ export class VehicleService {
       make: raw.make || undefined,
       model: raw.model || undefined,
       color: raw.color || undefined,
+      rcNumber: raw.rcNumber || undefined,
+      rcDocumentUrl: raw.rcDocumentUrl || undefined,
+      insuranceNumber: raw.insuranceNumber || undefined,
+      pucValidUntil: raw.pucValidUntil ? raw.pucValidUntil.toISOString() : undefined,
+      verificationStatus: (raw.verificationStatus as Vehicle['verificationStatus']) || 'pending',
       isDefault: raw.isDefault,
       createdAt: raw.createdAt.toISOString(),
     };

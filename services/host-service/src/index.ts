@@ -65,6 +65,8 @@ const baseListingSchema = z.object({
   regionId: z.string().trim().min(1).max(64).optional(),
   totalCapacity: z.number().int().min(1).max(1000),
   vehicleTypes: z.array(z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck'])).min(1),
+  spaceType: z.enum(['commercial', 'private_house', 'apartment_bay', 'gated_compound']).default('commercial'),
+  entryInstructions: z.string().trim().max(500).optional(),
   evCharging: z.boolean().default(false),
   covered: z.boolean().default(false),
   securityLevel: z.enum(['none', 'basic', 'monitored', 'staffed', 'gated']).default('none'),
@@ -73,6 +75,8 @@ const baseListingSchema = z.object({
   dynamicPricing: z.boolean().default(false),
   minBookingHours: z.number().int().min(1).default(1),
   maxBookingHours: z.number().int().min(1).max(72).default(24),
+  photoUrls: z.array(z.string().trim().min(1).max(1000)).max(12).optional(),
+  ownershipProofUrl: z.string().trim().max(1000).optional(),
   availabilitySchedule: z.array(z.object({
     dayOfWeek: z.number().int().min(0).max(6),
     startTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -80,21 +84,53 @@ const baseListingSchema = z.object({
   })).optional(),
 });
 
+const hostKycSchema = z.object({
+  kycFullName: z.string().trim().min(2, 'Owner full legal name is required').max(120),
+  kycPhone: z.string().trim().min(7).max(25).optional(),
+  businessName: z.string().trim().max(120).optional(),
+  panNumber: z.string().trim().max(20).optional(),
+  govIdType: z.enum(['aadhaar', 'pan', 'passport', 'voter_id']),
+  govIdNumberMasked: z.string().trim().min(4, 'Government ID number is required').max(40),
+  govIdDocumentUrl: z.string().trim().min(3, 'Government ID document is required').max(1000),
+  ownershipProofType: z.enum([
+    'property_tax',
+    'electricity_bill',
+    'sale_deed',
+    'noc_society',
+    'rental_agreement',
+  ]),
+  ownershipDocumentUrl: z.string().trim().min(3, 'Ownership or utility proof is required').max(1000),
+  addressProofUrl: z.string().trim().max(1000).optional(),
+  plotPhotoUrls: z
+    .array(z.string().trim().min(1).max(1000))
+    .min(1, 'Upload at least one picture of the parking plot/driveway')
+    .max(10),
+  bankAccountNumber: z.string().trim().max(60).optional(),
+  ifscCode: z.string().trim().max(20).optional(),
+  upiId: z.string().trim().max(80).optional(),
+  kycNotes: z.string().trim().max(500).optional(),
+});
+
 const listingSchema = baseListingSchema.refine((val) => val.maxBookingHours >= val.minBookingHours, {
   message: 'maxBookingHours must be greater than or equal to minBookingHours',
   path: ['maxBookingHours'],
 });
 
-const updateListingSchema = baseListingSchema.partial().refine(
-  (val) =>
-    val.minBookingHours === undefined ||
-    val.maxBookingHours === undefined ||
-    val.maxBookingHours >= val.minBookingHours,
-  {
-    message: 'maxBookingHours must be greater than or equal to minBookingHours',
-    path: ['maxBookingHours'],
-  },
-);
+const updateListingSchema = baseListingSchema
+  .extend({
+    status: z.enum(['active', 'inactive']).optional(),
+  })
+  .partial()
+  .refine(
+    (val) =>
+      val.minBookingHours === undefined ||
+      val.maxBookingHours === undefined ||
+      val.maxBookingHours >= val.minBookingHours,
+    {
+      message: 'maxBookingHours must be greater than or equal to minBookingHours',
+      path: ['maxBookingHours'],
+    },
+  );
 
 const payoutSchema = z.object({
   amount: z.number().positive().max(1000000),
@@ -228,6 +264,8 @@ const hostService = {
         regionId,
         totalCapacity: data.totalCapacity,
         vehicleTypes: data.vehicleTypes,
+        spaceType: data.spaceType,
+        entryInstructions: data.entryInstructions || null,
         evCharging: data.evCharging,
         covered: data.covered,
         securityLevel: data.securityLevel,
@@ -236,7 +274,8 @@ const hostService = {
         dynamicPricing: data.dynamicPricing,
         minBookingHours: data.minBookingHours,
         maxBookingHours: data.maxBookingHours,
-        photoUrls: [],
+        photoUrls: data.photoUrls || [],
+        ownershipProofUrl: data.ownershipProofUrl || null,
         status: 'pending_verification',
       },
     });
@@ -297,6 +336,10 @@ const hostService = {
       ? await resolveRegionForListing(prisma, data.city ?? existing.city, data.regionId)
       : undefined;
 
+    if (data.status !== undefined && !['active', 'inactive'].includes(existing.status)) {
+      throw new ValidationError('Only verified active or paused spaces can toggle availability', 'status');
+    }
+
     const updated = await prisma.parkingSpace.update({
       where: { id: spaceId },
       data: {
@@ -312,6 +355,9 @@ const hostService = {
         ...(data.pincode !== undefined ? { pincode: data.pincode } : {}),
         ...(data.totalCapacity !== undefined ? { totalCapacity: data.totalCapacity } : {}),
         ...(data.vehicleTypes !== undefined ? { vehicleTypes: data.vehicleTypes } : {}),
+        ...(data.spaceType !== undefined ? { spaceType: data.spaceType } : {}),
+        ...(data.entryInstructions !== undefined ? { entryInstructions: data.entryInstructions || null } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
         ...(data.evCharging !== undefined ? { evCharging: data.evCharging } : {}),
         ...(data.covered !== undefined ? { covered: data.covered } : {}),
         ...(data.securityLevel !== undefined ? { securityLevel: data.securityLevel } : {}),
@@ -320,6 +366,8 @@ const hostService = {
         ...(data.dynamicPricing !== undefined ? { dynamicPricing: data.dynamicPricing } : {}),
         ...(data.minBookingHours !== undefined ? { minBookingHours: data.minBookingHours } : {}),
         ...(data.maxBookingHours !== undefined ? { maxBookingHours: data.maxBookingHours } : {}),
+        ...(data.photoUrls !== undefined ? { photoUrls: data.photoUrls } : {}),
+        ...(data.ownershipProofUrl !== undefined ? { ownershipProofUrl: data.ownershipProofUrl || null } : {}),
       },
       include: { availabilitySlots: true },
     });
@@ -363,7 +411,7 @@ const hostService = {
     return prisma.booking.findMany({
       where,
       include: {
-        space: { select: { id: true, name: true, address: true, city: true } },
+        space: { select: { id: true, name: true, address: true, city: true, spaceType: true, entryInstructions: true, hourlyRate: true } },
         vehicle: { select: { id: true, licensePlate: true, vehicleType: true } },
         user: { select: { id: true, name: true, phone: true } },
       },
@@ -502,6 +550,8 @@ function mapSpace(raw: Record<string, unknown>): ParkingSpace {
     regionId: raw['regionId'] as string,
     totalCapacity: raw['totalCapacity'] as number,
     vehicleTypes: raw['vehicleTypes'] as ParkingSpace['vehicleTypes'],
+    spaceType: (raw['spaceType'] as ParkingSpace['spaceType']) || 'commercial',
+    entryInstructions: (raw['entryInstructions'] as string | undefined) || undefined,
     amenities: {
       evCharging: raw['evCharging'] as boolean,
       covered: raw['covered'] as boolean,
@@ -520,6 +570,9 @@ function mapSpace(raw: Record<string, unknown>): ParkingSpace {
     },
     availabilitySchedule: [],
     photoUrls: raw['photoUrls'] as string[],
+    ownershipProofUrl: (raw['ownershipProofUrl'] as string | undefined) || undefined,
+    reviewNotes: (raw['reviewNotes'] as string | undefined) || undefined,
+    verifiedAt: raw['verifiedAt'] ? (raw['verifiedAt'] as Date).toISOString() : undefined,
     status: raw['status'] as ParkingSpace['status'],
     createdAt: (raw['createdAt'] as Date).toISOString(),
     updatedAt: (raw['updatedAt'] as Date).toISOString(),
@@ -770,6 +823,74 @@ const handleAiVerify = async (req: Request, res: Response, next: NextFunction) =
 
 hostRouter.post('/listings/:id/ai-verify', requireRole('host', 'admin'), handleAiVerify);
 hostRouter.post('/spaces/:id/ai-verify', requireRole('host', 'admin'), handleAiVerify);
+
+// GET /host/kyc — read Host KYC & plot document submission
+hostRouter.get('/kyc', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const host = await prisma.host.findUnique({ where: { userId: req.user!.sub } });
+    res.json({
+      success: true,
+      data: { kyc: host },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT / POST /host/kyc — submit Host identity, ownership proof & parking plot photos for team verification
+const handleSubmitHostKyc = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = hostKycSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.error.errors[0]?.message || 'Invalid Host KYC payload',
+        parsed.error.errors[0]?.path.join('.'),
+      );
+    }
+
+    const d = parsed.data;
+    const host = await hostService.getOrCreateHost(req.user!.sub);
+    const updated = await prisma.host.update({
+      where: { id: host.id },
+      data: {
+        kycFullName: d.kycFullName,
+        kycPhone: d.kycPhone || null,
+        ...(d.businessName ? { businessName: d.businessName } : {}),
+        ...(d.panNumber ? { panNumber: d.panNumber.toUpperCase() } : {}),
+        govIdType: d.govIdType,
+        govIdNumberMasked: d.govIdNumberMasked,
+        govIdDocumentUrl: d.govIdDocumentUrl,
+        ownershipProofType: d.ownershipProofType,
+        ownershipDocumentUrl: d.ownershipDocumentUrl,
+        addressProofUrl: d.addressProofUrl || null,
+        plotPhotoUrls: d.plotPhotoUrls,
+        ...(d.bankAccountNumber ? { bankAccountNumber: d.bankAccountNumber } : {}),
+        ...(d.ifscCode ? { ifscCode: d.ifscCode.toUpperCase() } : {}),
+        upiId: d.upiId || null,
+        kycNotes: d.kycNotes || null,
+        verificationStatus: 'pending',
+        reviewNotes: null,
+        reviewedBy: null,
+        submittedAt: new Date(),
+      },
+    });
+
+    await writeHostAuditLog(req.user!.sub, 'HOST_KYC_SUBMITTED', updated.id, {
+      ownershipProofType: d.ownershipProofType,
+      plotPhotos: d.plotPhotoUrls.length,
+    }, req.ip);
+
+    res.json({
+      success: true,
+      data: { kyc: updated },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+hostRouter.put('/kyc', handleSubmitHostKyc);
+hostRouter.post('/kyc', handleSubmitHostKyc);
 
 // ============================================================
 // App

@@ -95,7 +95,40 @@ const createVehicleSchema = z.object({
   make: z.string().trim().max(50).optional(),
   model: z.string().trim().max(50).optional(),
   color: z.string().trim().max(30).optional(),
+  rcNumber: z.string().trim().max(30).optional(),
+  rcDocumentUrl: z.string().trim().max(1000).optional(),
+  insuranceNumber: z.string().trim().max(50).optional(),
+  pucValidUntil: z.string().trim().max(40).optional(),
   isDefault: z.boolean().optional(),
+});
+
+const driverKycSchema = z.object({
+  fullName: z.string().trim().min(2, 'Full legal name is required').max(120),
+  dateOfBirth: z.string().trim().max(20).optional(),
+  address: z.string().trim().max(300).optional(),
+  emergencyContact: z.string().trim().max(25).optional(),
+  drivingLicenseNumber: z
+    .string()
+    .trim()
+    .min(6, 'Valid Driving Licence number is required')
+    .max(30),
+  drivingLicenseExpiry: z.string().trim().max(20).optional(),
+  drivingLicenseFrontUrl: z.string().trim().min(3, 'Driving Licence front image is required').max(1000),
+  drivingLicenseBackUrl: z.string().trim().max(1000).optional(),
+  govIdType: z.enum(['aadhaar', 'pan', 'passport', 'voter_id']),
+  govIdNumberMasked: z.string().trim().min(4, 'Government ID number is required').max(40),
+  govIdDocumentUrl: z.string().trim().min(3, 'Government ID document photo is required').max(1000),
+  vehiclePlate: z
+    .string()
+    .trim()
+    .transform((s) => s.toUpperCase().replace(/\s+/g, ''))
+    .refine((s) => INDIAN_PLATE_REGEX.test(s), {
+      message: 'Invalid Indian license plate format (e.g. TN01AB1234)',
+    }),
+  rcNumber: z.string().trim().min(4, 'RC Book number is required').max(30),
+  rcDocumentUrl: z.string().trim().min(3, 'RC Book photo/scan is required').max(1000),
+  insuranceDocumentUrl: z.string().trim().max(1000).optional(),
+  selfieUrl: z.string().trim().max(1000).optional(),
 });
 
 const vehicleIdParamSchema = z.string().uuid('Invalid vehicle ID');
@@ -345,3 +378,75 @@ authRouter.delete('/vehicles/:id', authenticate, async (req: Request, res: Respo
     next(err);
   }
 });
+
+const becomeHostSchema = z.object({
+  businessName: z.string().trim().max(120).optional(),
+  bankAccount: z.string().trim().max(60).optional(),
+  ifscCode: z.string().trim().max(20).optional(),
+});
+
+// --- POST /auth/become-host ---
+authRouter.post('/become-host', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = becomeHostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.error.errors[0]?.message || 'Invalid host onboarding input',
+        parsed.error.errors[0]?.path.join('.'),
+      );
+    }
+
+    const user = await userService.becomeHost(req.user!.sub, parsed.data);
+    const tokens = jwtService.issueTokens(user.id, user.phone, user.role);
+
+    logger.info({ userId: user.id, role: user.role }, 'User enabled host mode for private/commercial listings');
+
+    res.status(200).json({
+      success: true,
+      data: { user, tokens },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// --- GET /auth/driver-kyc ---
+authRouter.get('/driver-kyc', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const kyc = await userService.getDriverKyc(req.user!.sub);
+    res.status(200).json({
+      success: true,
+      data: { kyc },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const handleSubmitDriverKyc = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = driverKycSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.error.errors[0]?.message || 'Invalid driver KYC payload',
+        parsed.error.errors[0]?.path.join('.'),
+      );
+    }
+
+    const kyc = await userService.upsertDriverKyc(req.user!.sub, parsed.data);
+    logger.info({ userId: req.user!.sub, kycId: kyc.id, plate: kyc.vehiclePlate }, 'Driver KYC submitted for team review');
+
+    res.status(200).json({
+      success: true,
+      data: { kyc },
+      meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
+    } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+};
+
+authRouter.put('/driver-kyc', authenticate, handleSubmitDriverKyc);
+authRouter.post('/driver-kyc', authenticate, handleSubmitDriverKyc);

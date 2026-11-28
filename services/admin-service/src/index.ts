@@ -320,15 +320,30 @@ adminRouter.get('/bookings/:id', async (req: Request, res: Response, next: NextF
   }
 });
 
-// GET /admin/verifications — pending host verifications
+// GET /admin/verifications — pending space, host KYC, and driver KYC verifications
 adminRouter.get('/verifications', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const spaces = await prisma.parkingSpace.findMany({
-      where: { status: 'pending_verification' },
-      include: { host: { include: { user: { select: { name: true, phone: true } } } } },
-      orderBy: { createdAt: 'desc' },
-    });
-    res.json({ success: true, data: { spaces } } as ApiResponse);
+    const [spaces, driverKycs, hostKycs] = await Promise.all([
+      prisma.parkingSpace.findMany({
+        where: { status: 'pending_verification' },
+        include: { host: { include: { user: { select: { name: true, phone: true, email: true } } } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.driverKyc.findMany({
+        where: { status: 'pending' },
+        include: { user: { select: { id: true, name: true, phone: true, email: true } } },
+        orderBy: { submittedAt: 'desc' },
+      }),
+      prisma.host.findMany({
+        where: { verificationStatus: 'pending', submittedAt: { not: null } },
+        include: {
+          user: { select: { id: true, name: true, phone: true, email: true } },
+          spaces: { select: { id: true, name: true, status: true, photoUrls: true, address: true } },
+        },
+        orderBy: { submittedAt: 'desc' },
+      }),
+    ]);
+    res.json({ success: true, data: { spaces, driverKycs, hostKycs } } as ApiResponse);
   } catch (err) {
     next(err);
   }
@@ -341,11 +356,15 @@ const handleApproveVerification = async (req: Request, res: Response, next: Next
 
     await prisma.parkingSpace.update({
       where: { id: space.id },
-      data: { status: 'active' },
+      data: {
+        status: 'active',
+        verifiedAt: new Date(),
+        reviewNotes: req.body?.notes || 'Location and plot verified by Parkly Review Team',
+      },
     });
     await prisma.host.update({
       where: { id: space.hostId },
-      data: { verificationStatus: 'approved', verifiedAt: new Date() },
+      data: { verificationStatus: 'approved', verifiedAt: new Date(), reviewedBy: req.user!.sub },
     });
 
     await publishEvent({
@@ -368,14 +387,15 @@ const handleRejectVerification = async (req: Request, res: Response, next: NextF
   try {
     const space = await prisma.parkingSpace.findUnique({ where: { id: req.params['spaceId'] } });
     if (!space) throw new NotFoundError('Space not found');
+    const reason = req.body.reason || 'Documentation insufficient';
 
     await prisma.parkingSpace.update({
       where: { id: space.id },
-      data: { status: 'draft' },
+      data: { status: 'draft', reviewNotes: reason },
     });
     await prisma.host.update({
       where: { id: space.hostId },
-      data: { verificationStatus: 'rejected' },
+      data: { verificationStatus: 'rejected', reviewNotes: reason, reviewedBy: req.user!.sub },
     });
 
     await publishEvent({
@@ -383,12 +403,12 @@ const handleRejectVerification = async (req: Request, res: Response, next: NextF
       version: '1.0',
       timestamp: new Date().toISOString(),
       source: 'parkly.admin-service',
-      data: { spaceId: space.id, hostId: space.hostId, status: 'rejected', reason: req.body.reason },
+      data: { spaceId: space.id, hostId: space.hostId, status: 'rejected', reason },
     });
 
     await writeAdminAuditLog(req, 'ADMIN_VERIFICATION_REJECTED', space.id, {
       hostId: space.hostId,
-      reason: req.body.reason || 'Documentation insufficient',
+      reason,
     });
     res.json({ success: true, data: { message: 'Space rejected' } } as ApiResponse);
   } catch (err) {
@@ -400,6 +420,109 @@ adminRouter.post('/verifications/:spaceId/approve', handleApproveVerification);
 adminRouter.post('/verifications/:hostId/:spaceId/approve', handleApproveVerification);
 adminRouter.post('/verifications/:spaceId/reject', handleRejectVerification);
 adminRouter.post('/verifications/:hostId/:spaceId/reject', handleRejectVerification);
+
+// POST /admin/verifications/drivers/:kycId/approve & /reject — Driver KYC review
+adminRouter.post('/verifications/drivers/:kycId/approve', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const kyc = await prisma.driverKyc.findUnique({ where: { id: req.params['kycId'] } });
+    if (!kyc) throw new NotFoundError('Driver KYC submission not found');
+
+    const updated = await prisma.driverKyc.update({
+      where: { id: kyc.id },
+      data: {
+        status: 'approved',
+        reviewNotes: req.body?.notes || 'Driving Licence, RC Book, and Govt ID verified',
+        reviewedBy: req.user!.sub,
+        reviewedAt: new Date(),
+      },
+    });
+    if (kyc.vehicleId) {
+      await prisma.vehicle.update({
+        where: { id: kyc.vehicleId },
+        data: { verificationStatus: 'approved' },
+      });
+    }
+
+    await writeAdminAuditLog(req, 'ADMIN_DRIVER_KYC_APPROVED', kyc.id, { userId: kyc.userId, plate: kyc.vehiclePlate });
+    res.json({ success: true, data: { kyc: updated } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post('/verifications/drivers/:kycId/reject', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const kyc = await prisma.driverKyc.findUnique({ where: { id: req.params['kycId'] } });
+    if (!kyc) throw new NotFoundError('Driver KYC submission not found');
+    const reason = req.body?.reason || 'Document scan unclear — please re-upload DL and RC';
+
+    const updated = await prisma.driverKyc.update({
+      where: { id: kyc.id },
+      data: {
+        status: 'rejected',
+        reviewNotes: reason,
+        reviewedBy: req.user!.sub,
+        reviewedAt: new Date(),
+      },
+    });
+    if (kyc.vehicleId) {
+      await prisma.vehicle.update({
+        where: { id: kyc.vehicleId },
+        data: { verificationStatus: 'rejected' },
+      });
+    }
+
+    await writeAdminAuditLog(req, 'ADMIN_DRIVER_KYC_REJECTED', kyc.id, { userId: kyc.userId, reason });
+    res.json({ success: true, data: { kyc: updated } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/verifications/hosts/:hostId/approve & /reject — Host KYC review
+adminRouter.post('/verifications/hosts/:hostId/approve', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const host = await prisma.host.findUnique({ where: { id: req.params['hostId'] } });
+    if (!host) throw new NotFoundError('Host KYC submission not found');
+
+    const updated = await prisma.host.update({
+      where: { id: host.id },
+      data: {
+        verificationStatus: 'approved',
+        reviewNotes: req.body?.notes || 'Host identity and property proof verified',
+        reviewedBy: req.user!.sub,
+        verifiedAt: new Date(),
+      },
+    });
+
+    await writeAdminAuditLog(req, 'ADMIN_HOST_KYC_APPROVED', host.id, { userId: host.userId });
+    res.json({ success: true, data: { host: updated } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+adminRouter.post('/verifications/hosts/:hostId/reject', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const host = await prisma.host.findUnique({ where: { id: req.params['hostId'] } });
+    if (!host) throw new NotFoundError('Host KYC submission not found');
+    const reason = req.body?.reason || 'Property ownership or ID document unclear';
+
+    const updated = await prisma.host.update({
+      where: { id: host.id },
+      data: {
+        verificationStatus: 'rejected',
+        reviewNotes: reason,
+        reviewedBy: req.user!.sub,
+      },
+    });
+
+    await writeAdminAuditLog(req, 'ADMIN_HOST_KYC_REJECTED', host.id, { userId: host.userId, reason });
+    res.json({ success: true, data: { host: updated } } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /admin/metrics & /admin/stats — platform metrics
 const handleGetMetrics = async (_req: Request, res: Response, next: NextFunction) => {

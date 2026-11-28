@@ -54,6 +54,7 @@ const searchSchema = z.object({
     .object({
       priceRange: z.object({ min: z.number().min(0), max: z.number().max(999999) }).optional(),
       vehicleType: z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck']).optional(),
+      spaceType: z.enum(['commercial', 'private_house', 'apartment_bay', 'gated_compound', 'private']).optional(),
       evCharging: z.boolean().optional(),
       coveredParking: z.boolean().optional(),
       securityLevel: z.enum(['none', 'basic', 'monitored', 'staffed', 'gated']).optional(),
@@ -98,6 +99,9 @@ class PrismaSearchServiceTool implements ISearchServiceTool {
   async searchSpaces(params: SearchQueryParams): Promise<Result<SearchCandidateSpace[], AgentError>> {
     try {
       const q = (params.query || '').toLowerCase();
+      const wantsPrivate = ['house', 'home', 'private', 'driveway', 'villa', 'residential', 'apartment'].some((k) =>
+        q.includes(k),
+      );
       const spaces = await prisma.parkingSpace.findMany({
         where: {
           status: 'active',
@@ -119,6 +123,7 @@ class PrismaSearchServiceTool implements ISearchServiceTool {
           const distMeters = Math.round(haversineDistanceKm(params.latitude, params.longitude, lat, lng) * 1000);
           const haystack = `${s.name} ${s.address} ${s.city}`.toLowerCase();
           const textBoost = locationHints.some((h) => haystack.includes(h.replace('pothys', 't nagar'))) ? 0.35 : 0;
+          const privateBoost = wantsPrivate && s.spaceType !== 'commercial' ? 0.25 : 0;
           const distScore = Math.max(0, 1 - distMeters / 20000);
           const priceScore = Math.max(0, 1 - Number(s.hourlyRate) / 200);
           return {
@@ -131,7 +136,7 @@ class PrismaSearchServiceTool implements ISearchServiceTool {
             hourlyRate: Number(s.hourlyRate),
             evCharging: s.evCharging,
             covered: s.covered,
-            recommendationScore: Number((0.45 * distScore + 0.2 * priceScore + textBoost).toFixed(4)),
+            recommendationScore: Number((0.45 * distScore + 0.2 * priceScore + textBoost + privateBoost).toFixed(4)),
           };
         })
         .sort((a, b) => b.recommendationScore - a.recommendationScore);
