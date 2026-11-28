@@ -26,6 +26,8 @@ import {
 export const prisma = new PrismaClient();
 
 const PLATFORM_FEE_RATE = 0.05;
+const EARLY_CHECKIN_GRACE_MINUTES = 15;
+const OVERSTAY_GRACE_MINUTES = 10;
 
 const BOOKING_INCLUDE = {
   space: {
@@ -33,6 +35,8 @@ const BOOKING_INCLUDE = {
       id: true,
       name: true,
       address: true,
+      spaceType: true,
+      entryInstructions: true,
       hourlyRate: true,
       latitude: true,
       longitude: true,
@@ -76,6 +80,13 @@ export function generateQrToken(bookingId: string, spaceId: string, vehicleId: s
   const payload = `${bookingId}:${spaceId}:${vehicleId}:${endTimeIso}`;
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 16);
   return `PARKLY.v1.${bookingId}.${sig}`;
+}
+
+export function generateGateCode(bookingId: string): string {
+  const secret = process.env['JWT_ACCESS_SECRET'] || getConfig().jwtAccessSecret;
+  const digest = crypto.createHmac('sha256', secret).update(`pin:${bookingId}`).digest();
+  const num = 1000 + (digest.readUInt16BE(0) % 9000);
+  return String(num);
 }
 
 export function verifyQrSignature(qrToken: string, bookingId: string, spaceId: string, vehicleId: string, endTimeIso: string): boolean {
@@ -190,9 +201,10 @@ export class BookingService {
       const subtotal = effectiveRate * (durationMinutes / 60);
       const serverTotalAmount = Math.round(subtotal * (1 + PLATFORM_FEE_RATE) * 100) / 100;
 
+      const bookingId = generateId();
       return tx.booking.create({
         data: {
-          id: generateId(),
+          id: bookingId,
           userId: input.userId,
           spaceId: space.id,
           vehicleId: vehicle.id,
@@ -204,6 +216,7 @@ export class BookingService {
           durationMinutes,
           totalAmount: serverTotalAmount,
           currency: 'INR',
+          gateCode: generateGateCode(bookingId),
           recurringFrequency: input.recurringFrequency || null,
           recurringEndDate: input.recurringEndDate || null,
         },
@@ -398,23 +411,225 @@ export class BookingService {
   }
 
   /**
-   * Mark a booking as completed.
+   * Verify host or driver authorization against a booking record.
    */
-  async completeBooking(id: string): Promise<Booking> {
-    const booking = await this.db.booking.findUnique({ where: { id } });
-    if (!booking || booking.deletedAt) throw new NotFoundError('Booking not found');
-    if (booking.status !== 'active' && booking.status !== 'confirmed') {
-      throw new BookingError('Only active or confirmed bookings can be completed');
+  private async assertActorAccess(
+    booking: { userId: string; hostId: string },
+    actor: { userId: string; role: string },
+  ): Promise<'driver' | 'host' | 'admin'> {
+    if (actor.role === 'admin') return 'admin';
+    if (booking.userId === actor.userId) return 'driver';
+    if (actor.role === 'host') {
+      const hostRecord = await (this.db as any).host?.findUnique?.({
+        where: { userId: actor.userId },
+        select: { id: true },
+      });
+      if (!hostRecord || hostRecord.id === booking.hostId) {
+        return 'host';
+      }
+    }
+    throw new AuthorizationError('You are not authorized to manage this booking');
+  }
+
+  /**
+   * Check in a driver upon arrival at the parking space (host QR/PIN scan or driver arrival).
+   * Transitions confirmed -> active and stamps checkedInAt.
+   */
+  async checkInBooking(
+    id: string,
+    actor: { userId: string; role: string },
+    options?: { gateCode?: string },
+  ): Promise<Booking> {
+    const existing = await this.db.booking.findUnique({
+      where: { id },
+      include: BOOKING_INCLUDE,
+    });
+    if (!existing || existing.deletedAt) throw new NotFoundError('Booking not found');
+    await this.assertActorAccess(existing, actor);
+
+    if (existing.status === 'active') {
+      return this.mapBooking(existing);
+    }
+    if (existing.status !== 'confirmed') {
+      throw new BookingError(`Cannot check in a booking in ${existing.status} status`);
+    }
+
+    const expectedPin = (existing as any).gateCode || generateGateCode(existing.id);
+    if (options?.gateCode && options.gateCode.trim() !== expectedPin) {
+      throw new AuthorizationError('Invalid 4-digit Gate PIN');
+    }
+
+    const now = new Date();
+    const earliestCheckInMs = existing.startTime.getTime() - EARLY_CHECKIN_GRACE_MINUTES * 60_000;
+    if (actor.role !== 'admin' && now.getTime() < earliestCheckInMs) {
+      throw new BookingError(
+        `Check-in opens ${EARLY_CHECKIN_GRACE_MINUTES} minutes before the scheduled start time`,
+      );
+    }
+    if (actor.role !== 'admin' && now.getTime() > existing.endTime.getTime()) {
+      throw new BookingError('Scheduled parking window has already ended. Please create a new booking.');
     }
 
     const updated = await this.db.booking.update({
       where: { id },
-      data: { status: 'completed', completedAt: new Date() },
+      data: {
+        status: 'active',
+        checkedInAt: now,
+      },
+      include: BOOKING_INCLUDE,
+    });
+
+    await this.publishBookingEvent('BookingCheckedIn', updated);
+    return this.mapBooking(updated);
+  }
+
+  /**
+   * Check out a parked vehicle (host confirms exit or driver taps Leaving Now).
+   * Transitions confirmed/active -> completed, computes any overstay beyond the 10-min grace period.
+   */
+  async checkOutBooking(
+    id: string,
+    actor: { userId: string; role: string },
+  ): Promise<Booking> {
+    const existing = await this.db.booking.findUnique({
+      where: { id },
+      include: BOOKING_INCLUDE,
+    });
+    if (!existing || existing.deletedAt) throw new NotFoundError('Booking not found');
+    await this.assertActorAccess(existing, actor);
+
+    if (existing.status !== 'active' && existing.status !== 'confirmed') {
+      throw new BookingError('Only active or confirmed bookings can be checked out');
+    }
+
+    const now = new Date();
+    const graceCutoffMs = existing.endTime.getTime() + OVERSTAY_GRACE_MINUTES * 60_000;
+    let overstayMinutes = 0;
+    let overstayAmount = 0;
+
+    if (now.getTime() > graceCutoffMs) {
+      overstayMinutes = Math.ceil((now.getTime() - existing.endTime.getTime()) / 60_000);
+      const hourlyRate = Number((existing as any).space?.hourlyRate ?? 40);
+      const overstayBase = hourlyRate * (overstayMinutes / 60);
+      overstayAmount = Math.round(overstayBase * (1 + PLATFORM_FEE_RATE) * 100) / 100;
+    }
+
+    const finalTotal = Math.round((Number(existing.totalAmount) + overstayAmount) * 100) / 100;
+
+    const updated = await this.db.booking.update({
+      where: { id },
+      data: {
+        status: 'completed',
+        checkedInAt: (existing as any).checkedInAt ?? existing.startTime,
+        checkedOutAt: now,
+        completedAt: now,
+        overstayMinutes,
+        overstayAmount,
+        totalAmount: finalTotal,
+      },
       include: BOOKING_INCLUDE,
     });
 
     await this.publishBookingEvent('BookingCompleted', updated);
     return this.mapBooking(updated);
+  }
+
+  /**
+   * Notify host that the driver is preparing to leave the parking space.
+   */
+  async notifyLeavingSoon(id: string, userId: string): Promise<Booking> {
+    const existing = await this.db.booking.findUnique({
+      where: { id },
+      include: BOOKING_INCLUDE,
+    });
+    if (!existing || existing.deletedAt) throw new NotFoundError('Booking not found');
+    if (existing.userId !== userId) throw new AuthorizationError('Only the booking driver can send a leaving notice');
+    if (!['confirmed', 'active'].includes(existing.status)) {
+      throw new BookingError(`Cannot notify leaving for a booking in ${existing.status} status`);
+    }
+
+    const updated = await this.db.booking.update({
+      where: { id },
+      data: {
+        leavingNotifiedAt: new Date(),
+      },
+      include: BOOKING_INCLUDE,
+    });
+
+    await this.publishBookingEvent('BookingLeavingSoon', updated);
+    return this.mapBooking(updated);
+  }
+
+  /**
+   * Verify a scanned entry gate QR pass token or bookingId + 4-digit Gate PIN,
+   * and optionally apply a check_in or check_out transition.
+   */
+  async verifyGatePass(params: {
+    qrToken?: string;
+    bookingId?: string;
+    gateCode?: string;
+    action?: 'verify' | 'check_in' | 'check_out';
+    actorUserId: string;
+    actorRole: string;
+  }): Promise<{ valid: boolean; booking?: Booking; reason?: string }> {
+    let targetBookingId = params.bookingId?.trim();
+
+    if (params.qrToken) {
+      const qrResult = await this.verifyQrPass(params.qrToken.trim());
+      if (!qrResult.valid || !qrResult.booking) {
+        return qrResult;
+      }
+      targetBookingId = qrResult.booking.id;
+    }
+
+    if (!targetBookingId) {
+      return { valid: false, reason: 'Provide either a QR token or bookingId + gateCode' };
+    }
+
+    const booking = await this.db.booking.findUnique({
+      where: { id: targetBookingId },
+      include: BOOKING_INCLUDE,
+    });
+    if (!booking || booking.deletedAt) {
+      return { valid: false, reason: 'Booking not found' };
+    }
+
+    await this.assertActorAccess(booking, { userId: params.actorUserId, role: params.actorRole });
+
+    if (!params.qrToken) {
+      const expectedPin = (booking as any).gateCode || generateGateCode(booking.id);
+      if (!params.gateCode || params.gateCode.trim() !== expectedPin) {
+        return { valid: false, reason: 'Invalid 4-digit Gate PIN' };
+      }
+      if (!['confirmed', 'active'].includes(booking.status)) {
+        return { valid: false, reason: `Booking is ${booking.status}` };
+      }
+    }
+
+    if (params.action === 'check_in') {
+      const checkedIn = await this.checkInBooking(booking.id, {
+        userId: params.actorUserId,
+        role: params.actorRole,
+      });
+      return { valid: true, booking: checkedIn };
+    }
+
+    if (params.action === 'check_out') {
+      const checkedOut = await this.checkOutBooking(booking.id, {
+        userId: params.actorUserId,
+        role: params.actorRole,
+      });
+      return { valid: true, booking: checkedOut };
+    }
+
+    return { valid: true, booking: this.mapBooking(booking) };
+  }
+
+  /**
+   * Mark a booking as completed (admin/system settlement).
+   */
+  async completeBooking(id: string): Promise<Booking> {
+    return this.checkOutBooking(id, { userId: 'system', role: 'admin' });
   }
 
   private async publishBookingEvent(type: ParklyEvent['type'], booking: Record<string, unknown>): Promise<void> {
@@ -459,12 +674,20 @@ export class BookingService {
       currency: 'INR',
       paymentId: raw['paymentId'] as string | undefined,
       qrToken,
+      gateCode: (raw['gateCode'] as string | undefined) || generateGateCode(id),
+      checkedInAt: raw['checkedInAt'] ? (raw['checkedInAt'] as Date).toISOString() : undefined,
+      checkedOutAt: raw['checkedOutAt'] ? (raw['checkedOutAt'] as Date).toISOString() : undefined,
+      leavingNotifiedAt: raw['leavingNotifiedAt'] ? (raw['leavingNotifiedAt'] as Date).toISOString() : undefined,
+      overstayMinutes: raw['overstayMinutes'] !== undefined ? Number(raw['overstayMinutes']) : 0,
+      overstayAmount: raw['overstayAmount'] !== undefined ? Number(raw['overstayAmount']) : 0,
       ...(raw['space']
         ? {
             space: {
               id: raw['space'].id,
               name: raw['space'].name,
               address: raw['space'].address,
+              spaceType: raw['space'].spaceType,
+              entryInstructions: raw['space'].entryInstructions ?? undefined,
               hourlyRate: raw['space'].hourlyRate !== undefined ? Number(raw['space'].hourlyRate) : undefined,
               latitude: raw['space'].latitude !== undefined ? Number(raw['space'].latitude) : undefined,
               longitude: raw['space'].longitude !== undefined ? Number(raw['space'].longitude) : undefined,

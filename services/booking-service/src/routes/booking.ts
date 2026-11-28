@@ -42,12 +42,50 @@ const extendBookingSchema = z
     { message: 'Provide either hours or additionalMinutes, not both' },
   );
 
+const verifyPassSchema = z.object({
+  qrToken: z.string().min(8).max(256).optional(),
+  bookingId: idSchema.optional(),
+  gateCode: z.string().regex(/^[0-9]{4}$/, 'Gate PIN must be 4 digits').optional(),
+  action: z.enum(['verify', 'check_in', 'check_out']).optional(),
+});
+
+const checkInSchema = z.object({
+  gateCode: z.string().regex(/^[0-9]{4}$/, 'Gate PIN must be 4 digits').optional(),
+});
+
 // GET /bookings/verify-qr?token=... — Gate pass verification (host/admin)
 bookingRouter.get('/verify-qr', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = String(req.query['token'] || req.query['qrToken'] || '');
     if (!token) throw new ValidationError('token query parameter is required');
-    const result = await bookingService.verifyQrPass(token);
+    const actionParam = req.query['action'] ? String(req.query['action']) : undefined;
+    const result =
+      actionParam === 'check_in' || actionParam === 'check_out'
+        ? await bookingService.verifyGatePass({
+            qrToken: token,
+            action: actionParam,
+            actorUserId: req.user!.sub,
+            actorRole: req.user!.role,
+          })
+        : await bookingService.verifyQrPass(token);
+    res.json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /bookings/verify-pass — Verify QR token or bookingId + 4-digit Gate PIN & optionally check in/out (host/admin)
+bookingRouter.post('/verify-pass', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = verifyPassSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid verification payload');
+    }
+    const result = await bookingService.verifyGatePass({
+      ...parsed.data,
+      actorUserId: req.user!.sub,
+      actorRole: req.user!.role,
+    });
     res.json({ success: true, data: result } as ApiResponse);
   } catch (err) {
     next(err);
@@ -139,6 +177,47 @@ bookingRouter.put('/:id/cancel', async (req: Request, res: Response, next: NextF
       req.user!.sub,
       req.body.reason,
     );
+    res.json({ success: true, data: booking } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /bookings/:id/check-in — Driver or host confirms arrival & starts active parking session
+bookingRouter.post('/:id/check-in', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = checkInSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors[0]?.message || 'Invalid check-in request');
+    }
+    const booking = await bookingService.checkInBooking(
+      req.params['id']!,
+      { userId: req.user!.sub, role: req.user!.role },
+      parsed.data,
+    );
+    res.json({ success: true, data: booking } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /bookings/:id/check-out — Driver or host confirms exit, settles any overstay, and frees bay
+bookingRouter.post('/:id/check-out', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.checkOutBooking(req.params['id']!, {
+      userId: req.user!.sub,
+      role: req.user!.role,
+    });
+    res.json({ success: true, data: booking } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /bookings/:id/leaving-soon — Driver notifies host they are preparing to exit
+bookingRouter.post('/:id/leaving-soon', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.notifyLeavingSoon(req.params['id']!, req.user!.sub);
     res.json({ success: true, data: booking } as ApiResponse);
   } catch (err) {
     next(err);
