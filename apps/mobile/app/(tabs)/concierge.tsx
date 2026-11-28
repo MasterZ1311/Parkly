@@ -17,10 +17,11 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { conciergeApi, searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
+import { getActiveHostDemoSpaces, useHostStore } from '../../src/store/host.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { colors, theme } from '../../src/constants/theme';
 import { PressScale, triggerHaptic } from '../../src/components/Motion';
-import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { DEMO_SPACES, getSpaceTypeMeta } from '../../src/data/demoFixtures';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 
 interface Recommendation {
@@ -113,16 +114,30 @@ export default function ConciergeScreen() {
     setLoading(true);
 
     if (isDemoMode) {
+      await useHostStore.getState().loadMySpaces().catch(() => {});
       const qLower = textToSend.toLowerCase();
+      const demoPool = [...getActiveHostDemoSpaces(), ...DEMO_SPACES];
+      const wantsPrivate =
+        qLower.includes('private') ||
+        qLower.includes('home') ||
+        qLower.includes('house') ||
+        qLower.includes('driveway') ||
+        qLower.includes('villa') ||
+        qLower.includes('apartment');
       const matched =
-        DEMO_SPACES.find(
+        demoPool.find(
           (s) =>
+            (wantsPrivate && s.spaceType !== 'commercial') ||
             (qLower.includes('ev') && s.amenities.evCharging) ||
-            (qLower.includes('adyar') && s.name.toLowerCase().includes('adyar')) ||
-            (qLower.includes('velachery') && s.name.toLowerCase().includes('velachery')) ||
+            (qLower.includes('adyar') &&
+              (s.name.toLowerCase().includes('adyar') || s.address.toLowerCase().includes('adyar'))) ||
+            (qLower.includes('velachery') &&
+              (s.name.toLowerCase().includes('velachery') || s.address.toLowerCase().includes('velachery'))) ||
+            s.name.toLowerCase().includes(qLower) ||
             s.address.toLowerCase().includes(qLower),
-        ) || DEMO_SPACES[0];
+        ) || demoPool[0];
 
+      const typeMeta = getSpaceTypeMeta(matched.spaceType);
       const demoRec: Recommendation = {
         spaceId: matched.id,
         hostId: matched.hostId,
@@ -132,7 +147,9 @@ export default function ConciergeScreen() {
         arrivalProbability: matched.availability.probabilityPercent,
         distanceMeters: Math.round(matched.distance.value * 1000),
         deepLink: `geo:${matched.coordinates.lat},${matched.coordinates.lng}?q=${encodeURIComponent(matched.name)}`,
-        entryInstructions: 'Demo bay pass active. Present offline QR code at Gate 1.',
+        entryInstructions:
+          matched.entryInstructions ||
+          'Demo bay pass active. Present offline QR code at Gate 1.',
       };
 
       await cacheSet(CACHE_KEYS.LAST_CONCIERGE_REC, demoRec);
@@ -141,7 +158,9 @@ export default function ConciergeScreen() {
         {
           id: `assistant-${Date.now()}`,
           sender: 'assistant',
-          text: 'Demo Concierge match ready for your Chennai route:',
+          text: typeMeta.isPrivate
+            ? `Demo Concierge found a verified ${typeMeta.shortLabel.toLowerCase()} match:`
+            : 'Demo Concierge match ready for your Chennai route:',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           recommendation: demoRec,
         },
@@ -374,7 +393,9 @@ export default function ConciergeScreen() {
                 Check Service Status →
               </Text>
             )}
-            <Text style={[styles.msgTime, isUser && styles.userTime]}>{item.timestamp}</Text>
+            <Text style={[styles.msgTime, isUser && styles.userTime]} textBreakStrategy="simple">
+              {item.timestamp}
+            </Text>
           </View>
 
           {item.recommendation && (
@@ -568,6 +589,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 11,
+    minWidth: 84,
     maxWidth: '86%',
   },
   userBubble: { backgroundColor: colors.navy, borderBottomRightRadius: 4 },
@@ -586,7 +608,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textDecorationLine: 'underline',
   },
-  msgTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end', fontVariant: ['tabular-nums'] },
+  msgTime: { fontSize: 10.5, lineHeight: 14, color: colors.textMuted, marginTop: 4, alignSelf: 'stretch', textAlign: 'right', paddingHorizontal: 2 },
   userTime: { color: '#9FB0C7' },
   recCard: {
     backgroundColor: colors.surface,

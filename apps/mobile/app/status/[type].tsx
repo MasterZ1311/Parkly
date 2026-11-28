@@ -148,11 +148,17 @@ export default function StatusNoticeScreen() {
         </View>
 
         <Text style={[styles.meta, { color: spec.toneFg }]}>{spec.eyebrow}</Text>
-        <Text style={styles.title}>{spec.title}</Text>
-        <Text style={styles.subtitle}>{spec.body}</Text>
+        <Text style={styles.title} textBreakStrategy="simple" android_hyphenationFrequency="none">
+          {spec.title}
+        </Text>
+        <Text style={styles.subtitle} textBreakStrategy="simple" android_hyphenationFrequency="none">
+          {spec.body}
+        </Text>
 
         <View style={styles.noteBox}>
-          <Text style={styles.noteText}>{spec.note}</Text>
+          <Text style={styles.noteText} textBreakStrategy="simple" android_hyphenationFrequency="none">
+            {spec.note}
+          </Text>
         </View>
 
         {checkMsg && <Text style={styles.feedbackText}>{checkMsg}</Text>}
@@ -197,7 +203,7 @@ export default function StatusNoticeScreen() {
               rippleColor={colors.rippleLight}
               haptic="medium"
               onPress={() => {
-                Linking.openSettings().catch(() => {});
+                Linking.openSettings().catch(() => { });
               }}
             >
               <Ionicons name="settings-outline" size={18} color={colors.white} />
@@ -228,7 +234,7 @@ export default function StatusNoticeScreen() {
               rippleColor={colors.rippleLight}
               haptic="medium"
               onPress={() => {
-                Linking.openURL('mailto:support@parkly.app?subject=Account%20Review%20DRV-HOLD-204').catch(() => {});
+                Linking.openURL('mailto:support@parkly.app?subject=Account%20Review%20DRV-HOLD-204').catch(() => { });
               }}
             >
               <Ionicons name="mail-outline" size={18} color={colors.white} />
@@ -300,9 +306,11 @@ const styles = StyleSheet.create({
   meta: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 6, textAlign: 'center' },
   title: { color: colors.navy, fontSize: 22, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
   subtitle: {
+    width: '100%',
     color: colors.textSecondary,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
+    paddingHorizontal: 8,
     textAlign: 'center',
     marginBottom: 18,
   },
@@ -312,10 +320,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
-    padding: 13,
+    padding: 14,
     marginBottom: 18,
   },
-  noteText: { color: colors.textSecondary, fontSize: 12.5, lineHeight: 18, textAlign: 'center' },
+  noteText: { color: colors.textSecondary, fontSize: 12.5, lineHeight: 19, paddingHorizontal: 4, textAlign: 'center' },
   feedbackText: {
     color: colors.info,
     fontSize: 12.5,

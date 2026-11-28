@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   Linking,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -22,7 +23,8 @@ import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { QrPassSvg } from '../../src/components/QrPassSvg';
 import { VehicleIllustration } from '../../src/components/VehicleIllustration';
 import { useAuthStore } from '../../src/store/auth.store';
-import { createDemoBookings } from '../../src/data/demoFixtures';
+import { hostSpaceToDemoItem, useHostStore } from '../../src/store/host.store';
+import { createDemoBookings, DEMO_SPACES, getSpaceTypeMeta } from '../../src/data/demoFixtures';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 import { scheduleBookingReminderNotification } from '../../src/services/notifications';
 
@@ -32,6 +34,8 @@ interface BookingDetail {
   hostId?: string;
   spaceName: string;
   spaceAddress: string;
+  spaceType?: string;
+  entryInstructions?: string;
   vehicleId?: string;
   vehiclePlate: string;
   vehicleType: VehiclePayloadType;
@@ -43,6 +47,12 @@ interface BookingDetail {
   type: string;
   slotNumber?: string;
   qrToken?: string;
+  gateCode?: string;
+  checkedInAt?: string;
+  checkedOutAt?: string;
+  leavingNotifiedAt?: string;
+  overstayMinutes?: number;
+  overstayAmount?: number;
 }
 
 const STATUS_STYLE: Record<string, { fg: string; bg: string; border: string }> = {
@@ -63,6 +73,8 @@ function formatBooking(raw: any, fallbackId: string): BookingDetail {
     hostId: raw.hostId,
     spaceName: raw.space?.name || raw.spaceName || 'Chennai Parking Bay',
     spaceAddress: raw.space?.address || raw.spaceAddress || 'Chennai Smart Grid Facility',
+    spaceType: raw.space?.spaceType || raw.spaceType,
+    entryInstructions: raw.space?.entryInstructions || raw.entryInstructions,
     vehicleId: raw.vehicleId,
     vehiclePlate:
       raw.vehicle?.licensePlate ||
@@ -79,19 +91,130 @@ function formatBooking(raw: any, fallbackId: string): BookingDetail {
     type: String(raw.type || 'instant'),
     slotNumber: raw.slotNumber || 'Assigned Bay',
     qrToken: raw.qrToken,
+    gateCode:
+      raw.gateCode ||
+      String(1000 + (parseInt(String(raw.id || fallbackId).replace(/[^0-9]/g, '').slice(-4) || '4821', 10) % 9000)),
+    checkedInAt: raw.checkedInAt,
+    checkedOutAt: raw.checkedOutAt,
+    leavingNotifiedAt: raw.leavingNotifiedAt,
+    overstayMinutes: raw.overstayMinutes !== undefined ? Number(raw.overstayMinutes) : 0,
+    overstayAmount: raw.overstayAmount !== undefined ? Number(raw.overstayAmount) : 0,
+  };
+}
+
+function getLiveSessionStatus(booking: BookingDetail, nowMs: number): {
+  headline: string;
+  subline: string;
+  tone: 'info' | 'warning' | 'danger' | 'success';
+} {
+  const startMs = new Date(booking.startTime).getTime();
+  const endMs = new Date(booking.endTime).getTime();
+
+  if (booking.status === 'completed') {
+    if ((booking.overstayMinutes || 0) > 0) {
+      return {
+        headline: `Checked out (+${booking.overstayMinutes}m overstay)`,
+        subline: `Extra ₹${booking.overstayAmount || 0} settled on final bill`,
+        tone: 'warning',
+      };
+    }
+    return {
+      headline: 'Completed on time',
+      subline: booking.checkedOutAt
+        ? `Left at ${new Date(booking.checkedOutAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+        : 'Bay released cleanly',
+      tone: 'success',
+    };
+  }
+
+  if (booking.status === 'confirmed') {
+    const minsUntilStart = Math.round((startMs - nowMs) / 60_000);
+    if (minsUntilStart > 15) {
+      const h = Math.floor(minsUntilStart / 60);
+      const m = minsUntilStart % 60;
+      return {
+        headline: h > 0 ? `Arrival in ${h}h ${m}m` : `Arrival in ${m}m`,
+        subline: 'Check-in opens 15 minutes before start · Show QR or Gate PIN to host',
+        tone: 'info',
+      };
+    }
+    return {
+      headline: 'Check-In Window Open',
+      subline: 'Tap "I Have Arrived" or let the host scan your QR / enter Gate PIN',
+      tone: 'success',
+    };
+  }
+
+  const minsLeft = Math.round((endMs - nowMs) / 60_000);
+  if (minsLeft > 15) {
+    const h = Math.floor(minsLeft / 60);
+    const m = minsLeft % 60;
+    return {
+      headline: h > 0 ? `${h}h ${m}m remaining` : `${m}m remaining`,
+      subline: `Scheduled leaving time: ${new Date(endMs).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`,
+      tone: 'info',
+    };
+  }
+  if (minsLeft >= 0) {
+    return {
+      headline: `${minsLeft}m left before leaving time`,
+      subline: 'Extend now to keep the bay or notify host as you exit',
+      tone: 'warning',
+    };
+  }
+  const overMins = Math.abs(minsLeft);
+  if (overMins <= 10) {
+    return {
+      headline: `Grace Period (${overMins}/10 mins)`,
+      subline: 'Leave within 10 mins of end time with zero overstay fee',
+      tone: 'warning',
+    };
+  }
+  return {
+    headline: `Overstay +${overMins}m`,
+    subline: 'Extra hourly prorated charge applies until you check out',
+    tone: 'danger',
   };
 }
 
 export default function BookingDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fromCheckout } = useLocalSearchParams<{ id: string; fromCheckout?: string }>();
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [handshaking, setHandshaking] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [isCachedView, setIsCachedView] = useState(false);
   const [loadError, setLoadError] = useState<ClassifiedApiError | null>(null);
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const insets = useSafeAreaInsets();
+
+  const handleGoBack = useCallback(() => {
+    if (fromCheckout === '1') {
+      router.replace('/(tabs)/bookings');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)/bookings');
+  }, [fromCheckout]);
+
+  useEffect(() => {
+    if (fromCheckout !== '1') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.replace('/(tabs)/bookings');
+      return true;
+    });
+    return () => sub.remove();
+  }, [fromCheckout]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadBooking = useCallback(async () => {
     if (!id) {
@@ -106,11 +229,21 @@ export default function BookingDetailScreen() {
 
     if (isDemoMode) {
       try {
+        await useHostStore.getState().loadMySpaces().catch(() => {});
         const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
         const demoPool = cached.length > 0 ? cached : createDemoBookings();
         const found = demoPool.find((b) => b.id === id) || demoPool[0];
         if (found) {
-          setBooking(formatBooking(found, id));
+          const formatted = formatBooking(found, id);
+          const matchingSpace = [
+            ...useHostStore.getState().mySpaces.map(hostSpaceToDemoItem),
+            ...DEMO_SPACES,
+          ].find((s) => s.id === formatted.spaceId);
+          setBooking({
+            ...formatted,
+            spaceType: formatted.spaceType || matchingSpace?.spaceType,
+            entryInstructions: formatted.entryInstructions || matchingSpace?.entryInstructions,
+          });
         } else {
           setBooking(null);
         }
@@ -226,6 +359,133 @@ export default function BookingDetailScreen() {
               Alert.alert('Cancellation Failed', classified.message);
             } finally {
               setCancelling(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleCheckIn = async () => {
+    if (!booking || handshaking) return;
+    setHandshaking(true);
+    try {
+      let updated: BookingDetail;
+      if (isDemoMode) {
+        const nowIso = new Date().toISOString();
+        updated = { ...booking, status: 'active', checkedInAt: nowIso };
+      } else {
+        const { data } = await bookingApi.checkIn(booking.id, booking.gateCode);
+        const raw = data?.data?.booking || data?.data;
+        updated = raw
+          ? formatBooking(raw, booking.id)
+          : { ...booking, status: 'active', checkedInAt: new Date().toISOString() };
+      }
+      setBooking(updated);
+      const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+      await cacheSet(
+        CACHE_KEYS.RECENT_BOOKINGS,
+        cached.map((b) => (b.id === booking.id ? { ...b, ...updated } : b)),
+      );
+      triggerHaptic('success');
+      Alert.alert(
+        'Checked In',
+        `Parking session started. Scheduled leaving time: ${new Date(updated.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.`,
+      );
+    } catch (err: unknown) {
+      const classified = classifyApiError(err, 'Could not complete check-in right now.');
+      Alert.alert('Check-In Notice', classified.message);
+    } finally {
+      setHandshaking(false);
+    }
+  };
+
+  const handleNotifyLeaving = async () => {
+    if (!booking || handshaking) return;
+    setHandshaking(true);
+    try {
+      const nowIso = new Date().toISOString();
+      let updated: BookingDetail = { ...booking, leavingNotifiedAt: nowIso };
+      if (!isDemoMode) {
+        const { data } = await bookingApi.notifyLeaving(booking.id);
+        const raw = data?.data?.booking || data?.data;
+        if (raw) updated = formatBooking(raw, booking.id);
+      }
+      setBooking(updated);
+      const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+      await cacheSet(
+        CACHE_KEYS.RECENT_BOOKINGS,
+        cached.map((b) => (b.id === booking.id ? { ...b, ...updated } : b)),
+      );
+      triggerHaptic('selection');
+      Alert.alert('Host Notified', 'The host has been alerted that you are preparing to leave the space.');
+    } catch (err: unknown) {
+      const classified = classifyApiError(err, 'Unable to notify host right now.');
+      Alert.alert('Notice Failed', classified.message);
+    } finally {
+      setHandshaking(false);
+    }
+  };
+
+  const handleCheckOut = () => {
+    if (!booking || handshaking) return;
+    Alert.alert(
+      'Finish & Check Out',
+      'Confirm that you have exited the parking space? Any overstay past the 10-minute grace period will be settled automatically.',
+      [
+        { text: 'Not Yet', style: 'cancel' },
+        {
+          text: 'Check Out Now',
+          onPress: async () => {
+            setHandshaking(true);
+            try {
+              let updated: BookingDetail;
+              if (isDemoMode) {
+                const nowMs = Date.now();
+                const endMs = new Date(booking.endTime).getTime();
+                let overstayMinutes = 0;
+                let overstayAmount = 0;
+                if (nowMs > endMs + 10 * 60_000) {
+                  overstayMinutes = Math.ceil((nowMs - endMs) / 60_000);
+                  const rate = booking.hourlyRate || 40;
+                  overstayAmount = Math.round(rate * (overstayMinutes / 60) * 1.05 * 100) / 100;
+                }
+                const nowIso = new Date(nowMs).toISOString();
+                updated = {
+                  ...booking,
+                  status: 'completed',
+                  checkedInAt: booking.checkedInAt || booking.startTime,
+                  checkedOutAt: nowIso,
+                  overstayMinutes,
+                  overstayAmount,
+                  totalAmount: Math.round((booking.totalAmount + overstayAmount) * 100) / 100,
+                };
+              } else {
+                const { data } = await bookingApi.checkOut(booking.id);
+                const raw = data?.data?.booking || data?.data;
+                updated = raw
+                  ? formatBooking(raw, booking.id)
+                  : { ...booking, status: 'completed', checkedOutAt: new Date().toISOString() };
+              }
+
+              setBooking(updated);
+              const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+              await cacheSet(
+                CACHE_KEYS.RECENT_BOOKINGS,
+                cached.map((b) => (b.id === booking.id ? { ...b, ...updated } : b)),
+              );
+              triggerHaptic('success');
+              Alert.alert(
+                'Checked Out',
+                updated.overstayMinutes && updated.overstayMinutes > 0
+                  ? `Session ended with ${updated.overstayMinutes}m overstay (+₹${updated.overstayAmount || 0}).`
+                  : 'Checked out on time. Thank you for using Parkly!',
+              );
+            } catch (err: unknown) {
+              const classified = classifyApiError(err, 'Could not complete check-out.');
+              Alert.alert('Check-Out Error', classified.message);
+            } finally {
+              setHandshaking(false);
             }
           },
         },
@@ -383,7 +643,7 @@ export default function BookingDetailScreen() {
           style={styles.iconButton}
           contentStyle={styles.iconButtonContent}
           rippleColor={colors.rippleLight}
-          onPress={() => router.back()}
+          onPress={handleGoBack}
           accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={20} color={colors.white} />
@@ -431,11 +691,29 @@ export default function BookingDetailScreen() {
 
             <Text style={styles.spaceName}>{booking.spaceName}</Text>
             <Text style={styles.spaceAddress}>{booking.spaceAddress}</Text>
+            {getSpaceTypeMeta(booking.spaceType).isPrivate && (
+              <View style={styles.privateHostPill}>
+                <Ionicons name="home-outline" size={12} color={colors.success} />
+                <Text style={styles.privateHostText}>
+                  {getSpaceTypeMeta(booking.spaceType).label}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.slotBadge}>
               <Ionicons name="pin" size={14} color={colors.navy} />
               <Text style={styles.slotText}>Assigned Spot: {booking.slotNumber}</Text>
             </View>
+
+            {booking.entryInstructions && (
+              <View style={styles.instructionsBox}>
+                <Ionicons name="key-outline" size={15} color={colors.navy} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.instructionsTitle}>Arrival & Gate Instructions</Text>
+                  <Text style={styles.instructionsText}>{booking.entryInstructions}</Text>
+                </View>
+              </View>
+            )}
           </View>
 
           {booking.status === 'created' && (
@@ -460,15 +738,65 @@ export default function BookingDetailScreen() {
                 <VehicleIllustration type={booking.vehicleType} width={54} height={30} />
                 <Text style={styles.qrPlateText}>{booking.vehiclePlate}</Text>
               </View>
+              {booking.gateCode && (
+                <View style={styles.gatePinPill}>
+                  <Ionicons name="keypad-outline" size={14} color={colors.navy} />
+                  <Text style={styles.gatePinText}>
+                    Backup Host PIN: {booking.gateCode}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
+          {(() => {
+            const session = getLiveSessionStatus(booking, nowTick);
+            const toneBg =
+              session.tone === 'success'
+                ? colors.successLight
+                : session.tone === 'warning'
+                ? colors.warningLight
+                : session.tone === 'danger'
+                ? colors.dangerLight
+                : colors.infoLight;
+            const toneFg =
+              session.tone === 'success'
+                ? colors.success
+                : session.tone === 'warning'
+                ? colors.warning
+                : session.tone === 'danger'
+                ? colors.danger
+                : colors.info;
+            const toneBorder =
+              session.tone === 'success'
+                ? colors.successBorder
+                : session.tone === 'warning'
+                ? colors.warningBorder
+                : session.tone === 'danger'
+                ? colors.dangerBorder
+                : colors.infoBorder;
+            return (
+              <View style={[styles.liveBanner, { backgroundColor: toneBg, borderColor: toneBorder }]}>
+                <Ionicons name="time" size={18} color={toneFg} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.liveBannerTitle, { color: toneFg }]}>{session.headline}</Text>
+                  <Text style={styles.liveBannerSub}>{session.subline}</Text>
+                </View>
+              </View>
+            );
+          })()}
+
           <View style={styles.infoCard}>
-            <Text style={styles.cardSectionTitle}>Reservation Schedule</Text>
+            <Text style={styles.cardSectionTitle}>Parking &amp; Leaving Schedule</Text>
             <View style={styles.timelineRow}>
               <View style={styles.timeBlock}>
-                <Text style={styles.timeLabel}>Check-In</Text>
+                <Text style={styles.timeLabel}>Check-In Window</Text>
                 <Text style={styles.timeValue}>{formatDate(booking.startTime)}</Text>
+                {booking.checkedInAt && (
+                  <Text style={styles.actualStamp}>
+                    Arrived {new Date(booking.checkedInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                )}
               </View>
               <Ionicons
                 name="arrow-forward"
@@ -477,8 +805,13 @@ export default function BookingDetailScreen() {
                 style={{ alignSelf: 'center', marginHorizontal: 8 }}
               />
               <View style={styles.timeBlock}>
-                <Text style={styles.timeLabel}>Check-Out</Text>
+                <Text style={styles.timeLabel}>Leaving By</Text>
                 <Text style={styles.timeValue}>{formatDate(booking.endTime)}</Text>
+                {booking.checkedOutAt && (
+                  <Text style={styles.actualStamp}>
+                    Left {new Date(booking.checkedOutAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -517,6 +850,50 @@ export default function BookingDetailScreen() {
               <Ionicons name="navigate" size={18} color={colors.white} />
               <Text style={styles.primaryActionText}>Get Directions</Text>
             </PressScale>
+
+            {booking.status === 'confirmed' && (
+              <PressScale
+                style={[styles.checkInBtn, handshaking && { opacity: 0.6 }]}
+                contentStyle={styles.primaryActionContent}
+                rippleColor={colors.rippleLight}
+                haptic="medium"
+                onPress={handleCheckIn}
+                disabled={handshaking}
+              >
+                <Ionicons name="enter-outline" size={18} color={colors.white} />
+                <Text style={styles.primaryActionText}>
+                  {handshaking ? 'Checking In...' : 'I Have Arrived · Check In'}
+                </Text>
+              </PressScale>
+            )}
+
+            {booking.status === 'active' && (
+              <View style={styles.secondaryActionsRow}>
+                <PressScale
+                  style={[styles.secondaryActionBtn, handshaking && { opacity: 0.55 }]}
+                  contentStyle={styles.secondaryActionContent}
+                  haptic="selection"
+                  onPress={handleNotifyLeaving}
+                  disabled={handshaking || Boolean(booking.leavingNotifiedAt)}
+                >
+                  <Ionicons name="notifications-outline" size={17} color={colors.navy} />
+                  <Text style={styles.secondaryActionText}>
+                    {booking.leavingNotifiedAt ? 'Host Notified' : 'Leaving Soon'}
+                  </Text>
+                </PressScale>
+
+                <PressScale
+                  style={[styles.checkOutBtn, handshaking && { opacity: 0.55 }]}
+                  contentStyle={styles.secondaryActionContent}
+                  haptic="medium"
+                  onPress={handleCheckOut}
+                  disabled={handshaking}
+                >
+                  <Ionicons name="exit-outline" size={17} color={colors.white} />
+                  <Text style={styles.checkOutBtnText}>Leave &amp; Check Out</Text>
+                </PressScale>
+              </View>
+            )}
 
             {canModify && (
               <View style={styles.secondaryActionsRow}>
@@ -618,6 +995,33 @@ const styles = StyleSheet.create({
   tokenText: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontSize: 13, fontWeight: '700' },
   spaceName: { color: colors.navy, fontSize: 19, fontWeight: '800', marginBottom: 4 },
   spaceAddress: { color: colors.textMuted, fontSize: 13.5, lineHeight: 19, marginBottom: 12 },
+  privateHostPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginBottom: 10,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  privateHostText: { color: colors.success, fontSize: 11.5, fontWeight: '800' },
+  instructionsBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 10,
+    backgroundColor: colors.cardElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+  },
+  instructionsTitle: { color: colors.navy, fontSize: 12, fontWeight: '800', marginBottom: 2 },
+  instructionsText: { color: colors.textSecondary, fontSize: 12.5, lineHeight: 18 },
   slotBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -728,6 +1132,55 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   secondaryActionText: { color: colors.navy, fontSize: 13.5, fontWeight: '700' },
+  gatePinPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: colors.cardElevated,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  gatePinText: {
+    color: colors.navy,
+    fontSize: 13,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 0.5,
+  },
+  liveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 13,
+    marginBottom: 14,
+  },
+  liveBannerTitle: { fontSize: 13.5, fontWeight: '800' },
+  liveBannerSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  actualStamp: {
+    color: colors.success,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
+    fontVariant: ['tabular-nums'],
+  },
+  checkInBtn: {
+    backgroundColor: colors.success,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  checkOutBtn: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  checkOutBtnText: { color: colors.white, fontSize: 13.5, fontWeight: '800' },
   cancelActionBtn: {
     flex: 1,
     backgroundColor: colors.dangerLight,

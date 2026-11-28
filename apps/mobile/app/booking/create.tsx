@@ -10,6 +10,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -58,16 +59,27 @@ function formatHoldClock(seconds: number): string {
 }
 
 export default function BookingCreateScreen() {
-  const { spaceId, spaceName, hostId, hours, totalAmount, hourlyRate, arrivalTime } =
-    useLocalSearchParams<{
-      spaceId: string;
-      spaceName: string;
-      hostId?: string;
-      hours: string;
-      totalAmount: string;
-      hourlyRate: string;
-      arrivalTime?: string;
-    }>();
+  const {
+    spaceId,
+    spaceName,
+    hostId,
+    hours,
+    totalAmount,
+    hourlyRate,
+    arrivalTime,
+    spaceType,
+    entryInstructions,
+  } = useLocalSearchParams<{
+    spaceId: string;
+    spaceName: string;
+    hostId?: string;
+    hours: string;
+    totalAmount: string;
+    hourlyRate: string;
+    arrivalTime?: string;
+    spaceType?: string;
+    entryInstructions?: string;
+  }>();
 
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const vehicles = useDriverStore((s) => s.vehicles);
@@ -91,6 +103,8 @@ export default function BookingCreateScreen() {
   const [holdSecondsLeft, setHoldSecondsLeft] = useState<number>(HOLD_DURATION_SECONDS);
   const [confirmedBookingId, setConfirmedBookingId] = useState<string>('');
   const [confirmedQrToken, setConfirmedQrToken] = useState<string>('');
+  const [confirmedGateCode, setConfirmedGateCode] = useState<string>('');
+  const [confirmedEndTimeIso, setConfirmedEndTimeIso] = useState<string>('');
   const [confirmedAmount, setConfirmedAmount] = useState<number>(0);
 
   const insets = useSafeAreaInsets();
@@ -121,6 +135,15 @@ export default function BookingCreateScreen() {
       .catch(() => {});
   }, [loadVehicles, loadUpiMethods]);
 
+  // Prevent Android hardware Back on success screen from reviving hold timer or stepping back into confirm state
+  useEffect(() => {
+    if (step !== 'success') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.replace('/(tabs)/bookings');
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
   // Live 15-minute checkout hold timer while pendingOrder is awaiting confirmation
   useEffect(() => {
     if (!pendingOrder || step === 'success') return;
@@ -402,6 +425,7 @@ export default function BookingCreateScreen() {
           return;
         }
 
+        const demoGateCode = String(1000 + (Number(pendingOrder.bookingId.slice(-4).replace(/\D/g, '') || 4821) % 9000));
         const newDemoBooking = {
           id: pendingOrder.bookingId,
           spaceId: spaceId!,
@@ -409,6 +433,8 @@ export default function BookingCreateScreen() {
           vehicleId: pendingOrder.vehicleId,
           spaceName: spaceName || 'Chennai Parking Complex',
           spaceAddress: 'Chennai Smart Grid Facility',
+          spaceType: spaceType || 'commercial',
+          entryInstructions: entryInstructions || undefined,
           vehiclePlate: pendingOrder.vehiclePlate,
           vehicleType: pendingOrder.vehicleType,
           status: 'confirmed',
@@ -419,6 +445,7 @@ export default function BookingCreateScreen() {
           hourlyRate: parsedHourlyRate,
           type: 'instant',
           slotNumber: pendingOrder.slotNumber || 'Bay A-04',
+          gateCode: demoGateCode,
         };
         const currentCached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
         await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, [newDemoBooking, ...currentCached]);
@@ -426,6 +453,8 @@ export default function BookingCreateScreen() {
         const demoQr = `PARKLY.DEMO.${pendingOrder.bookingId}.${pendingOrder.vehiclePlate}`;
         setConfirmedBookingId(pendingOrder.bookingId);
         setConfirmedQrToken(demoQr);
+        setConfirmedGateCode(demoGateCode);
+        setConfirmedEndTimeIso(pendingOrder.endTimeIso);
         setConfirmedAmount(pendingOrder.amount);
         setVehiclePlate(pendingOrder.vehiclePlate);
         setUpiSheetOpen(false);
@@ -460,6 +489,8 @@ export default function BookingCreateScreen() {
         id: pendingOrder.bookingId,
         spaceId: spaceId!,
         spaceName: spaceName || 'Chennai Parking Complex',
+        spaceType: spaceType || 'commercial',
+        entryInstructions: entryInstructions || undefined,
         vehicleId: pendingOrder.vehicleId,
         vehiclePlate: pendingOrder.vehiclePlate,
         status: 'confirmed',
@@ -481,6 +512,11 @@ export default function BookingCreateScreen() {
       setConfirmedQrToken(
         record.qrToken || `PARKLY:${pendingOrder.bookingId}:${pendingOrder.vehiclePlate}`,
       );
+      setConfirmedGateCode(
+        record.gateCode ||
+          String(1000 + (parseInt(pendingOrder.bookingId.replace(/\D/g, '').slice(-4) || '4821', 10) % 9000)),
+      );
+      setConfirmedEndTimeIso(record.endTime || pendingOrder.endTimeIso);
       setConfirmedAmount(Number(record.totalAmount || pendingOrder.amount));
       setVehiclePlate(pendingOrder.vehiclePlate);
       setUpiSheetOpen(false);
@@ -557,10 +593,14 @@ export default function BookingCreateScreen() {
           <View style={styles.successBadge}>
             <Ionicons name="checkmark-circle" size={48} color={colors.success} />
           </View>
-          <Text style={styles.successTitle}>Bay Reserved</Text>
-          <Text style={styles.successSubtitle}>
-            Your offline QR gate pass is ready for{'\n'}
-            <Text style={{ fontWeight: '800', color: colors.navy }}>{spaceName}</Text>
+          <Text style={styles.successTitle} textBreakStrategy="simple">
+            Bay Reserved
+          </Text>
+          <Text style={styles.successSubtitle} textBreakStrategy="simple">
+            Your offline QR gate pass is ready for
+          </Text>
+          <Text style={styles.successSpaceName} textBreakStrategy="simple">
+            {spaceName || 'Reserved Parking Bay'}
           </Text>
 
           <View style={styles.qrCard}>
@@ -574,6 +614,11 @@ export default function BookingCreateScreen() {
             <Text style={styles.qrTokenText}>
               #{confirmedBookingId.slice(-8).toUpperCase()} · OFFLINE PASS
             </Text>
+            {Boolean(confirmedGateCode) && (
+              <Text style={[styles.qrTokenText, { marginTop: 4, color: colors.navy }]}>
+                Host / Gate Backup PIN: {confirmedGateCode}
+              </Text>
+            )}
           </View>
 
           <View style={styles.successCard}>
@@ -587,6 +632,17 @@ export default function BookingCreateScreen() {
               <Text style={styles.successCardLabel}>Duration</Text>
               <Text style={[styles.successCardValue, styles.mono]}>{parsedHours} hours</Text>
             </View>
+            {Boolean(confirmedEndTimeIso) && (
+              <View style={styles.detailRow}>
+                <Text style={styles.successCardLabel}>Leaving By</Text>
+                <Text style={[styles.successCardValue, styles.mono]}>
+                  {new Date(confirmedEndTimeIso).toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+            )}
             <View style={styles.detailRow}>
               <Text style={styles.successCardLabel}>Total Paid</Text>
               <Text style={[styles.successCardValue, styles.mono, { color: colors.success }]}>
@@ -600,9 +656,12 @@ export default function BookingCreateScreen() {
             contentStyle={styles.successBtnContent}
             rippleColor={colors.rippleLight}
             haptic="medium"
-            onPress={() =>
-              router.replace({ pathname: '/booking/[id]', params: { id: confirmedBookingId } })
-            }
+            onPress={() => {
+              router.replace({
+                pathname: '/booking/[id]',
+                params: { id: confirmedBookingId, fromCheckout: '1' },
+              });
+            }}
           >
             <Text style={styles.successBtnText}>Open Gate Pass Details</Text>
           </PressScale>
@@ -651,14 +710,19 @@ export default function BookingCreateScreen() {
           <View style={styles.row}>
             <Ionicons name="time-outline" size={16} color={colors.textMuted} />
             <Text style={styles.cardDetail}>
-              Duration: {parsedHours} hours ·{' '}
-              {arrivalTime && Number.isFinite(Date.parse(arrivalTime))
-                ? `Arrive ~${new Date(arrivalTime).toLocaleTimeString('en-IN', {
+              {(() => {
+                const startMs =
+                  arrivalTime && Number.isFinite(Date.parse(arrivalTime))
+                    ? Date.parse(arrivalTime)
+                    : Date.now();
+                const leaveMs = startMs + parsedHours * 3600_000;
+                const fmt = (ms: number) =>
+                  new Date(ms).toLocaleTimeString('en-IN', {
                     hour: '2-digit',
                     minute: '2-digit',
-                  })}`
-                : 'Immediate check-in'}{' '}
-              · 15-min hold
+                  });
+                return `Park ${fmt(startMs)} → Leave ${fmt(leaveMs)} (${parsedHours}h) · 15-min hold`;
+              })()}
             </Text>
           </View>
         </View>
@@ -1073,7 +1137,7 @@ const styles = StyleSheet.create({
   savedVehiclePlateActive: { color: colors.primary },
   savedVehicleSub: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   successContainer: { flexGrow: 1, paddingHorizontal: 22, justifyContent: 'center' },
-  successInner: { alignItems: 'center' },
+  successInner: { alignItems: 'center', width: '100%' },
   successBadge: {
     width: 84,
     height: 84,
@@ -1085,13 +1149,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
-  successTitle: { fontSize: 26, fontWeight: '800', color: colors.navy, marginBottom: 6 },
+  successTitle: { fontSize: 26, fontWeight: '800', color: colors.navy, marginBottom: 6, width: '100%', textAlign: 'center' },
   successSubtitle: {
+    width: '100%',
     fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 4,
+    lineHeight: 21,
+  },
+  successSpaceName: {
+    width: '100%',
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: colors.navy,
+    textAlign: 'center',
+    paddingHorizontal: 8,
     marginBottom: 18,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   qrCard: {
     backgroundColor: colors.surface,

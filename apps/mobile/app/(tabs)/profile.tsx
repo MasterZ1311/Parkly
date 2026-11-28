@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/auth.store';
 import { useDriverStore } from '../../src/store/driver.store';
+import { useHostStore } from '../../src/store/host.store';
+import { useKycStore } from '../../src/store/kyc.store';
 import { bookingApi } from '../../src/api/client';
 import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
 import { colors, theme } from '../../src/constants/theme';
@@ -67,6 +69,11 @@ export default function ProfileScreen() {
     loadUpiMethods,
     loadNotifications,
   } = useDriverStore();
+  const myHostSpaces = useHostStore((s) => s.mySpaces);
+  const loadMySpaces = useHostStore((s) => s.loadMySpaces);
+  const driverKyc = useKycStore((s) => s.driverKyc);
+  const hostKyc = useKycStore((s) => s.hostKyc);
+  const loadKycs = useKycStore((s) => s.loadKycs);
 
   const [bookingCount, setBookingCount] = useState(0);
   const [totalHours, setTotalHours] = useState(0);
@@ -82,6 +89,8 @@ export default function ProfileScreen() {
     loadSavedPlaces().catch(() => {});
     loadUpiMethods().catch(() => {});
     loadNotifications().catch(() => {});
+    loadMySpaces().catch(() => {});
+    loadKycs().catch(() => {});
 
     const computeFromList = (list: any[]) => {
       setBookingCount(list.length);
@@ -110,7 +119,7 @@ export default function ProfileScreen() {
     } catch {
       // Cached summary retained when offline
     }
-  }, [isDemoMode, loadVehicles, loadSavedPlaces, loadUpiMethods]);
+  }, [isDemoMode, loadVehicles, loadSavedPlaces, loadUpiMethods, loadNotifications, loadMySpaces, loadKycs]);
 
   useFocusEffect(
     useCallback(() => {
@@ -217,9 +226,27 @@ export default function ProfileScreen() {
               {user?.name?.charAt(0)?.toUpperCase() || 'D'}
             </Text>
           </View>
-          <Text style={styles.userName}>{user?.name || 'Parkly Driver'}</Text>
-          <Text style={styles.userPhone}>{user?.phone || '+91 98765 43210'}</Text>
-          {user?.email ? <Text style={styles.userEmail}>{user.email}</Text> : null}
+          <View style={styles.bannerTextWrap}>
+            <Text style={styles.userName} textBreakStrategy="simple">
+              {user?.name || 'Parkly Driver'}
+            </Text>
+            <Text
+              style={styles.userPhone}
+              textBreakStrategy="simple"
+              android_hyphenationFrequency="none"
+            >
+              {user?.phone || '+91 98765 43210'}
+            </Text>
+            {user?.email ? (
+              <Text
+                style={styles.userEmail}
+                textBreakStrategy="simple"
+                android_hyphenationFrequency="none"
+              >
+                {user.email}
+              </Text>
+            ) : null}
+          </View>
 
           <View style={styles.bannerBadgesRow}>
             <View style={styles.roleBadge}>
@@ -269,6 +296,18 @@ export default function ProfileScreen() {
               onPress={() => router.push('/profile/vehicles')}
             />
             <MenuItem
+              icon="shield-checkmark-outline"
+              label="Driver KYC &amp; Licence / RC"
+              subtitle={
+                driverKyc
+                  ? `${driverKyc.status === 'approved' ? 'Verified' : driverKyc.status === 'rejected' ? 'Resubmission needed' : 'Pending Team Review'} · ${driverKyc.vehiclePlate} · RC ${driverKyc.rcNumber}`
+                  : 'Upload Driving Licence, Vehicle Reg. & RC Book'
+              }
+              color={driverKyc?.status === 'approved' ? colors.success : colors.primary}
+              bgTint={driverKyc?.status === 'approved' ? colors.successLight : colors.primaryLight}
+              onPress={() => router.push('/profile/driver-kyc')}
+            />
+            <MenuItem
               icon="location-outline"
               label="Saved Places"
               subtitle={`${savedPlaces.length} quick-search Chennai spots`}
@@ -291,6 +330,36 @@ export default function ProfileScreen() {
                 upiMethods.find((m) => m.isDefault)?.vpa || 'Manage GPay / PhonePe UPI VPAs'
               }
               onPress={() => router.push('/profile/payment-methods')}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Host &amp; Rent Out Space</Text>
+          <View style={styles.menuCard}>
+            <MenuItem
+              icon="home-outline"
+              label="Rent Out Your House / Private Space"
+              subtitle={
+                myHostSpaces.length > 0
+                  ? `${myHostSpaces.length} private space${myHostSpaces.length === 1 ? '' : 's'} submitted · View review status`
+                  : 'List vacant driveways & upload parking plot photos'
+              }
+              color={colors.success}
+              bgTint={colors.successLight}
+              onPress={() => router.push('/host/spaces')}
+            />
+            <MenuItem
+              icon="document-text-outline"
+              label="Host KYC &amp; Property Proof"
+              subtitle={
+                hostKyc
+                  ? `${hostKyc.verificationStatus === 'approved' ? 'Verified' : hostKyc.verificationStatus === 'rejected' ? 'Action needed' : 'Pending Team Review'} · ${hostKyc.plotPhotoUrls.length} plot photo(s)`
+                  : 'Submit Owner ID, ownership proof & plot pictures'
+              }
+              color={colors.navy}
+              bgTint={colors.cardElevated}
+              onPress={() => router.push('/host/kyc')}
             />
           </View>
         </View>
@@ -534,9 +603,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   avatarText: { fontSize: 32, fontWeight: '800', color: colors.navy },
-  userName: { fontSize: 22, fontWeight: '800', color: colors.white, marginBottom: 4 },
-  userPhone: { fontSize: 13.5, color: '#9FB0C7', marginBottom: 2, fontVariant: ['tabular-nums'] },
-  userEmail: { fontSize: 12.5, color: '#9FB0C7', marginBottom: 10 },
+  bannerTextWrap: { width: '100%', alignItems: 'stretch', paddingHorizontal: 8 },
+  userName: { fontSize: 22, fontWeight: '800', color: colors.white, marginBottom: 4, width: '100%', textAlign: 'center', paddingHorizontal: 10 },
+  userPhone: { fontSize: 13.5, color: '#9FB0C7', marginBottom: 3, lineHeight: 20, width: '100%', textAlign: 'center', paddingHorizontal: 16 },
+  userEmail: { fontSize: 12.5, color: '#9FB0C7', marginBottom: 10, lineHeight: 19, width: '100%', textAlign: 'center', paddingHorizontal: 16 },
   bannerBadgesRow: {
     flexDirection: 'row',
     alignItems: 'center',

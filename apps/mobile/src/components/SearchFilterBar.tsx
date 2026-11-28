@@ -33,6 +33,7 @@ const AMENITY_CHIPS: Array<{
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
+  { key: 'privateOnly', label: 'Private / Home', icon: 'home-outline' },
   { key: 'evOnly', label: 'EV Ready', icon: 'flash-outline' },
   { key: 'coveredOnly', label: 'Covered', icon: 'umbrella-outline' },
   { key: 'gatedOnly', label: 'Gated', icon: 'shield-checkmark-outline' },
@@ -129,9 +130,17 @@ export function SearchFilterBar({
           <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 18, 28) }]}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
-              <View>
-                <Text style={styles.sheetTitle}>Parking Window &amp; Filters</Text>
-                <Text style={styles.sheetSub}>Synced across Home discovery &amp; Chennai Map</Text>
+              <View style={styles.sheetHeaderText}>
+                <Text style={styles.sheetTitle} textBreakStrategy="simple">
+                  Parking Window &amp; Filters
+                </Text>
+                <Text
+                  style={styles.sheetSub}
+                  textBreakStrategy="simple"
+                  android_hyphenationFrequency="none"
+                >
+                  Synced across Home discovery &amp; Chennai Map
+                </Text>
               </View>
               <PressScale
                 onPress={() => {
@@ -288,11 +297,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
     marginBottom: 16,
   },
-  sheetTitle: { color: colors.navy, fontSize: 18, fontWeight: '800' },
-  sheetSub: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  sheetHeaderText: { flex: 1, flexShrink: 1, minWidth: 0, paddingRight: 6 },
+  sheetTitle: { color: colors.navy, fontSize: 18, fontWeight: '800', lineHeight: 23 },
+  sheetSub: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2, paddingRight: 6 },
   resetBtn: {
+    flexShrink: 0,
     backgroundColor: colors.cardElevated,
     borderRadius: 8,
     borderWidth: 1,
