@@ -7,26 +7,26 @@
 > **Document Status**: Production Architecture & Onboarding Blueprint
 
 <p align="center">
-  <img src="./docs/assets/parkly-demo.gif" alt="Parkly Live Showcase" width="840" />
+  <img src="./assets/parkly-demo.gif" alt="Parkly Live Showcase" width="840" />
 </p>
 
 ---
 
 ## 📑 Master Documentation Table of Contents
 
-This master document serves as the Single Source of Truth (SSoT) for the Parkly platform, synthesizing business strategy, startup validation, architecture, and developer workflows across [`./docs`](./docs):
+This master document serves as the Single Source of Truth (SSoT) for the Parkly platform, synthesizing business strategy, startup validation, architecture, and developer workflows across [`./docs`](./):
 
-1. [**Project Purpose, Vision & Ideology**](./docs/01_PROJECT_PURPOSE_AND_IDEOLOGY.md) — The urban parking crisis, mission statement, core philosophy, and 3-horizon growth vision.
-2. [**USP, Business Model & Startup Validation**](./docs/02_USP_AND_STARTUP_VALIDATION.md) — Unique selling propositions, competitive moats, TAM/SAM/SOM market sizing, customer personas, unit economics, and Chennai pilot GTM strategy.
-3. [**System Architecture & Infrastructure Design**](./docs/03_SYSTEM_ARCHITECTURE.md) — Cloud-native architecture topology, AWS infrastructure, EventBridge event choreography, security baselines, and SRE observability.
-4. [**Technology Stack & Tooling Specifications**](./docs/04_TECH_STACK_AND_TOOLS.md) — Expo SDK 54 / RN 0.79.1 / React 19.0.0 mobile app, React 18/Vite portals, Node.js/TypeScript services, PostgreSQL (Prisma), DynamoDB, AWS CDK, and Vitest.
-5. [**Database Schemas, Data Models & State Machines**](./docs/05_DATABASE_SCHEMA_AND_MODELS.md) — Complete ERD diagrams, relational models, enums, DynamoDB schemas, and booking concurrency locking state machines.
-6. [**Core Services & Detailed API Specifications**](./docs/06_CORE_SERVICES_AND_API_SPEC.md) — Standardized REST request/response contracts for Auth, Search, Booking, Payments, Host, Occupancy, Pricing, and Admin services.
-7. [**Software Development Plan & Roadmap**](./docs/07_SOFTWARE_DEVELOPMENT_PLAN_AND_ROADMAP.md) — 4-phase strategic roadmap, Sprint 0–7 execution milestones, and engineering quality standards.
-8. [**Autonomous Multi-Agent Architecture**](./docs/08_AI_AGENT_ARCHITECTURE.md) — Specifications for the 8 specialized autonomous agents automating onboarding, visual audit, predictive vacancy, dynamic pricing, concierge, and dispute mediation.
-9. [**Mobile App Demo & UI Walkthrough**](./docs/09_MOBILE_APP_DEMO_WALKTHROUGH.md) — Sequential Android 14 Emulator gallery covering Login, OTP, T. Nagar Discovery, Map, AI Concierge, Checkout, and Entry Gate QR Pass.
-10. [**Animated Demo GIF & Launch Showcase**](./docs/10_DEMO_GIF_AND_LAUNCH_SHOWCASE.md) — Embedded looping launch showcase ([`parkly-demo.gif`](./docs/assets/parkly-demo.gif)), storyboard stills, and Hyperframes render pipeline.
-11. [**Local Development & Testing Guide**](./docs/11_TESTING_AND_LOCAL_DEV.md) — Docker setup, database seeding, gateway port map (`4000–4011`), and the 360-test verification pyramid.
+1. [**Project Purpose, Vision & Ideology**](./01_PROJECT_PURPOSE_AND_IDEOLOGY.md) — The urban parking crisis, mission statement, core philosophy, and 3-horizon growth vision.
+2. [**USP, Business Model & Startup Validation**](./02_USP_AND_STARTUP_VALIDATION.md) — Unique selling propositions, competitive moats, TAM/SAM/SOM market sizing, customer personas, unit economics, and Chennai pilot GTM strategy.
+3. [**System Architecture & Infrastructure Design**](./03_SYSTEM_ARCHITECTURE.md) — Cloud-native architecture topology, AWS infrastructure, EventBridge event choreography, security baselines, and SRE observability.
+4. [**Technology Stack & Tooling Specifications**](./04_TECH_STACK_AND_TOOLS.md) — Expo SDK 54 / RN 0.79.1 / React 19.0.0 mobile app, React 18/Vite portals, Node.js/TypeScript services, PostgreSQL (Prisma), DynamoDB, AWS CDK, and Vitest.
+5. [**Database Schemas, Data Models & State Machines**](./05_DATABASE_SCHEMA_AND_MODELS.md) — Complete ERD diagrams, relational models, enums, DynamoDB schemas, and booking concurrency locking state machines.
+6. [**Core Services & Detailed API Specifications**](./06_CORE_SERVICES_AND_API_SPEC.md) — Standardized REST request/response contracts for Auth, Search, Booking, Payments, Host, Occupancy, Pricing, and Admin services.
+7. [**Software Development Plan & Roadmap**](./07_SOFTWARE_DEVELOPMENT_PLAN_AND_ROADMAP.md) — 4-phase strategic roadmap, Sprint 0–7 execution milestones, and engineering quality standards.
+8. [**Autonomous Multi-Agent Architecture**](./08_AI_AGENT_ARCHITECTURE.md) — Specifications for the 8 specialized autonomous agents automating onboarding, visual audit, predictive vacancy, dynamic pricing, concierge, and dispute mediation.
+9. [**Mobile App Demo & UI Walkthrough**](./09_MOBILE_APP_DEMO_WALKTHROUGH.md) — Sequential Android 14 Emulator gallery covering Login, OTP, T. Nagar Discovery, Map, AI Concierge, Checkout, and Entry Gate QR Pass.
+10. [**Animated Demo GIF & Launch Showcase**](./10_DEMO_GIF_AND_LAUNCH_SHOWCASE.md) — Embedded looping launch showcase ([`parkly-demo.gif`](./assets/parkly-demo.gif)), storyboard stills, and Hyperframes render pipeline.
+11. [**Local Development & Testing Guide**](./11_TESTING_AND_LOCAL_DEV.md) — Docker setup, database seeding, gateway port map (`4000–4011`), and the 360-test verification pyramid.
 
 ---
 
@@ -119,4 +119,4 @@ Property owners (homeowners, commercial complexes, gated societies, malls) can l
 The monorepo is scaffolded and runnable end-to-end across all three client surfaces, 11 microservices, 8 autonomous agents, PostgreSQL migrations (including private spaces, Driver/Host KYC, and gate check-in/overstay columns), Docker Compose local infra, and AWS CDK deployment stacks:
 - **`packages/ai-agents`**: **24 test files / 360 tests passing** offline via `npm test -w packages/ai-agents`.
 - **Service & App Jest Suites**: Unit & integration suites across `auth-service`, `booking-service`, `host-service`, `admin-service`, and `apps/mobile` (`9 suites / 33 tests` passing), alongside Vite builds for `host-dashboard` and `admin-portal`.
-- **Developer Onboarding & Deployment**: See [11. Local Development & Testing](./docs/11_TESTING_AND_LOCAL_DEV.md) and [Production Credentials & Deployment Guide](./PRODUCTION_CREDENTIALS_AND_DEPLOYMENT_GUIDE.md).
+- **Developer Onboarding & Deployment**: See [11. Local Development & Testing](./11_TESTING_AND_LOCAL_DEV.md) and [Production Credentials & Deployment Guide](./PRODUCTION_CREDENTIALS_AND_DEPLOYMENT_GUIDE.md).

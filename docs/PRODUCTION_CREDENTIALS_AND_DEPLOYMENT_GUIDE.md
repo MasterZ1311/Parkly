@@ -53,12 +53,12 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `DATABASE_URL` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | **AWS RDS Console** → Databases → Create Database (PostgreSQL 16.x). Format: `postgresql://<user>:<password>@<rds-endpoint>:5432/<dbname>?sslmode=require` |
-| `DB_SSL` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Set to `true` for AWS RDS. Set to `false` only for local Docker Postgres. |
-| `DYNAMO_TABLE_OTP` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Default: `parkly-otp`. Created automatically by `infra/cdk` or AWS Console DynamoDB. |
-| `DYNAMO_TABLE_OCCUPANCY` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Default: `parkly-occupancy`. Created automatically by `infra/cdk`. |
-| `DYNAMO_TABLE_NOTIFICATIONS`| 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Default: `parkly-notifications`. Created automatically by `infra/cdk`. |
-| `DYNAMO_ENDPOINT` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Leave **commented out** in production. Set to `http://localhost:8000` only during offline local testing. |
+| `DATABASE_URL` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | **AWS RDS Console** → Databases → Create Database (PostgreSQL 16.x). Format: `postgresql://<user>:<password>@<rds-endpoint>:5432/<dbname>?sslmode=require` |
+| `DB_SSL` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Set to `true` for AWS RDS. Set to `false` only for local Docker Postgres. |
+| `DYNAMO_TABLE_OTP` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Default: `parkly-otp`. Created automatically by `infra/cdk` or AWS Console DynamoDB. |
+| `DYNAMO_TABLE_OCCUPANCY` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Default: `parkly-occupancy`. Created automatically by `infra/cdk`. |
+| `DYNAMO_TABLE_NOTIFICATIONS`| 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Default: `parkly-notifications`. Created automatically by `infra/cdk`. |
+| `DYNAMO_ENDPOINT` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Leave **commented out** in production. Set to `http://localhost:8000` only during offline local testing. |
 
 ---
 
@@ -66,10 +66,10 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `JWT_ACCESS_SECRET` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Generate high-entropy 256-bit string: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Do NOT use defaults in prod!** |
-| `JWT_REFRESH_SECRET` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Generate high-entropy 256-bit string (different from access secret). Used to sign 30-day refresh tokens. |
-| `JWT_ACCESS_TTL` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Access token lifespan in seconds. Default: `900` (15 minutes). Enforces short-lived token security. |
-| `JWT_REFRESH_TTL` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Refresh token lifespan in seconds. Default: `2592000` (30 days). |
+| `JWT_ACCESS_SECRET` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Generate high-entropy 256-bit string: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Do NOT use defaults in prod!** |
+| `JWT_REFRESH_SECRET` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Generate high-entropy 256-bit string (different from access secret). Used to sign 30-day refresh tokens. |
+| `JWT_ACCESS_TTL` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Access token lifespan in seconds. Default: `900` (15 minutes). Enforces short-lived token security. |
+| `JWT_REFRESH_TTL` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Refresh token lifespan in seconds. Default: `2592000` (30 days). |
 
 ---
 
@@ -77,12 +77,12 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `PAYMENT_PROVIDER` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Set to `razorpay` for live payments or `mock` for local/sandbox testing. |
-| `PAYMENT_API_KEY` | 🟡 **FUNCTIONAL** | [`.env.example`](./.env.example) | **Razorpay Dashboard** (`dashboard.razorpay.com`) → Settings → API Keys → Generate Key. Starts with `rzp_live_` (prod) or `rzp_test_` (staging). |
-| `PAYMENT_API_SECRET` | 🟡 **FUNCTIONAL** | [`.env.example`](./.env.example) | Obtained alongside `PAYMENT_API_KEY`. Used for Basic Auth order generation and refund requests. |
-| `PAYMENT_WEBHOOK_SECRET` | 🟡 **FUNCTIONAL** | [`.env.example`](./.env.example) | **Razorpay Dashboard** → Settings → Webhooks → Add New Webhook. URL: `https://api.parkly.in/api/v1/payments/webhook`. Secret is entered here and verified via HMAC SHA-256. |
-| `PAYMENT_UPI_VPA` | 🟡 **FUNCTIONAL** | [`.env.example`](./.env.example) | Business UPI Virtual Payment Address (e.g. `parkly@hdfcbank` or `parkly@icici`). Embedded in generated dynamic UPI QR payloads. |
-| `PLATFORM_COMMISSION_PCT`| 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Platform revenue share deducted from host earnings. Default: `15` (15%). |
+| `PAYMENT_PROVIDER` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Set to `razorpay` for live payments or `mock` for local/sandbox testing. |
+| `PAYMENT_API_KEY` | 🟡 **FUNCTIONAL** | [`.env.example`](../.env.example) | **Razorpay Dashboard** (`dashboard.razorpay.com`) → Settings → API Keys → Generate Key. Starts with `rzp_live_` (prod) or `rzp_test_` (staging). |
+| `PAYMENT_API_SECRET` | 🟡 **FUNCTIONAL** | [`.env.example`](../.env.example) | Obtained alongside `PAYMENT_API_KEY`. Used for Basic Auth order generation and refund requests. |
+| `PAYMENT_WEBHOOK_SECRET` | 🟡 **FUNCTIONAL** | [`.env.example`](../.env.example) | **Razorpay Dashboard** → Settings → Webhooks → Add New Webhook. URL: `https://api.parkly.in/api/v1/payments/webhook`. Secret is entered here and verified via HMAC SHA-256. |
+| `PAYMENT_UPI_VPA` | 🟡 **FUNCTIONAL** | [`.env.example`](../.env.example) | Business UPI Virtual Payment Address (e.g. `parkly@hdfcbank` or `parkly@icici`). Embedded in generated dynamic UPI QR payloads. |
+| `PLATFORM_COMMISSION_PCT`| 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Platform revenue share deducted from host earnings. Default: `15` (15%). |
 
 ---
 
@@ -90,13 +90,13 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `AWS_REGION` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Primary region: `ap-south-1` (Mumbai, for lowest India latency) or `us-east-1` (N. Virginia). |
-| `AWS_ACCESS_KEY_ID` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | **AWS IAM Console** → Users → `parkly-service-user` → Security Credentials → Create Access Key. (Or rely on ECS Task Role in production). |
-| `AWS_SECRET_ACCESS_KEY`| 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Paired secret key for `AWS_ACCESS_KEY_ID`. |
-| `AWS_ACCOUNT_ID` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | 12-digit AWS Account number. Used by CDK for resource ARNs. |
-| `S3_BUCKET_UPLOADS` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | S3 bucket name for parking spot photos & host verification docs (e.g., `parkly-prod-uploads`). Configured with private ACL and presigned URL access. |
-| `S3_BUCKET_DATALAKE` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | S3 bucket for aggregated city mobility metrics & audit logs. Default: `parkly-prod-datalake`. |
-| `EVENT_BUS_NAME` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Amazon EventBridge custom event bus name. Default: `parkly-event-bus`. |
+| `AWS_REGION` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Primary region: `ap-south-1` (Mumbai, for lowest India latency) or `us-east-1` (N. Virginia). |
+| `AWS_ACCESS_KEY_ID` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | **AWS IAM Console** → Users → `parkly-service-user` → Security Credentials → Create Access Key. (Or rely on ECS Task Role in production). |
+| `AWS_SECRET_ACCESS_KEY`| 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Paired secret key for `AWS_ACCESS_KEY_ID`. |
+| `AWS_ACCOUNT_ID` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | 12-digit AWS Account number. Used by CDK for resource ARNs. |
+| `S3_BUCKET_UPLOADS` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | S3 bucket name for parking spot photos & host verification docs (e.g., `parkly-prod-uploads`). Configured with private ACL and presigned URL access. |
+| `S3_BUCKET_DATALAKE` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | S3 bucket for aggregated city mobility metrics & audit logs. Default: `parkly-prod-datalake`. |
+| `EVENT_BUS_NAME` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Amazon EventBridge custom event bus name. Default: `parkly-event-bus`. |
 
 ---
 
@@ -104,13 +104,13 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `SMS_PROVIDER` | 🔴 **BLOCKER** | [`.env.example`](./.env.example) | Options: `sns` (AWS SNS), `twilio` (Twilio API), or `mock` (writes to DynamoDB/logs). |
-| `SNS_SMS_SENDER_ID` | 🟡 **FUNCTIONAL** | [`.env.example`](./.env.example) | Approved 6-character alphanumeric Sender ID registered on India DLT portal (e.g. `PARKLY`). Required for India TRAI compliance. |
-| `PUSH_PROVIDER` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Set to `fcm` (Firebase Cloud Messaging) or `mock`. |
-| `FCM_PROJECT_ID` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | **Firebase Console** → Project Settings → General → Project ID. |
-| `FCM_CLIENT_EMAIL` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Firebase Service Account Email (`firebase-adminsdk@<project>.iam.gserviceaccount.com`). |
-| `FCM_PRIVATE_KEY` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | Firebase RSA Private Key from downloaded Service Account JSON. |
-| `APNS_KEY_ID` / `TEAM_ID` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | **Apple Developer Account** → Certificates, Identifiers & Profiles → Keys → APNs Key (.p8). |
+| `SMS_PROVIDER` | 🔴 **BLOCKER** | [`.env.example`](../.env.example) | Options: `sns` (AWS SNS), `twilio` (Twilio API), or `mock` (writes to DynamoDB/logs). |
+| `SNS_SMS_SENDER_ID` | 🟡 **FUNCTIONAL** | [`.env.example`](../.env.example) | Approved 6-character alphanumeric Sender ID registered on India DLT portal (e.g. `PARKLY`). Required for India TRAI compliance. |
+| `PUSH_PROVIDER` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Set to `fcm` (Firebase Cloud Messaging) or `mock`. |
+| `FCM_PROJECT_ID` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | **Firebase Console** → Project Settings → General → Project ID. |
+| `FCM_CLIENT_EMAIL` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Firebase Service Account Email (`firebase-adminsdk@<project>.iam.gserviceaccount.com`). |
+| `FCM_PRIVATE_KEY` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | Firebase RSA Private Key from downloaded Service Account JSON. |
+| `APNS_KEY_ID` / `TEAM_ID` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | **Apple Developer Account** → Certificates, Identifiers & Profiles → Keys → APNs Key (.p8). |
 
 ---
 
@@ -118,7 +118,7 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Where to Obtain / How to Configure |
 | :--- | :---: | :--- | :--- |
-| `GOOGLE_MAPS_API_KEY` | 🟢 **OPTIONAL** | [`.env.example`](./.env.example) | **Google Cloud Console** → APIs & Services → Credentials. Enable *Maps JavaScript API*, *Geocoding API*, and *Places API*. **Note:** If left empty, Parkly automatically falls back to OpenFreeMap (zero-cost vector tiles) and deterministic geohash matching. |
+| `GOOGLE_MAPS_API_KEY` | 🟢 **OPTIONAL** | [`.env.example`](../.env.example) | **Google Cloud Console** → APIs & Services → Credentials. Enable *Maps JavaScript API*, *Geocoding API*, and *Places API*. **Note:** If left empty, Parkly automatically falls back to OpenFreeMap (zero-cost vector tiles) and deterministic geohash matching. |
 
 ---
 
@@ -126,8 +126,8 @@ Below is the definitive matrix of every credential required across the system, c
 
 | Credential / Variable | Criticality | Target File | Description |
 | :--- | :---: | :--- | :--- |
-| `VITE_API_URL` (Host) | 🔴 **BLOCKER** | [`apps/host-dashboard/.env.example`](./apps/host-dashboard/.env.example) | Public URL of API Gateway (e.g. `https://api.parkly.in/api/v1`). |
-| `VITE_API_URL` (Admin) | 🔴 **BLOCKER** | [`apps/admin-portal/.env.example`](./apps/admin-portal/.env.example) | Public URL of API Gateway (e.g. `https://api.parkly.in/api/v1`). |
+| `VITE_API_URL` (Host) | 🔴 **BLOCKER** | [`apps/host-dashboard/.env.example`](../apps/host-dashboard/.env.example) | Public URL of API Gateway (e.g. `https://api.parkly.in/api/v1`). |
+| `VITE_API_URL` (Admin) | 🔴 **BLOCKER** | [`apps/admin-portal/.env.example`](../apps/admin-portal/.env.example) | Public URL of API Gateway (e.g. `https://api.parkly.in/api/v1`). |
 | `EXPO_PUBLIC_API_URL` | 🔴 **BLOCKER** | `apps/mobile/.env` | Mobile app endpoint connecting to the Gateway. |
 
 ---

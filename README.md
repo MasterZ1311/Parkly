@@ -40,7 +40,7 @@ In metro cities like Chennai, **30% of downtown traffic** consists of cars cruis
 
 | Document | Audience / Coverage |
 | :--- | :--- |
-| 📘 [**PARKLY MASTER DOCUMENTATION**](./PARKLY_MASTER_DOCUMENTATION.md) | **Single Source of Truth (SSoT)** integrating vision, USP, system design, stack, and implementation status. |
+| 📘 [**PARKLY MASTER DOCUMENTATION**](./docs/PARKLY_MASTER_DOCUMENTATION.md) | **Single Source of Truth (SSoT)** integrating vision, USP, system design, stack, and implementation status. |
 | 🎯 [**01. Project Purpose & Ideology**](./docs/01_PROJECT_PURPOSE_AND_IDEOLOGY.md) | Urban parking crisis telemetry, the 3-Tap Rule ideology, and 3-horizon municipal growth vision. |
 | 💡 [**02. USP & Startup Validation**](./docs/02_USP_AND_STARTUP_VALIDATION.md) | Competitive moat, TAM/SAM/SOM market sizing, customer personas, and unit economics. |
 | 🏗️ [**03. System Architecture Design**](./docs/03_SYSTEM_ARCHITECTURE.md) | AWS cloud-native topology, microservice boundaries, EventBridge event bus, and dual-DB strategy. |
@@ -52,8 +52,8 @@ In metro cities like Chennai, **30% of downtown traffic** consists of cars cruis
 | 📱 [**09. Mobile App Demo Walkthrough**](./docs/09_MOBILE_APP_DEMO_WALKTHROUGH.md) | Sequential Android 14 Emulator verification gallery covering Login → Entry Gate QR Pass & AI Concierge. |
 | 🎬 [**10. Demo GIF & Launch Showcase**](./docs/10_DEMO_GIF_AND_LAUNCH_SHOWCASE.md) | Scene breakdown, keyframe stills, share copy, and animated media details. |
 | 🧪 [**11. Local Development & Testing Guide**](./docs/11_TESTING_AND_LOCAL_DEV.md) | Step-by-step Docker/Prisma setup, API gateway port map (`4000–4011`), and 360-test AI verification suite. |
-| 🔐 [**Production Credentials & Deployment**](./PRODUCTION_CREDENTIALS_AND_DEPLOYMENT_GUIDE.md) | Complete production environment keys, Razorpay/AWS setup, and deployment playbook. |
-| 🎨 [**Brand & Palette Tokens**](./BRANDING_AND_COLOR_PALETTE.md) | Exact `#0A1425` Navy, `#EF010C` Crimson, `#38BDF8` Cyan tokens & logo deployment. |
+| 🔐 [**Production Credentials & Deployment**](./docs/PRODUCTION_CREDENTIALS_AND_DEPLOYMENT_GUIDE.md) | Complete production environment keys, Razorpay/AWS setup, and deployment playbook. |
+| 🎨 [**Brand & Palette Tokens**](./docs/BRANDING_AND_COLOR_PALETTE.md) | Exact `#0A1425` Navy, `#EF010C` Crimson, `#38BDF8` Cyan tokens & logo deployment. |
 
 ---
 

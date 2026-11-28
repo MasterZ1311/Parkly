@@ -1,6 +1,6 @@
 # 🎨 Parkly Brand Identity & Color Palette Specification
 
-Derived directly from the official **Parkly Logo** (`Parkly logo.png`):
+Derived directly from the official **Parkly Logo** ([`docs/assets/parkly-logo.png`](./assets/parkly-logo.png)):
 - **Letterform & Vehicle Silhouette**: Deep Midnight Navy
 - **Location Pin & Interaction Accent**: Vivid Crimson Red
 - **Canvas & Surface Accents**: Clean Crisp White & Technical Dark Slate
