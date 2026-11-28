@@ -107,9 +107,12 @@ export default function RootLayout() {
         <Stack.Screen name="booking/payment-failed" options={{ title: 'Payment Failed', headerShown: false }} />
         <Stack.Screen name="booking/expired" options={{ title: 'Reservation Expired', headerShown: false }} />
         <Stack.Screen name="profile/vehicles" options={{ title: 'My Vehicles', headerShown: false }} />
+        <Stack.Screen name="profile/driver-kyc" options={{ title: 'Driver KYC & RC Verification', headerShown: false }} />
         <Stack.Screen name="profile/saved-places" options={{ title: 'Saved Places', headerShown: false }} />
         <Stack.Screen name="profile/notifications" options={{ title: 'Notification Preferences', headerShown: false }} />
         <Stack.Screen name="profile/payment-methods" options={{ title: 'UPI & Payment Methods', headerShown: false }} />
+        <Stack.Screen name="host/spaces" options={{ title: 'Rent Out Private Space', headerShown: false }} />
+        <Stack.Screen name="host/kyc" options={{ title: 'Host KYC & Plot Proof', headerShown: false }} />
         <Stack.Screen name="status/[type]" options={{ title: 'Service Notice', headerShown: false }} />
         <Stack.Screen name="legal" options={{ title: 'Terms & DPDPA Privacy', headerShown: false }} />
         <Stack.Screen name="support" options={{ title: 'Chennai Help Center', headerShown: false }} />

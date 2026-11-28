@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -18,13 +18,14 @@ import { colors, theme } from '../../src/constants/theme';
 import { PressScale, SkeletonBlock, triggerHaptic } from '../../src/components/Motion';
 import { useAuthStore } from '../../src/store/auth.store';
 import { useDriverStore } from '../../src/store/driver.store';
+import { getActiveHostDemoSpaces, useHostStore } from '../../src/store/host.store';
 import {
   buildServerSearchFilters,
   computeArrivalIso,
   filterSpaceResults,
   useSearchStore,
 } from '../../src/store/search.store';
-import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { DEMO_SPACES, getSpaceTypeMeta } from '../../src/data/demoFixtures';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 
@@ -33,6 +34,7 @@ const CHENNAI = { lat: 13.0827, lng: 80.2707 };
 interface ApiSpace {
   id: string;
   name: string;
+  spaceType?: string;
   coordinates?: { lat: number; lng: number };
   price?: { value: number };
   availability?: { probabilityPercent: number };
@@ -111,10 +113,13 @@ export default function MapScreen() {
       } = useSearchStore.getState();
 
       if (isDemoMode) {
-        const filteredDemo = filterSpaceResults(DEMO_SPACES, activeAmenities);
+        await useHostStore.getState().loadMySpaces().catch(() => {});
+        const demoPool = [...getActiveHostDemoSpaces(), ...DEMO_SPACES];
+        const filteredDemo = filterSpaceResults(demoPool, activeAmenities);
         const demoMapped: MapSpace[] = filteredDemo.map((s) => ({
           id: s.id,
           name: s.name,
+          spaceType: s.spaceType,
           lat: s.coordinates.lat,
           lng: s.coordinates.lng,
           available: s.availability.probabilityPercent > 50,
@@ -144,6 +149,7 @@ export default function MapScreen() {
           .map((r) => ({
             id: r.id,
             name: r.name,
+            spaceType: r.spaceType,
             lat: r.coordinates!.lat,
             lng: r.coordinates!.lng,
             available: (r.availability?.probabilityPercent ?? 0) > 50,
@@ -171,11 +177,17 @@ export default function MapScreen() {
           const filteredCache = (cached || []).filter((r) => {
             if (!r.coordinates) return false;
             if (!r.amenities) return true;
-            return filterSpaceResults([{ amenities: r.amenities }], activeAmenities).length > 0;
+            return (
+              filterSpaceResults(
+                [{ amenities: r.amenities, spaceType: r.spaceType }],
+                activeAmenities,
+              ).length > 0
+            );
           });
           const mappedCache: MapSpace[] = filteredCache.map((r) => ({
             id: r.id,
             name: r.name,
+            spaceType: r.spaceType,
             lat: r.coordinates!.lat,
             lng: r.coordinates!.lng,
             available: (r.availability?.probabilityPercent ?? 0) > 50,
@@ -211,6 +223,14 @@ export default function MapScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemoMode]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isDemoMode) {
+        loadSpaces().catch(() => {});
+      }
+    }, [isDemoMode, loadSpaces]),
+  );
 
   const handleRecenter = async () => {
     triggerHaptic('selection');
@@ -454,7 +474,12 @@ export default function MapScreen() {
                 <Text style={styles.listName} numberOfLines={1}>
                   {space.name}
                 </Text>
-                <Text style={styles.listStatus}>{space.available ? 'Open bays ready' : 'Currently full'}</Text>
+                <Text style={styles.listStatus}>
+                  {getSpaceTypeMeta(space.spaceType).isPrivate
+                    ? `${getSpaceTypeMeta(space.spaceType).shortLabel} · `
+                    : ''}
+                  {space.available ? 'Open bays ready' : 'Currently full'}
+                </Text>
               </View>
               <Text style={styles.listPrice}>₹{space.price}/hr</Text>
             </PressScale>

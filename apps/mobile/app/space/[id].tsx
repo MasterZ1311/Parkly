@@ -5,19 +5,22 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchApi, pricingApi } from '../../src/api/client';
+import { searchApi, pricingApi, type SpaceType } from '../../src/api/client';
 import { colors, theme } from '../../src/constants/theme';
 import { ENTER_FADE_UP, PressScale, SkeletonBlock } from '../../src/components/Motion';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { useAuthStore } from '../../src/store/auth.store';
+import { hostSpaceToDemoItem, useHostStore } from '../../src/store/host.store';
 import { computeArrivalIso, useSearchStore } from '../../src/store/search.store';
-import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { DEMO_SPACES, getSpaceTypeMeta } from '../../src/data/demoFixtures';
 import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 
 interface SpaceDetails {
   id: string;
   name: string;
+  spaceType?: SpaceType;
+  entryInstructions?: string;
   address: string;
   hostId?: string;
   totalCapacity: number;
@@ -74,10 +77,17 @@ export default function SpaceDetailScreen() {
     setIsCachedView(false);
 
     if (isDemoMode) {
-      const foundDemo = DEMO_SPACES.find((s) => s.id === id) || DEMO_SPACES[0];
+      await useHostStore.getState().loadMySpaces().catch(() => {});
+      const demoPool = [
+        ...useHostStore.getState().mySpaces.map(hostSpaceToDemoItem),
+        ...DEMO_SPACES,
+      ];
+      const foundDemo = demoPool.find((s) => s.id === id) || demoPool[0];
       setSpace({
         id: foundDemo.id,
         name: foundDemo.name,
+        spaceType: foundDemo.spaceType,
+        entryInstructions: foundDemo.entryInstructions,
         address: foundDemo.address,
         hostId: foundDemo.hostId,
         totalCapacity: foundDemo.totalCapacity,
@@ -110,6 +120,8 @@ export default function SpaceDetailScreen() {
         setSpace({
           id: data.id,
           name: data.name,
+          spaceType: data.spaceType,
+          entryInstructions: data.entryInstructions,
           address: data.address,
           hostId: data.hostId,
           totalCapacity: Number.isFinite(parsedCap) && parsedCap > 0 ? parsedCap : 10,
@@ -156,6 +168,8 @@ export default function SpaceDetailScreen() {
             setSpace({
               id: cachedMatch.id,
               name: cachedMatch.name,
+              spaceType: cachedMatch.spaceType,
+              entryInstructions: cachedMatch.entryInstructions,
               address: cachedMatch.address,
               hostId: cachedMatch.hostId,
               totalCapacity: Number(cachedMatch.totalCapacity || 10),
@@ -208,6 +222,8 @@ export default function SpaceDetailScreen() {
         totalAmount: String(totalCost),
         hourlyRate: String(space.price.value),
         arrivalTime: effectiveArrivalIso,
+        spaceType: space.spaceType || 'commercial',
+        entryInstructions: space.entryInstructions || '',
       },
     });
   };
@@ -308,10 +324,16 @@ export default function SpaceDetailScreen() {
 
           <View style={styles.heroBanner}>
             <View style={styles.heroIconWrap}>
-              <Ionicons name="car-sport" size={40} color={colors.navy} />
+              <Ionicons
+                name={getSpaceTypeMeta(space.spaceType).isPrivate ? 'home' : 'car-sport'}
+                size={40}
+                color={colors.navy}
+              />
             </View>
             <Text style={styles.heroTag}>
-              VERIFIED CHENNAI BAY · {space.totalCapacity} SLOTS
+              {getSpaceTypeMeta(space.spaceType).isPrivate
+                ? `${getSpaceTypeMeta(space.spaceType).label.toUpperCase()} · ${space.totalCapacity} SLOT${space.totalCapacity === 1 ? '' : 'S'}`
+                : `VERIFIED CHENNAI BAY · ${space.totalCapacity} SLOTS`}
             </Text>
           </View>
         </View>
@@ -330,6 +352,14 @@ export default function SpaceDetailScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{space.name}</Text>
               <Text style={styles.address}>{space.address}</Text>
+              {getSpaceTypeMeta(space.spaceType).isPrivate && (
+                <View style={styles.privatePill}>
+                  <Ionicons name="home-outline" size={12} color={colors.success} />
+                  <Text style={styles.privatePillText}>
+                    {getSpaceTypeMeta(space.spaceType).label}
+                  </Text>
+                </View>
+              )}
             </View>
             <View
               style={[
@@ -406,9 +436,22 @@ export default function SpaceDetailScreen() {
             </View>
           </View>
 
+          {(space.entryInstructions || getSpaceTypeMeta(space.spaceType).isPrivate) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Host Arrival & Entry Instructions</Text>
+              <View style={styles.instructionsCard}>
+                <Ionicons name="key-outline" size={18} color={colors.navy} />
+                <Text style={styles.instructionsText}>
+                  {space.entryInstructions ||
+                    'Private residential parking space. Ring the bell or call the host upon arrival and show your QR gate pass.'}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Duration Picker */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Duration</Text>
+            <Text style={styles.sectionTitle}>Parking Duration &amp; Leaving Time</Text>
             <View style={styles.durationRow}>
               {[1, 2, 3, 4, 6, 8].map((h) => {
                 const active = selectedHours === h;
@@ -429,6 +472,27 @@ export default function SpaceDetailScreen() {
                 );
               })}
             </View>
+            {(() => {
+              const arrMs = Number.isFinite(Date.parse(effectiveArrivalIso))
+                ? Date.parse(effectiveArrivalIso)
+                : Date.now();
+              const leaveMs = arrMs + selectedHours * 3600_000;
+              const fmt = (ms: number) =>
+                new Date(ms).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+              return (
+                <View style={styles.windowHintCard}>
+                  <Ionicons name="time-outline" size={16} color={colors.navy} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.windowHintMain}>
+                      Park {fmt(arrMs)} → Leave by {fmt(leaveMs)}
+                    </Text>
+                    <Text style={styles.windowHintSub}>
+                      Check-in opens 15m early · 10m exit grace · Extendable later
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
           </View>
 
           {/* Tariff Breakdown */}
@@ -535,6 +599,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
+  privatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 8,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  privatePillText: { color: colors.success, fontSize: 12, fontWeight: '800' },
+  instructionsCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  instructionsText: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+  windowHintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    backgroundColor: colors.cardElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  windowHintMain: { color: colors.navy, fontSize: 13, fontWeight: '700' },
+  windowHintSub: { color: colors.textMuted, fontSize: 11.5, marginTop: 2 },
   backBtn: {
     width: 48,
     height: 48,

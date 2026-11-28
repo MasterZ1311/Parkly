@@ -50,6 +50,8 @@ export default function MyVehiclesScreen() {
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [color, setColor] = useState('');
+  const [rcNumber, setRcNumber] = useState('');
+  const [insuranceNumber, setInsuranceNumber] = useState('');
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -89,6 +91,8 @@ export default function MyVehiclesScreen() {
         make: make.trim() || undefined,
         model: model.trim() || undefined,
         color: color.trim() || undefined,
+        rcNumber: rcNumber.trim().toUpperCase() || undefined,
+        insuranceNumber: insuranceNumber.trim().toUpperCase() || undefined,
         isDefault: vehicles.length === 0,
       });
       triggerHaptic('success');
@@ -96,6 +100,8 @@ export default function MyVehiclesScreen() {
       setMake('');
       setModel('');
       setColor('');
+      setRcNumber('');
+      setInsuranceNumber('');
       setModalVisible(false);
     } catch (err) {
       const classified = classifyApiError(err, 'Unable to save vehicle.');
@@ -175,6 +181,21 @@ export default function MyVehiclesScreen() {
         ]}
       >
         <Animated.View entering={ENTER_FADE_UP} style={{ gap: 12 }}>
+          <PressScale
+            style={styles.kycBanner}
+            contentStyle={styles.kycBannerInner}
+            onPress={() => router.push('/profile/driver-kyc')}
+          >
+            <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.kycBannerTitle}>Driver KYC &amp; RC Document Verification</Text>
+              <Text style={styles.kycBannerSub}>
+                Upload Driving Licence, Vehicle RC Book &amp; Govt ID for Parkly Team verification
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </PressScale>
+
           <Text style={styles.lead}>
             Saved registration numbers map directly to Chennai boom-barrier validation and instant checkout.
           </Text>
@@ -248,6 +269,7 @@ export default function MyVehiclesScreen() {
                       </Text>
                       <Text style={styles.vehicleClass}>
                         Class: {item.vehicleType.toUpperCase()}
+                        {item.rcNumber ? ` · RC ${item.rcNumber}` : ''}
                       </Text>
                     </View>
                   </View>
@@ -376,6 +398,31 @@ export default function MyVehiclesScreen() {
               placeholderTextColor={colors.textMuted}
             />
 
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>RC Book No. (optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={rcNumber}
+                  onChangeText={setRcNumber}
+                  placeholder="RC-TN01-2022"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="characters"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Insurance No. (optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={insuranceNumber}
+                  onChangeText={setInsuranceNumber}
+                  placeholder="POL-88421"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
+
             <PressScale
               style={[styles.primaryBtn, saving && { opacity: 0.65 }, { marginTop: 8 }]}
               contentStyle={styles.btnInner}
@@ -476,6 +523,21 @@ const styles = StyleSheet.create({
   vehicleSub: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   vehicleClass: { color: colors.textMuted, fontSize: 11.5, fontWeight: '700', marginTop: 2 },
   cardActions: { flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: colors.cardElevated, paddingTop: 10 },
+  kycBanner: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primaryBorder,
+    overflow: 'hidden',
+  },
+  kycBannerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 13,
+  },
+  kycBannerTitle: { color: colors.navy, fontSize: 13.5, fontWeight: '800' },
+  kycBannerSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 },
   smallBtnInner: { minHeight: 40, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
   primaryBtn: { backgroundColor: colors.primary, borderRadius: 12, overflow: 'hidden', width: '100%' },
   btnInner: {

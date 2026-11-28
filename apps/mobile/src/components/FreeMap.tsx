@@ -19,6 +19,7 @@ import { triggerHaptic } from './Motion';
 export interface MapSpace {
   id: string;
   name: string;
+  spaceType?: string;
   lat: number;
   lng: number;
   available: boolean;

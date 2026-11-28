@@ -10,10 +10,11 @@ import {
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
-import { searchApi } from '../../src/api/client';
+import { searchApi, type SpaceType } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
 import { useDriverStore } from '../../src/store/driver.store';
+import { getActiveHostDemoSpaces, useHostStore } from '../../src/store/host.store';
 import {
   buildServerSearchFilters,
   computeArrivalIso,
@@ -31,12 +32,14 @@ import {
 } from '../../src/components/Motion';
 import { ParklyBrandBadge } from '../../src/components/ParklyBrandBadge';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
-import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { DEMO_SPACES, getSpaceTypeMeta } from '../../src/data/demoFixtures';
 
 export interface SpaceResult {
   id: string;
   hostId?: string;
   name: string;
+  spaceType?: SpaceType;
+  entryInstructions?: string;
   address: string;
   distance: { value: number; unit: string };
   price: { value: number; currency: string; per: string };
@@ -69,12 +72,14 @@ export default function HomeScreen() {
   const loadSavedPlaces = useDriverStore((s) => s.loadSavedPlaces);
   const loadVehicles = useDriverStore((s) => s.loadVehicles);
   const loadNotifications = useDriverStore((s) => s.loadNotifications);
+  const loadMySpaces = useHostStore((s) => s.loadMySpaces);
 
   const defaultVehicle = vehicles.find((v) => v.isDefault) || vehicles[0];
 
   useEffect(() => {
     loadSavedPlaces().catch(() => {});
     loadVehicles().catch(() => {});
+    loadMySpaces().catch(() => {});
     cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH).then((cached) => {
       if (cached && cached.results && cached.results.length > 0 && !area) {
         setQuery(cached.query || '');
@@ -82,12 +87,13 @@ export default function HomeScreen() {
         setSearched(true);
       }
     });
-  }, [loadSavedPlaces, loadVehicles, area, setQuery]);
+  }, [loadSavedPlaces, loadVehicles, loadMySpaces, area, setQuery]);
 
   useFocusEffect(
     useCallback(() => {
       loadNotifications().catch(() => {});
-    }, [loadNotifications]),
+      loadMySpaces().catch(() => {});
+    }, [loadNotifications, loadMySpaces]),
   );
 
   const visibleResults = filterSpaceResults(results, amenities);
@@ -109,14 +115,23 @@ export default function HomeScreen() {
       setSearchError(null);
 
       if (isDemoMode) {
+        await loadMySpaces().catch(() => {});
         const normalized = q.toLowerCase();
-        const filtered = DEMO_SPACES.filter(
+        const demoPool = [...getActiveHostDemoSpaces(), ...DEMO_SPACES];
+        const wantsPrivate =
+          normalized.includes('private') ||
+          normalized.includes('home') ||
+          normalized.includes('house') ||
+          normalized.includes('driveway') ||
+          normalized.includes('villa');
+        const filtered = demoPool.filter(
           (s) =>
             s.name.toLowerCase().includes(normalized) ||
             s.address.toLowerCase().includes(normalized) ||
+            (wantsPrivate && s.spaceType !== 'commercial') ||
             normalized === 'chennai',
         );
-        const finalDemo = filtered.length > 0 ? filtered : DEMO_SPACES;
+        const finalDemo = filtered.length > 0 ? filtered : demoPool;
         setResults(finalDemo);
         setIsOfflineResults(false);
         await cacheSet(CACHE_KEYS.LAST_SEARCH, { query: q, results: finalDemo });
@@ -251,6 +266,14 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.amenities}>
+            {getSpaceTypeMeta(item.spaceType).isPrivate && (
+              <View style={styles.privateBadge}>
+                <Ionicons name="home-outline" size={11} color={colors.success} />
+                <Text style={styles.privateBadgeText}>
+                  {getSpaceTypeMeta(item.spaceType).shortLabel}
+                </Text>
+              </View>
+            )}
             {item.amenities.evCharging && (
               <View style={styles.badge}>
                 <Ionicons name="flash-outline" size={11} color={colors.info} />
@@ -735,7 +758,19 @@ const styles = StyleSheet.create({
   },
   distanceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
   distance: { color: colors.textMuted, fontSize: 12.5, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  amenities: { flexDirection: 'row', gap: 6 },
+  amenities: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  privateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  privateBadgeText: { color: colors.success, fontSize: 11, fontWeight: '800' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
