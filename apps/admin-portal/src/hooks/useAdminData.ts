@@ -35,17 +35,73 @@ export interface AdminBooking {
 export interface PendingVerification {
   id: string;
   name: string;
+  spaceType?: string;
   address: string;
   totalCapacity: number;
   hourlyRate: number;
   status: string;
+  photoUrls?: string[];
+  ownershipProofUrl?: string | null;
   host?: {
     id: string;
+    panNumber?: string | null;
+    govIdType?: string | null;
+    govIdNumberMasked?: string | null;
+    ownershipProofType?: string | null;
+    verificationStatus?: string;
     user?: {
       name: string | null;
       phone: string;
+      email?: string | null;
     };
   };
+}
+
+export interface PendingDriverKyc {
+  id: string;
+  userId: string;
+  fullName: string;
+  drivingLicenseNumber: string;
+  drivingLicenseExpiry?: string | null;
+  drivingLicenseFrontUrl: string;
+  govIdType: string;
+  govIdNumberMasked: string;
+  govIdDocumentUrl: string;
+  vehiclePlate: string;
+  rcNumber: string;
+  rcDocumentUrl: string;
+  status: string;
+  submittedAt: string;
+  user?: {
+    id: string;
+    name: string | null;
+    phone: string;
+    email?: string | null;
+  };
+}
+
+export interface PendingHostKyc {
+  id: string;
+  userId: string;
+  kycFullName?: string | null;
+  kycPhone?: string | null;
+  businessName?: string | null;
+  panNumber?: string | null;
+  govIdType?: string | null;
+  govIdNumberMasked?: string | null;
+  govIdDocumentUrl?: string | null;
+  ownershipProofType?: string | null;
+  ownershipDocumentUrl?: string | null;
+  plotPhotoUrls?: string[];
+  verificationStatus: string;
+  submittedAt?: string | null;
+  user?: {
+    id: string;
+    name: string | null;
+    phone: string;
+    email?: string | null;
+  };
+  spaces?: Array<{ id: string; name: string; status: string; photoUrls?: string[] }>;
 }
 
 export interface AdminDispute {
@@ -179,6 +235,8 @@ export function useAllBookings(statusFilter?: string) {
 
 export function useVerifications() {
   const [verifications, setVerifications] = useState<PendingVerification[]>([]);
+  const [driverKycs, setDriverKycs] = useState<PendingDriverKyc[]>([]);
+  const [hostKycs, setHostKycs] = useState<PendingHostKyc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,9 +246,13 @@ export function useVerifications() {
     try {
       const res = await adminApi.getVerifications();
       setVerifications(Array.isArray(res.data?.data?.spaces) ? res.data.data.spaces : []);
+      setDriverKycs(Array.isArray(res.data?.data?.driverKycs) ? res.data.data.driverKycs : []);
+      setHostKycs(Array.isArray(res.data?.data?.hostKycs) ? res.data.data.hostKycs : []);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || err.message || 'Failed to load verifications');
       setVerifications([]);
+      setDriverKycs([]);
+      setHostKycs([]);
     } finally {
       setLoading(false);
     }
@@ -200,7 +262,7 @@ export function useVerifications() {
     fetchVerifications();
   }, [fetchVerifications]);
 
-  return { verifications, loading, error, refetch: fetchVerifications };
+  return { verifications, driverKycs, hostKycs, loading, error, refetch: fetchVerifications };
 }
 
 export function useDisputes() {

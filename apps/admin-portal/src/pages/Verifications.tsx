@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { adminApi } from '../utils/apiClient';
-import { useVerifications, useDisputes, PendingVerification, AdminDispute } from '../hooks/useAdminData';
+import {
+  useVerifications,
+  useDisputes,
+  PendingVerification,
+  PendingDriverKyc,
+  PendingHostKyc,
+  AdminDispute,
+} from '../hooks/useAdminData';
 import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
@@ -8,14 +15,21 @@ import { CheckCircleIcon, ScaleIcon, MapPinIcon } from '../components/Icons';
 
 export default function Verifications() {
   useDocumentTitle('Host Verifications & Dispute Mediation');
-  const { verifications, loading: verificationsLoading, error: verificationsError, refetch: refetchVerifications } = useVerifications();
+  const {
+    verifications,
+    driverKycs,
+    hostKycs,
+    loading: verificationsLoading,
+    error: verificationsError,
+    refetch: refetchVerifications,
+  } = useVerifications();
   const { disputes, loading: disputesLoading, error: disputesError, refetch: refetchDisputes } = useDisputes();
 
-  const [activeTab, setActiveTab] = useState<'verifications' | 'disputes'>('verifications');
+  const [activeTab, setActiveTab] = useState<'verifications' | 'drivers' | 'hosts' | 'disputes'>('verifications');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [mediatingId, setMediatingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
-  const [rejectTarget, setRejectTarget] = useState<PendingVerification | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<{ kind: 'space' | 'driver' | 'host'; id: string; label: string } | null>(null);
   const [rejectReason, setRejectReason] = useState('Documentation incomplete');
 
   const handleApprove = async (v: PendingVerification) => {
@@ -31,17 +45,50 @@ export default function Verifications() {
     }
   };
 
+  const handleApproveDriver = async (k: PendingDriverKyc) => {
+    setLoadingId(k.id);
+    setActionError('');
+    try {
+      await adminApi.approveDriverKyc(k.id);
+      await refetchVerifications();
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || err.message || 'Error approving driver KYC');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleApproveHost = async (h: PendingHostKyc) => {
+    setLoadingId(h.id);
+    setActionError('');
+    try {
+      await adminApi.approveHostKyc(h.id);
+      await refetchVerifications();
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || err.message || 'Error approving host KYC');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const confirmReject = async () => {
     if (!rejectTarget) return;
     setLoadingId(rejectTarget.id);
     setActionError('');
     try {
-      await adminApi.rejectVerification(rejectTarget.id, rejectReason.trim() || 'Documentation incomplete');
+      const reason = rejectReason.trim() || 'Documentation incomplete';
+      if (rejectTarget.kind === 'driver') {
+        await adminApi.rejectDriverKyc(rejectTarget.id, reason);
+      } else if (rejectTarget.kind === 'host') {
+        await adminApi.rejectHostKyc(rejectTarget.id, reason);
+      } else {
+        await adminApi.rejectVerification(rejectTarget.id, reason);
+      }
       setRejectTarget(null);
       setRejectReason('Documentation incomplete');
       await refetchVerifications();
     } catch (err: any) {
-      setActionError(err.response?.data?.error?.message || err.message || 'Error rejecting space');
+      setActionError(err.response?.data?.error?.message || err.message || 'Error rejecting verification');
     } finally {
       setLoadingId(null);
     }
@@ -76,7 +123,7 @@ export default function Verifications() {
         <div>
           <h1 className="page-title">Trust, Verifications &amp; Dispute Mediation</h1>
           <p className="page-subtitle">
-            Review host property KYC verifications and execute autonomous DisputeMediationAgent arbitration.
+            Review host property KYC, plot pictures, Driver Licence/RC uploads, and DisputeMediationAgent arbitration.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -86,7 +133,21 @@ export default function Verifications() {
             onClick={() => setActiveTab('verifications')}
           >
             <CheckCircleIcon size={15} />
-            Space Verifications ({verifications.length})
+            Spaces &amp; Plots ({verifications.length})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'drivers' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('drivers')}
+          >
+            Driver KYC ({driverKycs.length})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'hosts' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setActiveTab('hosts')}
+          >
+            Host KYC ({hostKycs.length})
           </button>
           <button
             type="button"
@@ -132,12 +193,28 @@ export default function Verifications() {
                         ({v.host?.user?.phone || '—'})
                       </span>
                       <span>
+                        Type: <strong style={{ color: 'var(--text-primary)' }}>{v.spaceType || 'commercial'}</strong>
+                      </span>
+                      <span>
                         Capacity: <strong className="mono-num">{v.totalCapacity} slots</strong>
                       </span>
                       <span>
                         Base Rate: <strong className="mono-num">₹{v.hourlyRate}/hr</strong>
                       </span>
+                      <span>
+                        Plot Photos: <strong className="mono-num">{v.photoUrls?.length || 0} uploaded</strong>
+                      </span>
+                      {v.ownershipProofUrl && (
+                        <span>
+                          Ownership Proof: <strong style={{ color: 'var(--green)' }}>Attached</strong>
+                        </span>
+                      )}
                     </div>
+                    {v.photoUrls && v.photoUrls.length > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                        Submitted Plot Images: {v.photoUrls.join(', ')}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -145,8 +222,8 @@ export default function Verifications() {
                       type="button"
                       className="btn btn-danger-outline"
                       onClick={() => {
-                        setRejectTarget(v);
-                        setRejectReason('Documentation incomplete');
+                        setRejectTarget({ kind: 'space', id: v.id, label: v.name });
+                        setRejectReason('Documentation or plot photo incomplete');
                       }}
                       disabled={loadingId === v.id}
                     >
@@ -158,7 +235,114 @@ export default function Verifications() {
                       onClick={() => handleApprove(v)}
                       disabled={loadingId === v.id}
                     >
-                      {loadingId === v.id ? 'Approving...' : 'Approve Space'}
+                      {loadingId === v.id ? 'Approving...' : 'Verify Location'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : activeTab === 'drivers' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {verificationsLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading driver KYC queue...</div>
+          ) : driverKycs.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+              No pending Driver KYC submissions.
+            </div>
+          ) : (
+            driverKycs.map((k) => (
+              <div key={k.id} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{k.fullName}</h2>
+                      <span className="badge badge-yellow">Driver KYC Pending</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 18, fontSize: 13, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                      <span>Phone: <strong>{k.user?.phone || '—'}</strong></span>
+                      <span>DL No: <strong className="mono-num">{k.drivingLicenseNumber}</strong></span>
+                      <span>Vehicle Reg: <strong className="mono-num">{k.vehiclePlate}</strong></span>
+                      <span>RC Book: <strong className="mono-num">{k.rcNumber}</strong></span>
+                      <span>Govt ID: <strong>{k.govIdType.toUpperCase()} ({k.govIdNumberMasked})</strong></span>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                      Docs stored: DL Front ({k.drivingLicenseFrontUrl}) · RC Book ({k.rcDocumentUrl}) · ID ({k.govIdDocumentUrl})
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-danger-outline"
+                      onClick={() => {
+                        setRejectTarget({ kind: 'driver', id: k.id, label: `${k.fullName} (${k.vehiclePlate})` });
+                        setRejectReason('DL or RC scan illegible');
+                      }}
+                      disabled={loadingId === k.id}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-success"
+                      onClick={() => handleApproveDriver(k)}
+                      disabled={loadingId === k.id}
+                    >
+                      {loadingId === k.id ? 'Verifying...' : 'Approve Driver'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : activeTab === 'hosts' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {verificationsLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading host KYC queue...</div>
+          ) : hostKycs.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+              No pending Host KYC submissions.
+            </div>
+          ) : (
+            hostKycs.map((h) => (
+              <div key={h.id} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {h.kycFullName || h.user?.name || 'Host'}
+                      </h2>
+                      <span className="badge badge-yellow">Host KYC Pending</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 18, fontSize: 13, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                      <span>Phone: <strong>{h.kycPhone || h.user?.phone || '—'}</strong></span>
+                      {h.panNumber && <span>PAN: <strong className="mono-num">{h.panNumber}</strong></span>}
+                      <span>Govt ID: <strong>{(h.govIdType || 'aadhaar').toUpperCase()} ({h.govIdNumberMasked || '—'})</strong></span>
+                      <span>Ownership Proof: <strong>{h.ownershipProofType || 'property_tax'}</strong></span>
+                      <span>Plot Photos: <strong className="mono-num">{h.plotPhotoUrls?.length || 0}</strong></span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-danger-outline"
+                      onClick={() => {
+                        setRejectTarget({ kind: 'host', id: h.id, label: h.kycFullName || h.user?.name || 'Host' });
+                        setRejectReason('Property ownership proof incomplete');
+                      }}
+                      disabled={loadingId === h.id}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-success"
+                      onClick={() => handleApproveHost(h)}
+                      disabled={loadingId === h.id}
+                    >
+                      {loadingId === h.id ? 'Verifying...' : 'Approve Host'}
                     </button>
                   </div>
                 </div>
@@ -242,7 +426,7 @@ export default function Verifications() {
         onClose={() => setRejectTarget(null)}
         titleId="reject-modal-title"
         maxWidth={440}
-        title="Reject Space Verification"
+        title="Reject Verification"
         footer={
           rejectTarget && (
             <>
@@ -264,7 +448,7 @@ export default function Verifications() {
         {rejectTarget && (
           <>
             <p style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>
-              Provide a review note for rejecting <strong>{rejectTarget.name}</strong>.
+              Provide a review note for rejecting <strong>{rejectTarget.label}</strong>.
             </p>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" htmlFor="reject-reason">Rejection Reason</label>

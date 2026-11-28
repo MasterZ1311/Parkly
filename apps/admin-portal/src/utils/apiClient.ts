@@ -134,12 +134,20 @@ export const adminApi = {
   getBookings: (params?: { page?: number; pageSize?: number; status?: string; search?: string }) =>
     apiClient.get('/admin/bookings', { params }),
 
-  // Verifications
+  // Verifications (Spaces & Plot Locations, Driver KYC, Host KYC)
   getVerifications: () => apiClient.get('/admin/verifications'),
-  approveVerification: (spaceId: string) =>
-    apiClient.post(`/admin/verifications/${spaceId}/approve`),
+  approveVerification: (spaceId: string, notes?: string) =>
+    apiClient.post(`/admin/verifications/${spaceId}/approve`, { notes }),
   rejectVerification: (spaceId: string, reason?: string) =>
     apiClient.post(`/admin/verifications/${spaceId}/reject`, { reason }),
+  approveDriverKyc: (kycId: string, notes?: string) =>
+    apiClient.post(`/admin/verifications/drivers/${kycId}/approve`, { notes }),
+  rejectDriverKyc: (kycId: string, reason?: string) =>
+    apiClient.post(`/admin/verifications/drivers/${kycId}/reject`, { reason }),
+  approveHostKyc: (hostId: string, notes?: string) =>
+    apiClient.post(`/admin/verifications/hosts/${hostId}/approve`, { notes }),
+  rejectHostKyc: (hostId: string, reason?: string) =>
+    apiClient.post(`/admin/verifications/hosts/${hostId}/reject`, { reason }),
 
   // Autonomous Dispute Mediation (DisputeMediationAgent)
   getDisputes: (status?: string) => apiClient.get('/admin/disputes', { params: { status } }),

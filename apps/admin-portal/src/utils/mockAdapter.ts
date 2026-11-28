@@ -45,11 +45,55 @@ interface AdminState {
   verifications: Array<{
     id: string;
     name: string;
+    spaceType?: string;
     address: string;
     totalCapacity: number;
     hourlyRate: number;
     status: string;
-    host: { id: string; user: { name: string | null; phone: string } };
+    photoUrls?: string[];
+    ownershipProofUrl?: string;
+    host: {
+      id: string;
+      panNumber?: string;
+      govIdType?: string;
+      govIdNumberMasked?: string;
+      ownershipProofType?: string;
+      verificationStatus?: string;
+      user: { name: string | null; phone: string };
+    };
+  }>;
+  driverKycs?: Array<{
+    id: string;
+    userId: string;
+    fullName: string;
+    drivingLicenseNumber: string;
+    drivingLicenseExpiry?: string;
+    drivingLicenseFrontUrl: string;
+    govIdType: string;
+    govIdNumberMasked: string;
+    govIdDocumentUrl: string;
+    vehiclePlate: string;
+    rcNumber: string;
+    rcDocumentUrl: string;
+    status: string;
+    submittedAt: string;
+    user: { id: string; name: string | null; phone: string };
+  }>;
+  hostKycs?: Array<{
+    id: string;
+    userId: string;
+    kycFullName: string;
+    kycPhone: string;
+    panNumber?: string;
+    govIdType: string;
+    govIdNumberMasked: string;
+    govIdDocumentUrl: string;
+    ownershipProofType: string;
+    ownershipDocumentUrl: string;
+    plotPhotoUrls: string[];
+    verificationStatus: string;
+    submittedAt: string;
+    user: { id: string; name: string | null; phone: string };
   }>;
   disputes: Array<{
     id: string;
@@ -201,30 +245,88 @@ function createInitialAdminState(): AdminState {
     verifications: [
       {
         id: 'sp-omr-004',
-        name: 'OMR Tidel EV Superhub',
+        name: '14B Thirumalai Villa Porch (Private)',
+        spaceType: 'private_house',
         address: '88, Rajiv Gandhi Salai, Taramani, Chennai 600113',
-        totalCapacity: 30,
-        hourlyRate: 45,
+        totalCapacity: 2,
+        hourlyRate: 35,
         status: 'pending_verification',
-        host: { id: 'hst-001', user: { name: 'Karthik Subramanian', phone: '+919840123456' } },
+        photoUrls: [
+          'https://s3.amazonaws.com/parkly/plots/porch-gate.jpg',
+          'https://s3.amazonaws.com/parkly/plots/covered-bay.jpg',
+        ],
+        ownershipProofUrl: 'https://s3.amazonaws.com/parkly/docs/property-tax-receipt.pdf',
+        host: {
+          id: 'hst-001',
+          panNumber: 'ABCPK4219D',
+          govIdType: 'aadhaar',
+          govIdNumberMasked: 'XXXX-XXXX-8412',
+          ownershipProofType: 'property_tax',
+          verificationStatus: 'pending',
+          user: { name: 'Karthik Subramanian', phone: '+919840123456' },
+        },
       },
       {
         id: 'sp-vel-005',
         name: 'Velachery Phoenix Bypass Bays',
+        spaceType: 'commercial',
         address: '142, Velachery Main Road, Chennai 600042',
         totalCapacity: 22,
         hourlyRate: 50,
         status: 'pending_verification',
+        photoUrls: ['https://s3.amazonaws.com/parkly/plots/velachery-entrance.jpg'],
         host: { id: 'hst-002', user: { name: 'Lakshmi Narayanan', phone: '+919840778899' } },
       },
       {
         id: 'sp-myl-006',
         name: 'Mylapore Luz Corner Lot',
+        spaceType: 'gated_compound',
         address: '19, Luz Church Road, Mylapore, Chennai 600004',
         totalCapacity: 14,
         hourlyRate: 40,
         status: 'pending_verification',
+        photoUrls: ['https://s3.amazonaws.com/parkly/plots/mylapore-compound.jpg'],
         host: { id: 'hst-003', user: { name: 'Aravindhan Raj', phone: '+919840889900' } },
+      },
+    ],
+    driverKycs: [
+      {
+        id: 'dkyc-001',
+        userId: 'usr-drv-001',
+        fullName: 'Vikram Nair',
+        drivingLicenseNumber: 'TN0120180041923',
+        drivingLicenseExpiry: '2038-06-15',
+        drivingLicenseFrontUrl: 'https://s3.amazonaws.com/parkly/kyc/dl-vikram.jpg',
+        govIdType: 'aadhaar',
+        govIdNumberMasked: 'XXXX-XXXX-4910',
+        govIdDocumentUrl: 'https://s3.amazonaws.com/parkly/kyc/aadhaar-vikram.jpg',
+        vehiclePlate: 'TN01AB1234',
+        rcNumber: 'RC-TN01-2021-88412',
+        rcDocumentUrl: 'https://s3.amazonaws.com/parkly/kyc/rc-tn01ab1234.jpg',
+        status: 'pending',
+        submittedAt: new Date(now - 2 * h).toISOString(),
+        user: { id: 'usr-drv-001', name: 'Vikram Nair', phone: '+919840012345' },
+      },
+    ],
+    hostKycs: [
+      {
+        id: 'hst-001',
+        userId: 'usr-host-001',
+        kycFullName: 'Karthik Subramanian',
+        kycPhone: '+919840123456',
+        panNumber: 'ABCPK4219D',
+        govIdType: 'aadhaar',
+        govIdNumberMasked: 'XXXX-XXXX-8412',
+        govIdDocumentUrl: 'https://s3.amazonaws.com/parkly/kyc/host-aadhaar-1.jpg',
+        ownershipProofType: 'property_tax',
+        ownershipDocumentUrl: 'https://s3.amazonaws.com/parkly/docs/property-tax-receipt.pdf',
+        plotPhotoUrls: [
+          'https://s3.amazonaws.com/parkly/plots/porch-gate.jpg',
+          'https://s3.amazonaws.com/parkly/plots/covered-bay.jpg',
+        ],
+        verificationStatus: 'pending',
+        submittedAt: new Date(now - 3 * h).toISOString(),
+        user: { id: 'usr-host-001', name: 'Karthik Subramanian', phone: '+919840123456' },
       },
     ],
     disputes: [
@@ -579,7 +681,44 @@ export async function adminMockAdapter(config: InternalAxiosRequestConfig): Prom
 
   // Verifications
   if (method === 'GET' && path === '/admin/verifications') {
-    return okResponse(config, { spaces: state.verifications });
+    const initial = createInitialAdminState();
+    return okResponse(config, {
+      spaces: state.verifications,
+      driverKycs: state.driverKycs ?? initial.driverKycs,
+      hostKycs: state.hostKycs ?? initial.hostKycs,
+    });
+  }
+
+  const driverKycApproveMatch = path.match(/^\/admin\/verifications\/drivers\/([^/]+)\/approve$/);
+  if (method === 'POST' && driverKycApproveMatch) {
+    state.driverKycs = (state.driverKycs || []).filter((k) => k.id !== driverKycApproveMatch[1]);
+    appendAudit(state, 'DRIVER_KYC_APPROVED', driverKycApproveMatch[1]);
+    saveState(state);
+    return okResponse(config, { approved: true, kycId: driverKycApproveMatch[1] });
+  }
+
+  const driverKycRejectMatch = path.match(/^\/admin\/verifications\/drivers\/([^/]+)\/reject$/);
+  if (method === 'POST' && driverKycRejectMatch) {
+    state.driverKycs = (state.driverKycs || []).filter((k) => k.id !== driverKycRejectMatch[1]);
+    appendAudit(state, 'DRIVER_KYC_REJECTED', `${driverKycRejectMatch[1]} (${body.reason || 'Unclear scan'})`);
+    saveState(state);
+    return okResponse(config, { rejected: true, kycId: driverKycRejectMatch[1] });
+  }
+
+  const hostKycApproveMatch = path.match(/^\/admin\/verifications\/hosts\/([^/]+)\/approve$/);
+  if (method === 'POST' && hostKycApproveMatch) {
+    state.hostKycs = (state.hostKycs || []).filter((h) => h.id !== hostKycApproveMatch[1]);
+    appendAudit(state, 'HOST_KYC_APPROVED', hostKycApproveMatch[1]);
+    saveState(state);
+    return okResponse(config, { approved: true, hostId: hostKycApproveMatch[1] });
+  }
+
+  const hostKycRejectMatch = path.match(/^\/admin\/verifications\/hosts\/([^/]+)\/reject$/);
+  if (method === 'POST' && hostKycRejectMatch) {
+    state.hostKycs = (state.hostKycs || []).filter((h) => h.id !== hostKycRejectMatch[1]);
+    appendAudit(state, 'HOST_KYC_REJECTED', `${hostKycRejectMatch[1]} (${body.reason || 'Proof incomplete'})`);
+    saveState(state);
+    return okResponse(config, { rejected: true, hostId: hostKycRejectMatch[1] });
   }
 
   const verifyApproveMatch = path.match(/^\/admin\/verifications\/([^/]+)\/approve$/);
