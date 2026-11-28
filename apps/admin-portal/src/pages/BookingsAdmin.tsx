@@ -6,12 +6,12 @@ import { useDocumentTitle } from '../utils/useDocumentTitle';
 import { CarIcon, CheckCircleIcon, AlertTriangleIcon, CurrencyIcon } from '../components/Icons';
 
 const statusColors: Record<string, string> = {
+  created: 'yellow',
   active: 'blue',
   confirmed: 'green',
   completed: 'green',
   cancelled: 'red',
   refunded: 'yellow',
-  disputed: 'red',
 };
 
 export default function BookingsAdmin() {
@@ -20,22 +20,21 @@ export default function BookingsAdmin() {
   const [statusFilter, setStatusFilter] = useState('All Statuses');
   const [selected, setSelected] = useState<AdminBooking | null>(null);
 
-  const { bookings, loading } = useAllBookings(
-    statusFilter === 'All Statuses' ? undefined : statusFilter.toLowerCase()
+  const { bookings, loading, error } = useAllBookings(
+    statusFilter === 'All Statuses' ? undefined : statusFilter.toLowerCase(),
   );
 
   const filteredBookings = bookings.filter((b: AdminBooking) => {
     const term = search.toLowerCase();
-    return (
-      b.id.toLowerCase().includes(term) ||
-      b.driverId.toLowerCase().includes(term) ||
-      b.spaceId.toLowerCase().includes(term)
-    );
+    const driverLabel = `${b.user?.name || ''} ${b.user?.phone || ''} ${b.userId || b.driverId || ''}`.toLowerCase();
+    const spaceLabel = `${b.space?.name || ''} ${b.spaceId}`.toLowerCase();
+    const plate = (b.vehicle?.licensePlate || '').toLowerCase();
+    return b.id.toLowerCase().includes(term) || driverLabel.includes(term) || spaceLabel.includes(term) || plate.includes(term);
   });
 
   const activeCount = bookings.filter((b) => b.status === 'active' || b.status === 'confirmed').length;
   const completedCount = bookings.filter((b) => b.status === 'completed').length;
-  const disputedCount = bookings.filter((b) => b.status === 'disputed').length;
+  const cancelledRefundedCount = bookings.filter((b) => b.status === 'cancelled' || b.status === 'refunded').length;
 
   return (
     <div>
@@ -43,43 +42,50 @@ export default function BookingsAdmin() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Global Booking Management</h1>
-          <p className="page-subtitle">Platform-wide parking reservations, tariffs, and dispute audit status.</p>
+          <p className="page-subtitle">Platform-wide parking reservations, tariffs, and lifecycle status.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
             className="form-input"
-            placeholder="Search booking, driver, or space ID..."
+            placeholder="Search booking, driver, plate, space..."
             aria-label="Search bookings"
-            style={{ width: 220 }}
+            style={{ width: 240 }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select
             className="form-select"
             aria-label="Filter by booking status"
-            style={{ width: 150 }}
+            style={{ width: 155 }}
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option>All Statuses</option>
-            <option>Active</option>
+            <option>Created</option>
             <option>Confirmed</option>
+            <option>Active</option>
             <option>Completed</option>
             <option>Cancelled</option>
-            <option>Disputed</option>
+            <option>Refunded</option>
           </select>
         </div>
       </div>
 
+      {error && (
+        <div className="status-banner status-banner--error" style={{ marginBottom: 16 }}>
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="grid-4" style={{ marginBottom: 20 }}>
         {[
-          { Icon: CarIcon, label: 'Active Sessions', value: String(activeCount), color: 'var(--blue)' },
+          { Icon: CarIcon, label: 'Active & Confirmed', value: String(activeCount), color: 'var(--blue)' },
           { Icon: CheckCircleIcon, label: 'Completed', value: String(completedCount), color: 'var(--green)' },
-          { Icon: AlertTriangleIcon, label: 'Disputed', value: String(disputedCount), color: 'var(--red)' },
+          { Icon: AlertTriangleIcon, label: 'Cancelled / Refunded', value: String(cancelledRefundedCount), color: 'var(--red)' },
           {
             Icon: CurrencyIcon,
             label: 'Total Volume',
-            value: `₹${bookings.reduce((sum, b) => sum + b.totalAmount, 0)}`,
+            value: `₹${bookings.reduce((sum, b) => sum + Number(b.totalAmount || 0), 0).toLocaleString('en-IN')}`,
             color: 'var(--text-primary)',
           },
         ].map(({ Icon, label, value, color }) => (
@@ -104,8 +110,8 @@ export default function BookingsAdmin() {
               <thead>
                 <tr>
                   <th>Booking ID</th>
-                  <th>Driver ID</th>
-                  <th>Space ID</th>
+                  <th>Driver &amp; Vehicle</th>
+                  <th>Parking Space</th>
                   <th>Start Time</th>
                   <th>End Time</th>
                   <th>Amount</th>
@@ -118,45 +124,49 @@ export default function BookingsAdmin() {
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
                       No bookings match the current search or status filter.{' '}
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        style={{ marginLeft: 8 }}
-                        onClick={() => {
-                          setSearch('');
-                          setStatusFilter('All Statuses');
-                        }}
-                      >
-                        Reset Filters
-                      </button>
+                      {(search || statusFilter !== 'All Statuses') && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => {
+                            setSearch('');
+                            setStatusFilter('All Statuses');
+                          }}
+                        >
+                          Clear Filters
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )}
                 {filteredBookings.map((b) => (
                   <tr key={b.id}>
-                    <td className="mono-num">
-                      <button
-                        type="button"
-                        onClick={() => setSelected(b)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          padding: 0,
-                          color: 'var(--accent-cta)',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        #{b.id.slice(0, 10)}
-                      </button>
+                    <td className="mono-num" style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                      #{b.id.slice(0, 10)}
                     </td>
-                    <td className="mono-num" style={{ color: 'var(--text-primary)' }}>{b.driverId}</td>
-                    <td className="mono-num">{b.spaceId}</td>
-                    <td className="mono-num" style={{ fontSize: 12 }}>{new Date(b.startTime).toLocaleString()}</td>
-                    <td className="mono-num" style={{ fontSize: 12 }}>{new Date(b.endTime).toLocaleString()}</td>
-                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>₹{b.totalAmount}</td>
                     <td>
-                      <span className={`badge badge-${statusColors[b.status] || 'blue'}`}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {b.user?.name || b.user?.phone || (b.userId || b.driverId || 'Driver').slice(0, 10)}
+                      </div>
+                      {b.vehicle?.licensePlate && (
+                        <div className="mono-num" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                          {b.vehicle.licensePlate}
+                        </div>
+                      )}
+                    </td>
+                    <td>{b.space?.name || b.spaceId.slice(0, 12)}</td>
+                    <td className="mono-num" style={{ fontSize: 12 }}>
+                      {new Date(b.startTime).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+                    <td className="mono-num" style={{ fontSize: 12 }}>
+                      {new Date(b.endTime).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      ₹{Number(b.totalAmount || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${statusColors[b.status] || 'neutral'}`}>
                         {b.status.toUpperCase()}
                       </span>
                     </td>
@@ -176,15 +186,8 @@ export default function BookingsAdmin() {
       <Modal
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
-        titleId="admin-booking-modal-title"
-        maxWidth={460}
-        title={
-          selected ? (
-            <>
-              Booking <span className="mono-num">#{selected.id.slice(0, 12)}</span>
-            </>
-          ) : null
-        }
+        titleId="booking-detail-title"
+        title={selected ? `Booking #${selected.id.slice(0, 12)}` : 'Booking Details'}
         footer={
           <button type="button" className="btn btn-primary" onClick={() => setSelected(null)}>
             Close
@@ -192,49 +195,31 @@ export default function BookingsAdmin() {
         }
       >
         {selected && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <div className="stat-label">Space ID</div>
-                <div className="mono-num" style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
-                  {selected.spaceId}
-                </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              ['Driver', selected.user?.name || selected.user?.phone || selected.userId || selected.driverId || '—'],
+              ['Vehicle Plate', selected.vehicle?.licensePlate || '—'],
+              ['Facility', selected.space?.name || selected.spaceId],
+              ['Type', selected.type.toUpperCase()],
+              ['Total Amount', `₹${Number(selected.totalAmount || 0).toLocaleString('en-IN')}`],
+              ['Status', selected.status.toUpperCase()],
+              ['Window', `${new Date(selected.startTime).toLocaleString()} → ${new Date(selected.endTime).toLocaleString()}`],
+            ].map(([k, v]) => (
+              <div
+                key={k}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '8px 0',
+                  borderBottom: '1px solid var(--border)',
+                  fontSize: 13.5,
+                }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+                <strong className="mono-num" style={{ color: 'var(--text-primary)', textAlign: 'right' }}>{v}</strong>
               </div>
-              <div>
-                <div className="stat-label">Driver ID</div>
-                <div className="mono-num" style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 3 }}>
-                  {selected.driverId}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <div className="stat-label">Start Time</div>
-                <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 3 }}>
-                  {new Date(selected.startTime).toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="stat-label">End Time</div>
-                <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 3 }}>
-                  {new Date(selected.endTime).toLocaleString()}
-                </div>
-              </div>
-            </div>
-            <div
-              style={{
-                borderTop: '1px solid var(--border)',
-                paddingTop: 12,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Tariff Paid</span>
-              <span className="mono-num" style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
-                ₹{selected.totalAmount}
-              </span>
-            </div>
+            ))}
           </div>
         )}
       </Modal>

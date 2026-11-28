@@ -1,46 +1,56 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { commonApi } from '../utils/api';
 import { useAuthStore } from '../utils/authStore';
+import { isDemoModeEnabled, setDemoModeEnabled } from '../utils/apiClient';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
 import { ParklyLogoMark, PhoneIcon, CheckCircleIcon } from '../components/Icons';
 
 export default function Login() {
   useDocumentTitle('Host Sign In');
   const navigate = useNavigate();
-  const { login, setUser, setToken, isLoading, error, clearError } = useAuthStore();
+  const { requestOtp, login, isLoading, error, clearError } = useAuthStore();
 
   const [phone, setPhone] = useState('9876543210');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [localError, setLocalError] = useState('');
+  const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
 
   const formatPhone = (raw: string) => {
     const digits = raw.replace(/\D/g, '').slice(-10);
-    return `+91${digits}`;
+    return digits.length === 10 ? `+91${digits}` : raw.trim();
+  };
+
+  const handleToggleDemo = (next: boolean) => {
+    setDemoModeEnabled(next);
+    setDemoMode(next);
+    clearError();
+    setLocalError('');
+    setStatusMsg('');
   };
 
   const handleRequestOtp = async (e: FormEvent) => {
     e.preventDefault();
     clearError();
     setLocalError('');
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
+    const formatted = formatPhone(phone);
+    if (!/^\+91[6-9]\d{9}$/.test(formatted)) {
       setLocalError('Enter a valid 10-digit Indian mobile number.');
       return;
     }
 
     try {
-      const res = await commonApi.loginOtp(formatPhone(digits));
-      const devOtp = res.data?.data?.devOtp || res.data?.devOtp;
+      const { devOtp } = await requestOtp(formatted);
       setOtpSent(true);
       setStatusMsg(devOtp ? `OTP dispatched (dev code: ${devOtp}).` : '6-digit verification code sent via SMS.');
       if (devOtp) setOtp(String(devOtp));
-    } catch {
-      setOtpSent(true);
-      setOtp('123456');
-      setStatusMsg('Gateway offline — using sandbox host verification code 123456.');
+    } catch (err: any) {
+      setLocalError(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          'Unable to reach Parkly Auth Gateway. Check connectivity or enable Demo Mode below.',
+      );
     }
   };
 
@@ -49,29 +59,31 @@ export default function Login() {
     clearError();
     setLocalError('');
     const trimmed = otp.trim();
-    if (trimmed.length !== 6) {
+    if (!/^\d{6}$/.test(trimmed)) {
       setLocalError('Enter the 6-digit OTP code.');
       return;
     }
 
-    const formatted = formatPhone(phone);
     try {
-      await login(formatted, trimmed);
-      navigate('/');
-    } catch {
-      const demoHost = {
-        id: '00000000-0000-4000-8000-000000000101',
-        phone: formatted,
-        role: 'host' as const,
-        name: 'Ravi Kumar',
-        email: 'ravi@example.com',
-        verified: true,
-      };
-      localStorage.setItem('authToken', 'host-sandbox-token');
-      localStorage.setItem('user', JSON.stringify(demoHost));
-      setToken('host-sandbox-token');
-      setUser(demoHost);
-      navigate('/');
+      await login(formatPhone(phone), trimmed);
+      navigate('/', { replace: true });
+    } catch (err: any) {
+      setLocalError(
+        err.response?.data?.error?.message ||
+          err.response?.data?.message ||
+          err.message ||
+          'Invalid OTP or insufficient host permissions.',
+      );
+    }
+  };
+
+  const handleEnterDemoPortal = async () => {
+    handleToggleDemo(true);
+    try {
+      await login('+919876543210', '123456');
+      navigate('/', { replace: true });
+    } catch (err: any) {
+      setLocalError(err.message || 'Unable to launch demo host portal.');
     }
   };
 
@@ -119,11 +131,12 @@ export default function Login() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="9876543210"
+                autoFocus
               />
             </div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={isLoading}>
               <PhoneIcon size={16} />
-              Send Verification OTP
+              {isLoading ? 'Sending OTP...' : 'Send Verification OTP'}
             </button>
           </form>
         ) : (
@@ -139,10 +152,19 @@ export default function Login() {
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
                 placeholder="123456"
+                autoFocus
               />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="btn btn-outline" onClick={() => { setOtpSent(false); setStatusMsg(''); }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => {
+                  setOtpSent(false);
+                  setStatusMsg('');
+                  setOtp('');
+                }}
+              >
                 Change Number
               </button>
               <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isLoading}>
@@ -152,12 +174,44 @@ export default function Login() {
           </form>
         )}
 
-        <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, fontSize: 12.5 }}>
+        {/* Opt-in Demo Mode Switch */}
+        <div style={{ marginTop: 20, padding: 14, borderRadius: 10, background: 'var(--surface-light)', border: '1px solid var(--border)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                Demo Mode (Offline Sample Dataset)
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                Off by default. Enable to preview host bookings, revenue, and AI KYC locally.
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              aria-label="Enable Demo Mode"
+              checked={demoMode}
+              onChange={(e) => handleToggleDemo(e.target.checked)}
+              style={{ width: 18, height: 18 }}
+            />
+          </label>
+          {demoMode && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              style={{ width: '100%', marginTop: 10 }}
+              onClick={handleEnterDemoPortal}
+              disabled={isLoading}
+            >
+              Enter Demo Host Portal
+            </button>
+          )}
+        </div>
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, fontSize: 12.5 }}>
           <Link to="/verification-status" style={{ color: 'var(--text-secondary)', fontWeight: 600, textDecoration: 'none' }}>
             KYC &amp; Onboarding Status
           </Link>
-          <Link to="/" style={{ color: 'var(--accent-cta)', fontWeight: 700, textDecoration: 'none' }}>
-            Return to Dashboard
+          <Link to="/offline" style={{ color: 'var(--accent-cta)', fontWeight: 700, textDecoration: 'none' }}>
+            Gateway Diagnostics
           </Link>
         </div>
       </div>

@@ -73,6 +73,11 @@ export interface AppConfig {
   apnsTeamId?: string;
   apnsBundleId?: string;
 
+  // Security / Internal
+  internalServiceKey?: string;
+  returnDevOtp: boolean;
+  allowMockPayments: boolean;
+
   // Bedrock
   bedrockRegion: string;
   bedrockModelId: string;
@@ -82,6 +87,15 @@ function requireEnv(key: string): string {
   const val = process.env[key];
   if (!val) throw new Error(`Missing required environment variable: ${key}`);
   return val;
+}
+
+function requireJwtSecret(key: string): string {
+  const secret = requireEnv(key);
+  const nodeEnv = process.env['NODE_ENV'] || 'development';
+  if (nodeEnv === 'production' && (secret.length < 32 || secret.includes('change-me'))) {
+    throw new Error('Production JWT secrets must be at least 32 characters and rotated from defaults');
+  }
+  return secret;
 }
 
 function optionalEnv(key: string): string | undefined {
@@ -124,10 +138,10 @@ export function getConfig(): AppConfig {
 
     // JWT (evaluated lazily on property read so non-JWT callers do not crash when omitted)
     get jwtAccessSecret(): string {
-      return requireEnv('JWT_ACCESS_SECRET');
+      return requireJwtSecret('JWT_ACCESS_SECRET');
     },
     get jwtRefreshSecret(): string {
-      return requireEnv('JWT_REFRESH_SECRET');
+      return requireJwtSecret('JWT_REFRESH_SECRET');
     },
     jwtAccessTtl: intEnv('JWT_ACCESS_TTL', 900),
     jwtRefreshTtl: intEnv('JWT_REFRESH_TTL', 2592000),
@@ -180,6 +194,13 @@ export function getConfig(): AppConfig {
     apnsKeyId: optionalEnv('APNS_KEY_ID'),
     apnsTeamId: optionalEnv('APNS_TEAM_ID'),
     apnsBundleId: optionalEnv('APNS_BUNDLE_ID'),
+
+    // Security / Internal
+    internalServiceKey: optionalEnv('INTERNAL_SERVICE_KEY'),
+    returnDevOtp:
+      (process.env['NODE_ENV'] || 'development') !== 'production' &&
+      process.env['RETURN_DEV_OTP'] !== 'false',
+    allowMockPayments: process.env['ALLOW_MOCK_PAYMENTS'] === 'true',
 
     // Bedrock
     bedrockRegion: process.env['BEDROCK_REGION'] || 'us-east-1',

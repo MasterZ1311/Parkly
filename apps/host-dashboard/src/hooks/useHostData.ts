@@ -1,9 +1,9 @@
 // ============================================================
-// Host Dashboard — Data Hooks
+// Host Dashboard — Live Data Hooks
 // ============================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import { hostApi } from '../utils/apiClient';
+import { isDemoModeEnabled, hostApi } from '../utils/apiClient';
 
 export interface HostListing {
   id: string;
@@ -11,6 +11,9 @@ export interface HostListing {
   address: string;
   city: string;
   state: string;
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
   totalCapacity: number;
   hourlyRate: number;
   status: string;
@@ -28,11 +31,31 @@ export interface HostBooking {
   spaceId: string;
   spaceName?: string;
   driverName?: string;
+  driverPhone?: string;
   startTime: string;
   endTime: string;
   totalAmount: number;
   status: string;
   vehiclePlate?: string;
+}
+
+export interface HostPayout {
+  id: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+  processedAt?: string | null;
+}
+
+export interface HostRevenueStats {
+  totalEarnings: number;
+  totalPayouts: number;
+  availableBalance: number;
+  grossRevenue: number;
+  platformFees: number;
+  netRevenue: number;
+  monthlyBreakdown: Array<{ month: string; gross: number; fees: number; net: number; bookings: number }>;
+  recentPayouts: HostPayout[];
 }
 
 export function useListings() {
@@ -46,27 +69,46 @@ export function useListings() {
     try {
       const response = await hostApi.getListings();
       const data = response.data?.data;
-      if (Array.isArray(data) && data.length > 0) {
-        setListings(
-          data.map((s: any) => ({
-            id: s.id,
-            name: s.name,
-            address: s.address,
-            city: s.city,
-            state: s.state,
-            totalCapacity: s.totalCapacity,
-            hourlyRate: s.pricing?.hourlyRate || s.hourlyRate || 40,
-            status: s.status,
-            amenities: s.amenities,
-            photoUrls: s.photoUrls,
-            occupancyPercent: 65,
-          }))
+      if (Array.isArray(data)) {
+        const mapped: HostListing[] = await Promise.all(
+          data.map(async (s: any) => {
+            let occupancyPercent = 0;
+            try {
+              const occ = await hostApi.getOccupancy(s.id);
+              const occPct = occ.data?.data?.occupancyPercentage ?? occ.data?.data?.occupancyRate;
+              if (typeof occPct === 'number') {
+                occupancyPercent = occPct <= 1 ? Math.round(occPct * 100) : Math.round(occPct);
+              }
+            } catch {
+              occupancyPercent = 0;
+            }
+            return {
+              id: s.id,
+              name: s.name,
+              address: s.address,
+              city: s.city,
+              state: s.state,
+              pincode: s.pincode,
+              latitude: s.coordinates?.lat,
+              longitude: s.coordinates?.lng,
+              totalCapacity: s.totalCapacity,
+              hourlyRate: s.pricing?.hourlyRate || s.hourlyRate || 40,
+              status: s.status,
+              amenities: s.amenities,
+              photoUrls: s.photoUrls,
+              occupancyPercent,
+            };
+          }),
         );
+        setListings(mapped);
       } else {
-        // Fallback default sample listings for initial host experience
+        setListings([]);
+      }
+    } catch (err: any) {
+      if (isDemoModeEnabled()) {
         setListings([
           {
-            id: 'sp-001',
+            id: '00000000-0000-4000-8000-000000001001',
             name: 'T Nagar Parking Complex - Spot A',
             address: '23, Panagal Park Road, T Nagar, Chennai 600017',
             city: 'Chennai',
@@ -75,36 +117,13 @@ export function useListings() {
             hourlyRate: 40,
             status: 'active',
             amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
-            occupancyPercent: 72,
-          },
-          {
-            id: 'sp-002',
-            name: 'T Nagar Parking Complex - Spot B',
-            address: '23, Panagal Park Road, T Nagar, Chennai 600017',
-            city: 'Chennai',
-            state: 'Tamil Nadu',
-            totalCapacity: 5,
-            hourlyRate: 35,
-            status: 'active',
-            amenities: { evCharging: false, covered: false, securityLevel: 'basic' },
-            occupancyPercent: 40,
-          },
-          {
-            id: 'sp-003',
-            name: 'Anna Nagar Multi-Level',
-            address: '12, 6th Avenue, Anna Nagar, Chennai 600040',
-            city: 'Chennai',
-            state: 'Tamil Nadu',
-            totalCapacity: 20,
-            hourlyRate: 60,
-            status: 'pending_verification',
-            amenities: { evCharging: true, covered: true, securityLevel: 'monitored' },
-            occupancyPercent: 0,
+            occupancyPercent: 70,
           },
         ]);
+      } else {
+        setError(err.response?.data?.error?.message || err.message || 'Failed to load listings');
+        setListings([]);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load listings');
     } finally {
       setLoading(false);
     }
@@ -127,20 +146,28 @@ export function useBookings(status?: string) {
     setError(null);
     try {
       const response = await hostApi.getBookings(status);
-      const data = response.data?.data;
-      if (Array.isArray(data) && data.length > 0) {
-        setBookings(data);
+      const raw = response.data?.data?.bookings ?? response.data?.data;
+      if (Array.isArray(raw)) {
+        setBookings(
+          raw.map((b: any) => ({
+            id: b.id,
+            spaceId: b.spaceId,
+            spaceName: b.space?.name || b.spaceName || b.spaceId,
+            driverName: b.user?.name || b.driverName || 'Driver',
+            driverPhone: b.user?.phone,
+            startTime: b.startTime,
+            endTime: b.endTime,
+            totalAmount: Number(b.totalAmount || 0),
+            status: b.status,
+            vehiclePlate: b.vehicle?.licensePlate || b.vehiclePlate || '—',
+          })),
+        );
       } else {
-        // Fallback default sample bookings
-        setBookings([
-          { id: 'B001', spaceId: 'sp-001', spaceName: 'T Nagar Spot A', driverName: 'Arjun K.', startTime: new Date(Date.now() - 7200000).toISOString(), endTime: new Date(Date.now() + 3600000).toISOString(), totalAmount: 80, status: 'active', vehiclePlate: 'TN01AB1234' },
-          { id: 'B002', spaceId: 'sp-001', spaceName: 'T Nagar Spot A', driverName: 'Priya S.', startTime: new Date(Date.now() - 14400000).toISOString(), endTime: new Date(Date.now() - 7200000).toISOString(), totalAmount: 120, status: 'completed', vehiclePlate: 'TN09CD5678' },
-          { id: 'B003', spaceId: 'sp-002', spaceName: 'T Nagar Spot B', driverName: 'Rahul M.', startTime: new Date(Date.now() - 86400000).toISOString(), endTime: new Date(Date.now() - 72000000).toISOString(), totalAmount: 200, status: 'completed', vehiclePlate: 'TN07EF9012' },
-          { id: 'B004', spaceId: 'sp-001', spaceName: 'T Nagar Spot A', driverName: 'Meera D.', startTime: new Date(Date.now() - 86400000).toISOString(), endTime: new Date(Date.now() - 82800000).toISOString(), totalAmount: 60, status: 'cancelled', vehiclePlate: 'TN02GH3456' },
-        ]);
+        setBookings([]);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load bookings');
+      setError(err.response?.data?.error?.message || err.message || 'Failed to load bookings');
+      setBookings([]);
     } finally {
       setLoading(false);
     }
@@ -154,21 +181,47 @@ export function useBookings(status?: string) {
 }
 
 export function useRevenue() {
-  const [revenueStats] = useState({
-    totalEarnings: '₹1,04,800',
-    totalBookings: 416,
-    activeSpaces: 3,
-    avgOccupancy: '72%',
-    monthlyRevenue: [
-      { month: 'Jan', revenue: 12400, bookings: 48 },
-      { month: 'Feb', revenue: 15800, bookings: 62 },
-      { month: 'Mar', revenue: 18200, bookings: 74 },
-      { month: 'Apr', revenue: 16500, bookings: 65 },
-      { month: 'May', revenue: 22100, bookings: 88 },
-      { month: 'Jun', revenue: 19800, bookings: 79 },
-    ],
+  const [revenueStats, setRevenueStats] = useState<HostRevenueStats>({
+    totalEarnings: 0,
+    totalPayouts: 0,
+    availableBalance: 0,
+    grossRevenue: 0,
+    platformFees: 0,
+    netRevenue: 0,
+    monthlyBreakdown: [],
+    recentPayouts: [],
   });
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  return { revenueStats, loading };
+  const fetchRevenue = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await hostApi.getRevenue();
+      const data = response.data?.data;
+      if (data) {
+        setRevenueStats({
+          totalEarnings: Number(data.totalEarnings || 0),
+          totalPayouts: Number(data.totalPayouts || 0),
+          availableBalance: Number(data.availableBalance || 0),
+          grossRevenue: Number(data.grossRevenue || 0),
+          platformFees: Number(data.platformFees || 0),
+          netRevenue: Number(data.netRevenue || 0),
+          monthlyBreakdown: Array.isArray(data.monthlyBreakdown) ? data.monthlyBreakdown : [],
+          recentPayouts: Array.isArray(data.recentPayouts) ? data.recentPayouts : [],
+        });
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || err.message || 'Failed to load revenue telemetry');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRevenue();
+  }, [fetchRevenue]);
+
+  return { revenueStats, loading, error, refetch: fetchRevenue };
 }

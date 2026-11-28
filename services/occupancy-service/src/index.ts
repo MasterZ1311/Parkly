@@ -131,7 +131,7 @@ async function runSimulator(): Promise<void> {
         totalSlots,
         source: 'simulator',
         sensorId: `sim-${spaceId}`,
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, 30000); // every 30 seconds
 
@@ -145,13 +145,29 @@ async function runSimulator(): Promise<void> {
 
 const occupancyRouter = Router();
 
-// POST /occupancy/ingest — accepts sensor, manual, simulator events
-occupancyRouter.post('/ingest', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// POST /occupancy/ingest — accepts sensor, manual, simulator events (host/admin only)
+occupancyRouter.post('/ingest', authenticate, requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = ingestSchema.safeParse(req.body);
     if (!result.success) throw new ValidationError(result.error.errors[0]?.message || 'Invalid input');
     const occupancy = await occupancyService.ingest(result.data);
     res.status(201).json({ success: true, data: occupancy } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /occupancy/simulate — trigger simulator manually
+occupancyRouter.post('/simulate', authenticate, requireRole('admin'), (_req: Request, res: Response) => {
+  runSimulator().catch(() => { });
+  res.json({ success: true, data: { message: 'Simulator started' } } as ApiResponse);
+});
+
+// GET /occupancy/current/:spaceId — alias for host dashboard
+occupancyRouter.get('/current/:spaceId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const occupancy = await occupancyService.getCurrentOccupancy(req.params['spaceId']!);
+    res.json({ success: true, data: occupancy } as ApiResponse);
   } catch (err) {
     next(err);
   }
@@ -165,12 +181,6 @@ occupancyRouter.get('/:spaceId', authenticate, async (req: Request, res: Respons
   } catch (err) {
     next(err);
   }
-});
-
-// POST /occupancy/simulate — trigger simulator manually
-occupancyRouter.post('/simulate', requireRole('admin'), (_req: Request, res: Response) => {
-  runSimulator().catch(() => {});
-  res.json({ success: true, data: { message: 'Simulator started' } } as ApiResponse);
 });
 
 // ============================================================
@@ -199,7 +209,7 @@ if (process.env['NODE_ENV'] !== 'test') {
     logger.info({ port: PORT, service: SERVICE_NAME }, `${SERVICE_NAME} started`);
     // Auto-start simulator in dev
     if (process.env['NODE_ENV'] === 'development') {
-      runSimulator().catch(() => {});
+      runSimulator().catch(() => { });
       logger.info('Occupancy simulator started');
     }
   });

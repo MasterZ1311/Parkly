@@ -10,6 +10,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import {
   authenticate,
+  optionalAuthenticate,
   errorHandler,
   notFoundHandler,
   requestLogger,
@@ -23,8 +24,14 @@ import {
 } from '@parkly/shared';
 import {
   DynamicPricingAgent,
-  MockPricingEngineProvider,
+  IPricingEngineTool,
+  PricingCalculationParams,
+  PricingResult as AgentPricingResult,
   ExecutionContext,
+  ok,
+  err,
+  AgentError,
+  Result,
 } from '@parkly/ai-agents';
 
 const PORT = process.env['PRICING_PORT'] || 4008;
@@ -107,30 +114,76 @@ const pricingService = {
 // Routes
 // ============================================================
 
-const pricingRouter = Router();
-pricingRouter.use(authenticate);
+class LivePricingEngineProvider implements IPricingEngineTool {
+  async calculateSurge(
+    params: PricingCalculationParams,
+  ): Promise<Result<AgentPricingResult, AgentError>> {
+    const { baseHourlyRate, currentOccupancyRate, hostPricingPreferences } = params;
+    if (baseHourlyRate <= 0) {
+      return err(AgentError.validation('baseHourlyRate must be greater than 0'));
+    }
+    const allowDynamic = hostPricingPreferences?.allowDynamic ?? true;
+    const maxMultiplier = hostPricingPreferences?.maxMultiplier ?? 2.0;
 
-// GET /pricing/:spaceId?arrivalTime=ISO8601
-pricingRouter.get('/:spaceId', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const arrivalTime = req.query['arrivalTime']
-      ? new Date(req.query['arrivalTime'] as string)
-      : new Date();
+    if (!allowDynamic) {
+      return ok({
+        spaceId: params.spaceId,
+        calculatedHourlyRate: baseHourlyRate,
+        appliedMultiplier: 1.0,
+        surgeReason: 'DYNAMIC_DISABLED_BY_HOST',
+        effectiveFrom: new Date().toISOString(),
+        effectiveUntil: new Date(Date.now() + 900000).toISOString(),
+      });
+    }
 
-    const result = await pricingService.calculatePrice(req.params['spaceId']!, arrivalTime);
-    res.json({ success: true, data: result } as ApiResponse);
-  } catch (err) {
-    next(err);
+    // Factor in active DB pricing rules + live occupancy rate + time-of-day demand
+    let multiplier = getDemandMultiplier(new Date());
+    let reason = multiplier > 1.0 ? 'PEAK_TIME_DEMAND' : 'BASELINE_DEMAND';
+
+    if (currentOccupancyRate >= 0.9) {
+      multiplier = Math.max(multiplier, 1.6);
+      reason = 'PEAK_OCCUPANCY_SURGE';
+    } else if (currentOccupancyRate >= 0.75) {
+      multiplier = Math.max(multiplier, 1.25);
+      reason = 'HIGH_OCCUPANCY_SURGE';
+    }
+
+    try {
+      const rules = await prisma.pricingRule.findMany({
+        where: { isActive: true, OR: [{ spaceId: params.spaceId }, { spaceId: null }] },
+      });
+      for (const rule of rules) {
+        const ruleMult = Number(rule.multiplier);
+        if (ruleMult > multiplier) {
+          multiplier = ruleMult;
+          reason = rule.name;
+        }
+      }
+    } catch {
+      // Non-blocking if DB rules query fails in isolated tests
+    }
+
+    const clamped = Math.min(Math.max(multiplier, 1.0), maxMultiplier);
+    return ok({
+      spaceId: params.spaceId,
+      calculatedHourlyRate: Math.round(baseHourlyRate * clamped * 100) / 100,
+      appliedMultiplier: clamped,
+      surgeReason: reason,
+      effectiveFrom: new Date().toISOString(),
+      effectiveUntil: new Date(Date.now() + 900000).toISOString(),
+    });
   }
-});
+}
 
-// Autonomous Dynamic Pricing Agent
+const pricingRouter = Router();
+
+// Autonomous Dynamic Pricing Agent backed by Prisma rules & occupancy
 const dynamicPricingAgent = new DynamicPricingAgent({
-  pricingEngineTool: new MockPricingEngineProvider(),
+  pricingEngineTool: new LivePricingEngineProvider(),
 });
 
 // POST /pricing/ai-quote — Real-time AI dynamic pricing with surge evaluation
-pricingRouter.post('/ai-quote', async (req: Request, res: Response, next: NextFunction) => {
+pricingRouter.post('/ai-quote', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { spaceId, currentOccupancyRate, demandForecastTier } = req.body;
     if (!spaceId) throw new NotFoundError('spaceId is required');
@@ -173,6 +226,20 @@ pricingRouter.post('/ai-quote', async (req: Request, res: Response, next: NextFu
         currency: 'INR',
       },
     } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /pricing/:spaceId?arrivalTime=ISO8601 (public discovery)
+pricingRouter.get('/:spaceId', optionalAuthenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const arrivalTime = req.query['arrivalTime']
+      ? new Date(req.query['arrivalTime'] as string)
+      : new Date();
+
+    const result = await pricingService.calculatePrice(req.params['spaceId']!, arrivalTime);
+    res.json({ success: true, data: result } as ApiResponse);
   } catch (err) {
     next(err);
   }

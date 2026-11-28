@@ -6,6 +6,8 @@
 // POST   /auth/logout
 // GET    /auth/me
 // PATCH  /auth/me
+// GET    /auth/profile
+// PATCH  /auth/profile
 // GET    /auth/vehicles
 // POST   /auth/vehicles
 // PUT    /auth/vehicles/:id/default
@@ -17,13 +19,15 @@ import { z } from 'zod';
 import { otpService } from '../services/otpService';
 import { jwtService } from '../services/jwtService';
 import { userService } from '../services/userService';
-import { vehicleService } from '../services/vehicleService';
 import {
   authenticate,
   ValidationError,
+  ConflictError,
+  NotFoundError,
   ApiResponse,
   logger,
   normalizePhoneNumber,
+  getConfig,
 } from '@parkly/shared';
 
 export const authRouter = Router();
@@ -55,7 +59,7 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
-const updateMeSchema = z
+const updateProfileSchema = z
   .object({
     name: z.string().trim().min(1, 'Name cannot be empty').max(100, 'Name must be 100 characters or less').optional(),
     email: z
@@ -65,12 +69,19 @@ const updateMeSchema = z
         z.null(),
       ])
       .optional(),
+    bankAccount: z.string().trim().max(60).optional(),
+    ifscCode: z.string().trim().max(20).optional(),
   })
-  .refine((data) => data.name !== undefined || data.email !== undefined, {
-    message: 'Provide name or email to update',
-  });
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.email !== undefined ||
+      data.bankAccount !== undefined ||
+      data.ifscCode !== undefined,
+    { message: 'Provide name, email, or bank details to update' },
+  );
 
-const INDIAN_PLATE_REGEX = /^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$/;
+const INDIAN_PLATE_REGEX = /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$/;
 
 const createVehicleSchema = z.object({
   licensePlate: z
@@ -80,7 +91,7 @@ const createVehicleSchema = z.object({
     .refine((s) => INDIAN_PLATE_REGEX.test(s), {
       message: 'Invalid Indian license plate format (e.g. TN01AB1234)',
     }),
-  vehicleType: z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck']),
+  vehicleType: z.enum(['motorcycle', 'compact', 'sedan', 'suv', 'van', 'truck']).default('sedan'),
   make: z.string().trim().max(50).optional(),
   model: z.string().trim().max(50).optional(),
   color: z.string().trim().max(30).optional(),
@@ -106,14 +117,14 @@ authRouter.post('/otp/request', async (req: Request, res: Response, next: NextFu
 
     // Dev convenience: when not running in production, return the OTP in the
     // response so testers can sign in on web without real SMS delivery.
-    const isProd = process.env['NODE_ENV'] === 'production';
+    const returnDevOtp = getConfig().returnDevOtp;
 
     const response: ApiResponse = {
       success: true,
       data: {
         message: 'OTP sent successfully',
         phone,
-        ...(isProd ? {} : { devOtp: otp }),
+        ...(returnDevOtp ? { devOtp: otp } : {}),
       },
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     };
@@ -162,6 +173,7 @@ authRouter.post('/otp/verify', async (req: Request, res: Response, next: NextFun
           id: user.id,
           name: user.name,
           phone: user.phone,
+          email: user.email,
           role: user.role,
           isNew,
         },
@@ -205,8 +217,6 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
 
 // --- POST /auth/logout ---
 authRouter.post('/logout', authenticate, (req: Request, res: Response) => {
-  // In production: add token to a blocklist (DynamoDB or Redis)
-  // For MVP: client discards tokens
   logger.info({ userId: req.user?.sub }, 'User logged out');
   res.status(200).json({
     success: true,
@@ -215,11 +225,10 @@ authRouter.post('/logout', authenticate, (req: Request, res: Response) => {
   } as ApiResponse);
 });
 
-// --- GET /auth/me ---
-authRouter.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+const handleGetProfile = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await userService.findById(req.user!.sub);
-    if (!user) throw new ValidationError('User not found');
+    if (!user) throw new NotFoundError('User not found');
 
     res.status(200).json({
       success: true,
@@ -229,12 +238,11 @@ authRouter.get('/me', authenticate, async (req: Request, res: Response, next: Ne
   } catch (err) {
     next(err);
   }
-});
+};
 
-// --- PATCH /auth/me ---
-authRouter.patch('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+const handleUpdateProfile = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = updateMeSchema.safeParse(req.body);
+    const result = updateProfileSchema.safeParse(req.body);
     if (!result.success) {
       throw new ValidationError(
         result.error.errors[0]?.message || 'Invalid profile update input',
@@ -252,12 +260,18 @@ authRouter.patch('/me', authenticate, async (req: Request, res: Response, next: 
   } catch (err) {
     next(err);
   }
-});
+};
+
+// --- GET / PATCH /auth/me and /auth/profile ---
+authRouter.get('/me', authenticate, handleGetProfile);
+authRouter.patch('/me', authenticate, handleUpdateProfile);
+authRouter.get('/profile', authenticate, handleGetProfile);
+authRouter.patch('/profile', authenticate, handleUpdateProfile);
 
 // --- GET /auth/vehicles ---
 authRouter.get('/vehicles', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const vehicles = await vehicleService.listVehicles(req.user!.sub);
+    const vehicles = await userService.listVehicles(req.user!.sub);
     res.status(200).json({
       success: true,
       data: { vehicles },
@@ -279,13 +293,17 @@ authRouter.post('/vehicles', authenticate, async (req: Request, res: Response, n
       );
     }
 
-    const vehicle = await vehicleService.createVehicle(req.user!.sub, result.data);
+    const vehicle = await userService.upsertVehicle(req.user!.sub, result.data);
     res.status(201).json({
       success: true,
       data: { vehicle },
       meta: { requestId: req.requestId || '', timestamp: new Date().toISOString() },
     } as ApiResponse);
-  } catch (err) {
+  } catch (err: unknown) {
+    if ((err as { message?: string })?.message === 'VEHICLE_OWNED_BY_OTHER_USER') {
+      next(new ConflictError('This license plate is already registered to another account', 'licensePlate'));
+      return;
+    }
     next(err);
   }
 });
@@ -298,7 +316,7 @@ authRouter.put('/vehicles/:id/default', authenticate, async (req: Request, res: 
       throw new ValidationError('Invalid vehicle ID', 'id');
     }
 
-    const vehicle = await vehicleService.setDefaultVehicle(req.user!.sub, idCheck.data);
+    const vehicle = await userService.setDefaultVehicle(req.user!.sub, idCheck.data);
     res.status(200).json({
       success: true,
       data: { vehicle },
@@ -317,7 +335,7 @@ authRouter.delete('/vehicles/:id', authenticate, async (req: Request, res: Respo
       throw new ValidationError('Invalid vehicle ID', 'id');
     }
 
-    const deleted = await vehicleService.deleteVehicle(req.user!.sub, idCheck.data);
+    const deleted = await userService.deleteVehicle(req.user!.sub, idCheck.data);
     res.status(200).json({
       success: true,
       data: deleted,

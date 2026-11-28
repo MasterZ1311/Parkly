@@ -18,6 +18,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 
 import {
   authenticate,
+  requireInternalOrRole,
   errorHandler,
   notFoundHandler,
   requestLogger,
@@ -111,17 +112,34 @@ async function sendFcmPush(params: {
 // Notification Service Logic
 // ============================================================
 
+const VALID_CHANNELS = new Set<NotificationChannel>(['in_app', 'sms', 'push']);
+
 const notificationService = {
   async send(params: {
     userId: string;
-    type: NotificationType;
+    type?: NotificationType;
     title: string;
     body: string;
     data?: Record<string, unknown>;
-    channels: NotificationChannel[];
+    channels?: NotificationChannel[];
+    channel?: NotificationChannel;
     phone?: string;
     fcmToken?: string;
   }): Promise<Notification> {
+    if (!params?.userId || !params?.title || !params?.body) {
+      throw new ValidationError('userId, title, and body are required');
+    }
+    const rawChannels =
+      Array.isArray(params.channels) && params.channels.length > 0
+        ? params.channels
+        : params.channel
+          ? [params.channel]
+          : (['in_app'] as NotificationChannel[]);
+    const channels = rawChannels.filter((c): c is NotificationChannel => VALID_CHANNELS.has(c));
+    if (channels.length === 0) {
+      throw new ValidationError('At least one valid channel (in_app, sms, push) is required');
+    }
+
     const config = getConfig();
     const id = generateId();
     const now = new Date().toISOString();
@@ -129,17 +147,17 @@ const notificationService = {
     const notification: Notification = {
       id,
       userId: params.userId,
-      type: params.type,
+      type: params.type || ('booking_confirmed' as NotificationType),
       title: params.title,
       body: params.body,
       data: params.data,
-      channels: params.channels,
+      channels,
       read: false,
       createdAt: now,
     };
 
     // 1. In-App: store in DynamoDB
-    if (params.channels.includes('in_app')) {
+    if (channels.includes('in_app')) {
       await getDocClient().send(
         new PutCommand({
           TableName: config.dynamoTableNotifications,
@@ -149,7 +167,7 @@ const notificationService = {
     }
 
     // 2. SMS: via AWS SNS
-    if (params.channels.includes('sms') && params.phone) {
+    if (channels.includes('sms') && params.phone) {
       if (config.smsProvider === 'mock') {
         logger.info({ phone: params.phone.slice(0, 5) + '***', body: params.body }, '[MOCK] SMS notification');
       } else {
@@ -167,7 +185,7 @@ const notificationService = {
     }
 
     // 3. Push: FCM (real) or mock
-    if (params.channels.includes('push')) {
+    if (channels.includes('push')) {
       if (params.fcmToken) {
         try {
           await sendFcmPush({
@@ -338,6 +356,17 @@ const preferencesSchema = z.object({
 // ============================================================
 
 const notificationRouter = Router();
+
+// POST /notifications/send — restricted to internal services or admins
+notificationRouter.post('/send', requireInternalOrRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const notification = await notificationService.send(req.body);
+    res.status(201).json({ success: true, data: notification } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
 notificationRouter.use(authenticate);
 
 // GET /notifications/preferences
@@ -402,11 +431,32 @@ notificationRouter.put('/:id/read', async (req: Request, res: Response, next: Ne
   }
 });
 
-// POST /notifications/send — internal endpoint (auth service, booking service etc.)
-notificationRouter.post('/send', async (req: Request, res: Response, next: NextFunction) => {
+// POST /notifications/devices — register Expo / FCM push token
+notificationRouter.post('/devices', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const notification = await notificationService.send(req.body);
-    res.status(201).json({ success: true, data: notification } as ApiResponse);
+    const { token, platform = 'expo' } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      throw new ValidationError('token is required');
+    }
+    const config = getConfig();
+    const now = new Date().toISOString();
+    await getDocClient().send(
+      new PutCommand({
+        TableName: config.dynamoTableNotifications,
+        Item: {
+          pk: req.user!.sub,
+          sk: `DEVICE#${platform}`,
+          token,
+          platform,
+          updatedAt: now,
+        },
+      }),
+    ).catch((err) => logger.warn({ err }, 'Device token persistence warning'));
+
+    res.status(201).json({
+      success: true,
+      data: { registered: true, platform, updatedAt: now },
+    } as ApiResponse);
   } catch (err) {
     next(err);
   }

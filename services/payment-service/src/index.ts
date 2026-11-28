@@ -28,6 +28,7 @@ import {
   ValidationError,
   PaymentError,
   NotFoundError,
+  AuthorizationError,
   ApiResponse,
   Payment,
   PaymentStatus,
@@ -66,17 +67,27 @@ interface PaymentProvider {
 
 class MockPaymentProvider implements PaymentProvider {
   async createOrder(amount: number, _currency: string, bookingId: string) {
-    const upiVpa = getConfig().paymentUpiVpa || 'parkly@upi';
+    const config = getConfig();
+    if (config.nodeEnv === 'production' && !config.allowMockPayments) {
+      throw new PaymentError('Mock payment provider is disabled in production');
+    }
+    const upiVpa = config.paymentUpiVpa || 'parkly@upi';
     logger.info({ amount, bookingId, upiVpa }, '[MOCK] Creating payment order');
     return {
       orderId: `MOCK_ORDER_${Date.now()}`,
-      upiVpa,            // Client shows this as the UPI payment address
+      upiVpa,
       upiQrPayload: `upi://pay?pa=${upiVpa}&pn=Parkly&am=${amount}&cu=INR&tn=Booking-${bookingId}`,
     };
   }
 
-
-  async verifyPayment(_orderId: string, _paymentId: string, _signature: string) {
+  async verifyPayment(_orderId: string, paymentId: string, signature: string) {
+    const config = getConfig();
+    if (config.nodeEnv === 'production' && !config.allowMockPayments) {
+      return false;
+    }
+    if (!paymentId || !signature || signature === 'invalid') {
+      return false;
+    }
     logger.info('[MOCK] Payment verified');
     return true;
   }
@@ -233,16 +244,43 @@ function getPaymentProvider(): PaymentProvider {
 // ============================================================
 
 const paymentService = {
-  async initiatePayment(bookingId: string, userId: string, amount: number): Promise<Payment & { upiVpa?: string; upiQrPayload?: string }> {
+  async initiatePayment(bookingId: string, userId: string, requestedAmount?: number): Promise<Payment & { upiVpa?: string; upiQrPayload?: string }> {
+    // 1. Authoritative booking lookup & ownership verification
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking || booking.deletedAt) throw new NotFoundError('Booking not found');
+    if (booking.userId !== userId) throw new AuthorizationError('Cannot initiate payment for another user booking');
+    if (booking.status !== 'created') throw new PaymentError(`Cannot initiate payment for booking in ${booking.status} status`);
+
+    const authoritativeAmount = Number(booking.totalAmount);
+    if (requestedAmount !== undefined && Math.abs(requestedAmount - authoritativeAmount) > 1) {
+      throw new ValidationError(`Amount mismatch: expected ₹${authoritativeAmount}`);
+    }
+
+    // Reuse existing pending payment if already initiated
+    const existing = await prisma.payment.findUnique({ where: { bookingId } });
+    if (existing) {
+      if (existing.status === 'completed') {
+        throw new PaymentError('Booking is already paid');
+      }
+      if (existing.status === 'pending') {
+        const upiVpa = getConfig().paymentUpiVpa || 'parkly@upi';
+        return {
+          ...mapPayment(existing),
+          upiVpa,
+          upiQrPayload: `upi://pay?pa=${upiVpa}&pn=Parkly&am=${authoritativeAmount}&cu=INR&tn=Booking-${bookingId}`,
+        };
+      }
+    }
+
     const provider = getPaymentProvider();
-    const { orderId, upiVpa, upiQrPayload } = await provider.createOrder(amount, 'INR', bookingId);
+    const { orderId, upiVpa, upiQrPayload } = await provider.createOrder(authoritativeAmount, 'INR', bookingId);
 
     const payment = await prisma.payment.create({
       data: {
         id: generateId(),
         bookingId,
         userId,
-        amount,
+        amount: authoritativeAmount,
         currency: 'INR',
         provider: getConfig().paymentProvider,
         providerOrderId: orderId,
@@ -255,9 +293,18 @@ const paymentService = {
   },
 
 
-  async confirmPayment(paymentId: string, providerPaymentId: string, signature: string): Promise<Payment> {
+  async confirmPayment(
+    paymentId: string,
+    userId: string,
+    userRole: string,
+    providerPaymentId: string,
+    signature: string,
+  ): Promise<Payment> {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundError('Payment not found');
+    if (userRole !== 'admin' && payment.userId !== userId) {
+      throw new AuthorizationError('Cannot confirm another user payment');
+    }
     if (payment.status !== 'pending') throw new PaymentError('Payment already processed');
 
     const provider = getPaymentProvider();
@@ -265,9 +312,18 @@ const paymentService = {
 
     if (!verified) throw new PaymentError('Payment verification failed');
 
-    const updated = await prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: 'completed', providerPaymentId },
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: { status: 'completed', providerPaymentId },
+      });
+
+      await tx.booking.update({
+        where: { id: payment.bookingId },
+        data: { status: 'confirmed', paymentId },
+      });
+
+      return updatedPayment;
     });
 
     await publishEvent({
@@ -276,13 +332,7 @@ const paymentService = {
       timestamp: new Date().toISOString(),
       source: 'parkly.payment-service',
       data: { paymentId, bookingId: payment.bookingId, amount: payment.amount },
-    });
-
-    // Also update booking to confirmed
-    await prisma.booking.update({
-      where: { id: payment.bookingId },
-      data: { status: 'confirmed', paymentId },
-    });
+    }).catch(() => {});
 
     return mapPayment(updated);
   },
@@ -293,17 +343,27 @@ const paymentService = {
     if (payment.status !== 'completed') throw new PaymentError('Only completed payments can be refunded');
 
     const refundAmount = amount || Number(payment.amount);
+    if (refundAmount <= 0 || refundAmount > Number(payment.amount)) {
+      throw new ValidationError('Invalid refund amount');
+    }
     const provider = getPaymentProvider();
-    const { refundId } = await provider.refund(payment.providerPaymentId!, refundAmount);
+    const { refundId } = await provider.refund(payment.providerPaymentId || payment.id, refundAmount);
 
-    const updated = await prisma.payment.update({
-      where: { id: paymentId },
-      data: {
-        status: 'refunded',
-        refundAmount,
-        refundId,
-        refundedAt: new Date(),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'refunded',
+          refundAmount,
+          refundId,
+          refundedAt: new Date(),
+        },
+      });
+      await tx.booking.update({
+        where: { id: payment.bookingId },
+        data: { status: 'refunded' },
+      });
+      return updatedPayment;
     });
 
     await publishEvent({
@@ -312,7 +372,7 @@ const paymentService = {
       timestamp: new Date().toISOString(),
       source: 'parkly.payment-service',
       data: { paymentId, refundAmount, refundId },
-    });
+    }).catch(() => {});
 
     return mapPayment(updated);
   },
@@ -332,14 +392,18 @@ const paymentService = {
       return mapPayment(payment);
     }
 
-    const updated = await prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: 'completed', providerPaymentId },
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: 'completed', providerPaymentId },
+      });
 
-    await prisma.booking.update({
-      where: { id: payment.bookingId },
-      data: { status: 'confirmed', paymentId: payment.id },
+      await tx.booking.update({
+        where: { id: payment.bookingId },
+        data: { status: 'confirmed', paymentId: payment.id },
+      });
+
+      return updatedPayment;
     });
 
     await publishEvent({
@@ -348,7 +412,7 @@ const paymentService = {
       timestamp: new Date().toISOString(),
       source: 'parkly.payment-service',
       data: { paymentId: payment.id, bookingId: payment.bookingId, amount: payment.amount, providerPaymentId },
-    });
+    }).catch(() => {});
 
     logger.info({ paymentId: payment.id, orderId }, 'Payment captured via Razorpay webhook');
     return mapPayment(updated);
@@ -385,8 +449,8 @@ const paymentRouter = Router();
 paymentRouter.use(authenticate);
 
 const initiateSchema = z.object({
-  bookingId: z.string().uuid(),
-  amount: z.number().positive(),
+  bookingId: z.string().min(3).max(64).regex(/^[a-zA-Z0-9_-]+$/),
+  amount: z.number().positive().optional(),
 });
 
 const confirmSchema = z.object({
@@ -419,6 +483,8 @@ paymentRouter.put('/:id/confirm', async (req: Request, res: Response, next: Next
 
     const payment = await paymentService.confirmPayment(
       req.params['id']!,
+      req.user!.sub,
+      req.user!.role,
       result.data.providerPaymentId,
       result.data.signature,
     );

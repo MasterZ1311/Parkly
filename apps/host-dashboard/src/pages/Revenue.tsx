@@ -1,59 +1,51 @@
-import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { hostApi } from '../utils/apiClient';
-import { useRevenue } from '../hooks/useHostData';
+import { useMemo, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
+import { useRevenue, useListings } from '../hooks/useHostData';
+import { hostApi } from '../utils/apiClient';
 import { CurrencyIcon, ClockIcon, GaugeIcon, CheckCircleIcon, CloseIcon } from '../components/Icons';
 
-const spaceBreakdown = [
-  { name: 'T Nagar Spot A', value: 65 },
-  { name: 'T Nagar Spot B', value: 25 },
-  { name: 'Anna Nagar ML', value: 10 },
-];
-
-const COLORS = ['#0B1628', '#0F766E', '#D90410'];
-
-const payouts = [
-  { date: '2024-06-25', amount: 4320, status: 'Processed', bank: 'SBI ***1234' },
-  { date: '2024-05-25', amount: 3960, status: 'Processed', bank: 'SBI ***1234' },
-  { date: '2024-04-25', amount: 3300, status: 'Processed', bank: 'SBI ***1234' },
-];
+const COLORS = ['#0B1628', '#D90410', '#0F766E', '#B45309'];
 
 export default function Revenue() {
-  useDocumentTitle('Revenue & Payouts');
-  const { revenueStats } = useRevenue();
-  const [loading, setLoading] = useState(false);
+  useDocumentTitle('Revenue & Settlements');
+  const { revenueStats, loading: revenueLoading, error: revenueError, refetch } = useRevenue();
+  const { listings } = useListings();
+
+  const [requesting, setRequesting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const pendingAmount = 3960;
 
-  const chartData = revenueStats.monthlyRevenue.map((d) => ({
-    month: d.month,
-    gross: d.revenue,
-    payout: Math.round(d.revenue * 0.8),
-    platform: Math.round(d.revenue * 0.2),
-  }));
+  const spaceBreakdown = useMemo(
+    () =>
+      listings.map((l) => ({
+        name: l.name,
+        value: Math.max(1, l.totalCapacity * l.hourlyRate),
+      })),
+    [listings],
+  );
 
   const handleRequestPayout = async () => {
-    setLoading(true);
+    setRequesting(true);
     setBanner(null);
     try {
-      await hostApi.requestPayout({ amount: pendingAmount });
+      await hostApi.requestPayout({ amount: revenueStats.availableBalance });
       setConfirmOpen(false);
       setBanner({
         type: 'success',
-        text: `Payout request for ₹${pendingAmount.toLocaleString('en-IN')} submitted to SBI ***1234.`,
+        text: `Payout request for ₹${revenueStats.availableBalance.toLocaleString('en-IN')} submitted for settlement.`,
       });
+      await refetch();
     } catch (err: any) {
       setConfirmOpen(false);
       setBanner({
         type: 'error',
-        text: 'Error requesting payout: ' + (err.response?.data?.message || 'Service temporarily unavailable'),
+        text: err.response?.data?.error?.message || err.message || 'Unable to process payout request.',
       });
     } finally {
-      setLoading(false);
+      setRequesting(false);
     }
   };
 
@@ -62,15 +54,27 @@ export default function Revenue() {
       <Breadcrumbs items={[{ label: 'Revenue & Payouts' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Revenue &amp; Payouts</h1>
-          <p className="page-subtitle">
-            Monthly earnings breakdown, platform commission audit, and bank settlement history.
-          </p>
+          <h1 className="page-title">Revenue &amp; Payout Settlements</h1>
+          <p className="page-subtitle">Host earnings breakdown, commission ledger, and bank settlements.</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setConfirmOpen(true)} disabled={loading}>
-          {loading ? 'Processing...' : `Request Payout (₹${pendingAmount.toLocaleString('en-IN')})`}
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={requesting || revenueLoading || revenueStats.availableBalance <= 0}
+          onClick={() => setConfirmOpen(true)}
+        >
+          <CurrencyIcon size={16} />
+          {requesting
+            ? 'Submitting...'
+            : `Request Payout (₹${revenueStats.availableBalance.toLocaleString('en-IN')})`}
         </button>
       </div>
+
+      {revenueError && (
+        <div className="status-banner status-banner--error" style={{ marginBottom: 16 }}>
+          <span>{revenueError}</span>
+        </div>
+      )}
 
       {banner && (
         <div className={`status-banner status-banner--${banner.type}`} role="status">
@@ -89,10 +93,10 @@ export default function Revenue() {
       {/* Summary Cards */}
       <div className="grid-4" style={{ marginBottom: 20 }}>
         {[
-          { label: 'Total Earned (YTD)', value: '₹1,04,800', Icon: CurrencyIcon, color: 'var(--green)' },
-          { label: 'Pending Payout', value: '₹3,960', Icon: ClockIcon, color: 'var(--yellow)' },
-          { label: 'Platform Fee (20%)', value: '₹20,960', Icon: GaugeIcon, color: 'var(--text-primary)' },
-          { label: 'Net Payout (80%)', value: '₹83,840', Icon: CheckCircleIcon, color: 'var(--blue)' },
+          { label: 'Total Earned', value: `₹${revenueStats.totalEarnings.toLocaleString('en-IN')}`, Icon: CurrencyIcon, color: 'var(--green)' },
+          { label: 'Available Balance', value: `₹${revenueStats.availableBalance.toLocaleString('en-IN')}`, Icon: ClockIcon, color: 'var(--yellow)' },
+          { label: 'Platform Fee (10%)', value: `₹${revenueStats.platformFees.toLocaleString('en-IN')}`, Icon: GaugeIcon, color: 'var(--text-primary)' },
+          { label: 'Net Revenue', value: `₹${revenueStats.netRevenue.toLocaleString('en-IN')}`, Icon: CheckCircleIcon, color: 'var(--blue)' },
         ].map(({ label, value, Icon, color }) => (
           <div key={label} className="stat-card">
             <div>
@@ -107,74 +111,94 @@ export default function Revenue() {
       </div>
 
       <div className="grid-2" style={{ marginBottom: 20 }}>
+        {/* Revenue Chart */}
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Monthly Settlement Breakdown</h2>
-            <span className="card-meta">80 / 20 Split</span>
+            <h2 className="card-title">Monthly Earnings Breakdown</h2>
+            <span className="card-meta">90 / 10 Split</span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
-              <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#334155' }} />
-              <Bar dataKey="payout" name="Host Payout (₹)" fill="#0F766E" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="platform" name="Platform Fee (₹)" fill="#0B1628" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {revenueStats.monthlyBreakdown.length === 0 ? (
+            <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              No completed earnings in period yet.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={revenueStats.monthlyBreakdown}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E2D8" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={{ stroke: '#DFDDD4' }} tickLine={false} />
+                <YAxis tick={{ fill: '#5A6678', fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #C9C5B9', borderRadius: 8, color: '#0B1628' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#334155' }} />
+                <Bar dataKey="net" name="Host Payout (₹)" fill="#0F766E" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="fees" name="Platform Fee (₹)" fill="#0B1628" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
+        {/* Space Capacity Value Breakdown */}
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Revenue Share by Space</h2>
+            <h2 className="card-title">Earnings Capacity by Space</h2>
             <span className="card-meta">Chennai Portfolio</span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={spaceBreakdown} cx="50%" cy="50%" innerRadius={58} outerRadius={86} paddingAngle={3} dataKey="value">
-                {spaceBreakdown.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#334155' }} />
-            </PieChart>
-          </ResponsiveContainer>
+          {spaceBreakdown.length === 0 ? (
+            <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              Add listings to compare space performance.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={spaceBreakdown} cx="50%" cy="50%" innerRadius={58} outerRadius={86} paddingAngle={3} dataKey="value">
+                  {spaceBreakdown.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #C9C5B9', borderRadius: 8, color: '#0B1628' }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#334155' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
       {/* Payout History */}
       <div className="card">
         <div className="card-header">
-          <h2 className="card-title">Bank Settlement History</h2>
+          <h2 className="card-title">Payout History</h2>
           <span className="card-meta">NEFT / IMPS</span>
         </div>
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Settlement Date</th>
-                <th>Amount</th>
-                <th>Bank Account</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payouts.map((p) => (
-                <tr key={p.date}>
-                  <td className="mono-num">{p.date}</td>
-                  <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
-                    ₹{p.amount.toLocaleString('en-IN')}
-                  </td>
-                  <td className="mono-num">{p.bank}</td>
-                  <td>
-                    <span className="badge badge-green">{p.status}</span>
-                  </td>
+          {revenueStats.recentPayouts.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No payout requests yet.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Requested</th>
+                  <th>Payout ID</th>
+                  <th>Amount</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {revenueStats.recentPayouts.map((p) => (
+                  <tr key={p.id}>
+                    <td className="mono-num">{new Date(p.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td className="mono-num">#{p.id.slice(0, 8)}</td>
+                    <td className="mono-num" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                      ₹{Number(p.amount).toLocaleString('en-IN')}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${p.status === 'completed' ? 'green' : p.status === 'failed' ? 'red' : 'yellow'}`}>
+                        {p.status.toUpperCase()}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -189,18 +213,18 @@ export default function Revenue() {
             <button type="button" className="btn btn-outline" onClick={() => setConfirmOpen(false)}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" onClick={handleRequestPayout} disabled={loading}>
-              {loading ? 'Submitting...' : 'Confirm Payout'}
+            <button type="button" className="btn btn-primary" onClick={handleRequestPayout} disabled={requesting}>
+              {requesting ? 'Submitting...' : 'Confirm Payout'}
             </button>
           </>
         }
       >
-        <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-          Transfer pending balance of{' '}
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+          Transfer available balance of{' '}
           <strong className="mono-num" style={{ color: 'var(--text-primary)' }}>
-            ₹{pendingAmount.toLocaleString('en-IN')}
+            ₹{revenueStats.availableBalance.toLocaleString('en-IN')}
           </strong>{' '}
-          to your registered bank account (<span className="mono-num">SBI ***1234</span>)?
+          to your registered settlement bank account?
         </p>
       </Modal>
     </div>

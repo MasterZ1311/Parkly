@@ -1,77 +1,31 @@
 import { useState } from 'react';
 import { adminApi } from '../utils/apiClient';
-import { useVerifications, PendingVerification } from '../hooks/useAdminData';
+import { useVerifications, useDisputes, PendingVerification, AdminDispute } from '../hooks/useAdminData';
 import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { useDocumentTitle } from '../utils/useDocumentTitle';
-import { CheckCircleIcon, ScaleIcon, MapPinIcon, CloseIcon } from '../components/Icons';
-
-interface DisputeItem {
-  id: string;
-  bookingId: string;
-  spaceName: string;
-  driverName: string;
-  hostName: string;
-  incidentType: string;
-  reportedAt: string;
-  claimedOverstayMinutes: number;
-  status: 'PENDING' | 'RESOLVED' | 'ESCALATED';
-  resolution?: {
-    action: string;
-    compensationAmount?: number;
-    penaltyApplied?: boolean;
-    explanation: string;
-  };
-}
+import { CheckCircleIcon, ScaleIcon, MapPinIcon } from '../components/Icons';
 
 export default function Verifications() {
   useDocumentTitle('Host Verifications & Dispute Mediation');
-  const { verifications, loading: verificationsLoading, refetch } = useVerifications();
+  const { verifications, loading: verificationsLoading, error: verificationsError, refetch: refetchVerifications } = useVerifications();
+  const { disputes, loading: disputesLoading, error: disputesError, refetch: refetchDisputes } = useDisputes();
 
   const [activeTab, setActiveTab] = useState<'verifications' | 'disputes'>('verifications');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [mediatingId, setMediatingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
   const [rejectTarget, setRejectTarget] = useState<PendingVerification | null>(null);
   const [rejectReason, setRejectReason] = useState('Documentation incomplete');
-  const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const [disputes, setDisputes] = useState<DisputeItem[]>([
-    {
-      id: 'disp-001',
-      bookingId: 'b_sample_01',
-      spaceName: 'T Nagar Spot A',
-      driverName: 'Arjun K. (TN01AB1234)',
-      hostName: 'V. Sundaram',
-      incidentType: 'OVERSTAY',
-      reportedAt: 'Today, 11:20 AM',
-      claimedOverstayMinutes: 45,
-      status: 'PENDING',
-    },
-    {
-      id: 'disp-002',
-      bookingId: 'b_sample_03',
-      spaceName: 'Anna Nagar Multi-Level',
-      driverName: 'Priya S. (TN09CD5678)',
-      hostName: 'Ravi Kumar',
-      incidentType: 'GATE_BLOCKED',
-      reportedAt: 'Yesterday, 3:15 PM',
-      claimedOverstayMinutes: 0,
-      status: 'PENDING',
-    },
-  ]);
 
   const handleApprove = async (v: PendingVerification) => {
     setLoadingId(v.id);
-    setBanner(null);
+    setActionError('');
     try {
       await adminApi.approveVerification(v.id);
-      setBanner({ type: 'success', text: `Space "${v.name}" approved and activated.` });
-      refetch();
+      await refetchVerifications();
     } catch (err: any) {
-      setBanner({
-        type: 'error',
-        text: 'Error approving space: ' + (err.response?.data?.message || err.message),
-      });
+      setActionError(err.response?.data?.error?.message || err.message || 'Error approving space');
     } finally {
       setLoadingId(null);
     }
@@ -80,83 +34,49 @@ export default function Verifications() {
   const confirmReject = async () => {
     if (!rejectTarget) return;
     setLoadingId(rejectTarget.id);
-    setBanner(null);
+    setActionError('');
     try {
       await adminApi.rejectVerification(rejectTarget.id, rejectReason.trim() || 'Documentation incomplete');
-      setBanner({ type: 'success', text: `Space "${rejectTarget.name}" rejected.` });
       setRejectTarget(null);
-      refetch();
+      setRejectReason('Documentation incomplete');
+      await refetchVerifications();
     } catch (err: any) {
-      setBanner({
-        type: 'error',
-        text: 'Error rejecting space: ' + (err.response?.data?.message || err.message),
-      });
-      setRejectTarget(null);
+      setActionError(err.response?.data?.error?.message || err.message || 'Error rejecting space');
     } finally {
       setLoadingId(null);
     }
   };
 
-  const handleMediateDispute = async (dispute: DisputeItem) => {
+  const handleMediateDispute = async (dispute: AdminDispute) => {
     setMediatingId(dispute.id);
+    setActionError('');
     try {
-      const res = await adminApi.mediateDispute(dispute.id, {
+      await adminApi.mediateDispute(dispute.id, {
         bookingId: dispute.bookingId,
-        incidentType: dispute.incidentType,
+        incidentType: dispute.disputeType === 'unauthorized_use' ? 'OVERSTAY' : 'NO_SHOW',
         evidence: {
           sensorCheckoutTimestamp: new Date().toISOString(),
-          overstayMinutes: dispute.claimedOverstayMinutes,
         },
       });
-
-      const data = res.data?.data;
-      setDisputes((prev) =>
-        prev.map((d) =>
-          d.id === dispute.id
-            ? {
-                ...d,
-                status: 'RESOLVED',
-                resolution: {
-                  action: data?.action || 'OVERSTAY_CONFIRMED',
-                  compensationAmount: data?.hostCompensationInr || 150,
-                  penaltyApplied: true,
-                  explanation: data?.explanation || 'IoT sensor verified vehicle departed 45 minutes after reservation window.',
-                },
-              }
-            : d
-        )
-      );
-    } catch {
-      setDisputes((prev) =>
-        prev.map((d) =>
-          d.id === dispute.id
-            ? {
-                ...d,
-                status: 'RESOLVED',
-                resolution: {
-                  action: 'OVERSTAY_CONFIRMED',
-                  compensationAmount: 150,
-                  penaltyApplied: true,
-                  explanation:
-                    'DisputeMediationAgent reconciled IoT ultrasonic logs with booking ledger: overstay of 45m confirmed. ₹150 compensatory debit processed.',
-                },
-              }
-            : d
-        )
-      );
+      await refetchDisputes();
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || err.message || 'Dispute mediation agent failed');
     } finally {
       setMediatingId(null);
     }
   };
+
+  const openDisputeCount = disputes.filter((d) => d.status === 'open' || d.status === 'under_review').length;
+  const combinedError = actionError || verificationsError || disputesError;
 
   return (
     <div>
       <Breadcrumbs items={[{ label: 'Verifications & Disputes' }]} />
       <div className="page-header">
         <div>
-          <h1 className="page-title">Verifications &amp; Dispute Mediation</h1>
+          <h1 className="page-title">Trust, Verifications &amp; Dispute Mediation</h1>
           <p className="page-subtitle">
-            Review host property verification documents and resolve booking disputes via AI arbitration.
+            Review host property KYC verifications and execute autonomous DisputeMediationAgent arbitration.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -174,31 +94,21 @@ export default function Verifications() {
             onClick={() => setActiveTab('disputes')}
           >
             <ScaleIcon size={15} />
-            Dispute Mediation ({disputes.filter((d) => d.status === 'PENDING').length})
+            Dispute Mediation ({openDisputeCount})
           </button>
         </div>
       </div>
 
-      {banner && (
-        <div className={`status-banner status-banner--${banner.type}`} role="status">
-          <span>{banner.text}</span>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            aria-label="Dismiss notification"
-            onClick={() => setBanner(null)}
-          >
-            <CloseIcon size={14} />
-          </button>
+      {combinedError && (
+        <div className="status-banner status-banner--error" style={{ marginBottom: 16 }}>
+          <span>{combinedError}</span>
         </div>
       )}
 
       {activeTab === 'verifications' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {verificationsLoading ? (
-            <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-              Loading verifications...
-            </div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading verifications...</div>
           ) : verifications.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
               No pending space verifications.
@@ -208,21 +118,21 @@ export default function Verifications() {
               <div key={v.id} className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
                   <div style={{ flex: 1, minWidth: 240 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <h2 style={{ fontSize: 16.5, fontWeight: 800, color: 'var(--text-primary)' }}>{v.name}</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{v.name}</h2>
                       <span className="badge badge-yellow">Pending Review</span>
                     </div>
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13.5, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <MapPinIcon size={14} />
                       <span>{v.address}</span>
                     </p>
-                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <div style={{ display: 'flex', gap: 18, fontSize: 13, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
                       <span>
-                        Host: <strong>{v.host?.user?.name || 'V. Sundaram'}</strong>{' '}
-                        <span className="mono-num">({v.host?.user?.phone || '+91 9840123456'})</span>
+                        Host: <strong style={{ color: 'var(--text-primary)' }}>{v.host?.user?.name || 'Registered Host'}</strong>{' '}
+                        ({v.host?.user?.phone || '—'})
                       </span>
                       <span>
-                        Capacity: <strong className="mono-num">{v.totalCapacity} bays</strong>
+                        Capacity: <strong className="mono-num">{v.totalCapacity} slots</strong>
                       </span>
                       <span>
                         Base Rate: <strong className="mono-num">₹{v.hourlyRate}/hr</strong>
@@ -235,8 +145,8 @@ export default function Verifications() {
                       type="button"
                       className="btn btn-danger-outline"
                       onClick={() => {
-                        setRejectReason('Documentation incomplete');
                         setRejectTarget(v);
+                        setRejectReason('Documentation incomplete');
                       }}
                       disabled={loadingId === v.id}
                     >
@@ -244,7 +154,7 @@ export default function Verifications() {
                     </button>
                     <button
                       type="button"
-                      className="btn btn-primary"
+                      className="btn btn-success"
                       onClick={() => handleApprove(v)}
                       disabled={loadingId === v.id}
                     >
@@ -258,70 +168,75 @@ export default function Verifications() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {disputes.map((d) => (
-            <div
-              key={d.id}
-              className="card"
-              style={{
-                borderColor: d.status === 'RESOLVED' ? 'var(--green-border)' : 'var(--accent-border)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                    <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
-                      Incident <span className="mono-num">#{d.id}</span> · {d.incidentType}
-                    </h2>
-                    <span className={`badge badge-${d.status === 'RESOLVED' ? 'green' : 'red'}`}>
-                      {d.status === 'RESOLVED' ? 'Resolved by AI Agent' : 'Arbitration Required'}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
-                    Space: <strong style={{ color: 'var(--text-primary)' }}>{d.spaceName}</strong> · Booking:{' '}
-                    <span className="mono-num">#{d.bookingId}</span> · Reported: {d.reportedAt}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    Driver: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{d.driverName}</span> · Host:{' '}
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{d.hostName}</span>
-                  </div>
-
-                  {d.resolution && (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        background: 'var(--green-soft)',
-                        border: '1px solid var(--green-border)',
-                        borderRadius: 8,
-                        padding: 12,
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>
-                        Decision: {d.resolution.action} (Host Compensation: ₹{d.resolution.compensationAmount})
-                      </div>
-                      <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{d.resolution.explanation}</div>
-                    </div>
-                  )}
-                </div>
-
-                {d.status === 'PENDING' && (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    style={{ minWidth: 168 }}
-                    onClick={() => handleMediateDispute(d)}
-                    disabled={mediatingId === d.id}
-                  >
-                    <ScaleIcon size={15} />
-                    {mediatingId === d.id ? 'Arbitrating...' : 'Mediate via AI'}
-                  </button>
-                )}
-              </div>
+          {disputesLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading disputes...</div>
+          ) : disputes.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+              No disputes recorded.
             </div>
-          ))}
+          ) : (
+            disputes.map((d) => {
+              const isResolved = d.status === 'resolved' || d.status === 'closed';
+              return (
+                <div
+                  key={d.id}
+                  className="card"
+                  style={{ borderColor: isResolved ? 'var(--green-border)' : 'var(--accent-border)' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+                    <div style={{ flex: 1, minWidth: 240 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+                          Dispute <span className="mono-num">#{d.id.slice(0, 10)}</span> · {d.disputeType.toUpperCase()}
+                        </h2>
+                        <span className={`badge badge-${isResolved ? 'green' : 'red'}`}>
+                          {d.status.toUpperCase()}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>
+                        Space: <strong style={{ color: 'var(--text-primary)' }}>{d.booking?.space?.name || 'Parking Space'}</strong> · Booking:{' '}
+                        <span className="mono-num">#{d.bookingId.slice(0, 10)}</span> · {new Date(d.createdAt).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{d.description}</div>
+
+                      {d.resolution && (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            background: 'var(--green-soft)',
+                            border: '1px solid var(--green-border)',
+                            borderRadius: 8,
+                            padding: 12,
+                          }}
+                        >
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>
+                            Resolution Audit
+                          </div>
+                          <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }}>{d.resolution}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {!isResolved && (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ minWidth: 168 }}
+                        onClick={() => handleMediateDispute(d)}
+                        disabled={mediatingId === d.id}
+                      >
+                        <ScaleIcon size={15} />
+                        {mediatingId === d.id ? 'Arbitrating...' : 'Mediate via AI'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
 
-      {/* Rejection Reason Modal */}
       <Modal
         open={Boolean(rejectTarget)}
         onClose={() => setRejectTarget(null)}

@@ -3,15 +3,16 @@ import {
   View,
   Text,
   TextInput,
-  FlatList,
   StyleSheet,
-  ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useReducedMotion } from 'react-native-reanimated';
 import { conciergeApi, searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
@@ -19,8 +20,10 @@ import { useAuthStore } from '../../src/store/auth.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { colors, theme } from '../../src/constants/theme';
 import { PressScale, triggerHaptic } from '../../src/components/Motion';
+import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 
-export interface Recommendation {
+interface Recommendation {
   spaceId: string;
   hostId?: string;
   name: string;
@@ -38,6 +41,7 @@ interface Message {
   text: string;
   timestamp: string;
   recommendation?: Recommendation;
+  errorStatusRoute?: ClassifiedApiError['statusRoute'];
 }
 
 const SAMPLE_PROMPTS = [
@@ -46,10 +50,21 @@ const SAMPLE_PROMPTS = [
   'Cheapest slot near OMR IT corridor',
 ];
 
+const DEFAULT_COORDS = { latitude: 13.0418, longitude: 80.2341 };
+
+function formatDistanceLabel(meters: number): string {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(1)}km away`;
+  }
+  return `${Math.max(1, Math.round(meters))}m away`;
+}
+
 export default function ConciergeScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const isOffline = useAuthStore((s) => s.isOffline);
+  const isDemoMode = useAuthStore((s) => s.isDemoMode);
+  const user = useAuthStore((s) => s.user);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -65,6 +80,21 @@ export default function ConciergeScreen() {
   useEffect(() => {
     flatListRef.current?.scrollToEnd({ animated: !reducedMotion });
   }, [messages, reducedMotion]);
+
+  const resolveUserCoords = async () => {
+    try {
+      const perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      }
+    } catch {
+      // Default to Chennai central coords when GPS is unavailable
+    }
+    return DEFAULT_COORDS;
+  };
 
   const handleSend = async (queryText?: string) => {
     const textToSend = (queryText || input).trim();
@@ -82,98 +112,221 @@ export default function ConciergeScreen() {
     if (!queryText) setInput('');
     setLoading(true);
 
-    const userCoords = { latitude: 13.0418, longitude: 80.2341 };
+    if (isDemoMode) {
+      const qLower = textToSend.toLowerCase();
+      const matched =
+        DEMO_SPACES.find(
+          (s) =>
+            (qLower.includes('ev') && s.amenities.evCharging) ||
+            (qLower.includes('adyar') && s.name.toLowerCase().includes('adyar')) ||
+            (qLower.includes('velachery') && s.name.toLowerCase().includes('velachery')) ||
+            s.address.toLowerCase().includes(qLower),
+        ) || DEMO_SPACES[0];
+
+      const demoRec: Recommendation = {
+        spaceId: matched.id,
+        hostId: matched.hostId,
+        name: matched.name,
+        address: matched.address,
+        hourlyRate: matched.price.value,
+        arrivalProbability: matched.availability.probabilityPercent,
+        distanceMeters: Math.round(matched.distance.value * 1000),
+        deepLink: `geo:${matched.coordinates.lat},${matched.coordinates.lng}?q=${encodeURIComponent(matched.name)}`,
+        entryInstructions: 'Demo bay pass active. Present offline QR code at Gate 1.',
+      };
+
+      await cacheSet(CACHE_KEYS.LAST_CONCIERGE_REC, demoRec);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          sender: 'assistant',
+          text: 'Demo Concierge match ready for your Chennai route:',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          recommendation: demoRec,
+        },
+      ]);
+      setLoading(false);
+      return;
+    }
+
+    const userCoords = await resolveUserCoords();
 
     try {
       let data: any = null;
-      let replyText = 'Here is the highest-confidence bay matching your route:';
-      let rec: Recommendation | undefined;
+      let agentError: unknown = null;
 
       try {
-        const response = await conciergeApi.ask(textToSend, userCoords);
+        const response = await conciergeApi.ask(textToSend, userCoords, user?.id);
         data = response.data?.data;
-      } catch (agentErr) {
-        console.warn('Concierge agent query warning:', agentErr);
+      } catch (err) {
+        agentError = err;
+      }
+
+      if (agentError) {
+        const classified = classifyApiError(agentError, 'AI Concierge could not reach the server.');
+        if (classified.kind === 'session-expired') {
+          router.replace('/status/session-expired');
+          return;
+        }
+        if (classified.kind === 'restricted') {
+          router.replace('/status/restricted');
+          return;
+        }
+
+        // Only try live inventory search fallback if we are not offline/maintenance-blocked
+        if (classified.kind !== 'offline' && classified.kind !== 'maintenance') {
+          const searchQuery =
+            textToSend.replace(/find|parking|near|under|for|hours|cheapest|slot|rupees|₹\d+/gi, '').trim() ||
+            'Chennai';
+          try {
+            const searchResp = await searchApi.search({
+              location: { type: 'text', value: searchQuery },
+              arrivalTime: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+              duration: 60,
+              radius: 8,
+              page: 1,
+              pageSize: 5,
+            });
+            const candidateResults = searchResp?.data?.data?.results || [];
+            if (candidateResults.length > 0) {
+              const top = candidateResults[0];
+              const distanceMeters = top.distance
+                ? top.distance.unit === 'km'
+                  ? Math.round(Number(top.distance.value) * 1000)
+                  : Math.round(Number(top.distance.value))
+                : 500;
+              const searchRec: Recommendation = {
+                spaceId: top.id,
+                hostId: top.hostId,
+                name: top.name,
+                address: top.address,
+                hourlyRate: Number(top.price?.value ?? 40),
+                arrivalProbability: Number(top.availability?.probabilityPercent ?? 80),
+                distanceMeters,
+                deepLink: `geo:${top.coordinates?.lat ?? userCoords.latitude},${top.coordinates?.lng ?? userCoords.longitude}?q=${encodeURIComponent(top.name)}`,
+                entryInstructions: 'Live inventory bay ready. Show booking QR pass at entry.',
+              };
+              await cacheSet(CACHE_KEYS.LAST_CONCIERGE_REC, searchRec);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `assistant-${Date.now()}`,
+                  sender: 'assistant',
+                  text: 'Concierge AI is busy right now, so I fetched the best live bay match for you:',
+                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  recommendation: searchRec,
+                },
+              ]);
+              return;
+            }
+          } catch {
+            // Fall through to honest error display below
+          }
+        }
+
+        if (classified.kind === 'offline') {
+          const cachedRec = await cacheGet<Recommendation>(CACHE_KEYS.LAST_CONCIERGE_REC);
+          if (cachedRec) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `assistant-${Date.now()}`,
+                sender: 'assistant',
+                text: 'Device is offline. Showing your most recent cached bay recommendation (verify live availability once online):',
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                recommendation: cachedRec,
+              },
+            ]);
+            return;
+          }
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: classified.message,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            errorStatusRoute: classified.statusRoute,
+          },
+        ]);
+        return;
       }
 
       if (data?.action === 'NO_SPACES_FOUND') {
-        replyText = 'No active spaces matched within that radius. Would you like me to check an adjacent zone?';
-      } else if (data?.action === 'CLARIFICATION_NEEDED') {
-        replyText = 'Could you share your expected arrival time or vehicle type?';
-      } else {
-        let realSpace: any = null;
-        try {
-          const searchQuery = textToSend.replace(/find|parking|near|under|for|hours|cheapest|slot/gi, '').trim() || 'T Nagar';
-          const searchResp = await searchApi.search({
-            location: { type: 'text', value: searchQuery },
-            arrivalTime: new Date().toISOString(),
-            duration: 60,
-            radius: 5,
-            page: 1,
-            pageSize: 5,
-          });
-          const candidateResults = searchResp?.data?.data?.results;
-          if (candidateResults && candidateResults.length > 0) {
-            realSpace = candidateResults[0];
-          }
-        } catch (searchErr) {
-          console.warn('Live search ground resolution error:', searchErr);
-        }
-
-        const resolvedSpaceId = realSpace?.id || data?.recommendedSpace?.id || 'sp-tng-001';
-        const resolvedName = realSpace?.name || data?.recommendedSpace?.name || 'T Nagar Parking Complex - Spot A';
-        const resolvedAddress = realSpace?.address || data?.recommendedSpace?.address || '23, Panagal Park Road, T Nagar, Chennai 600017';
-        const resolvedHostId = realSpace?.hostId || 'host-chennai-001';
-        const resolvedPrice = realSpace?.price?.value || data?.recommendedSpace?.hourlyRate || 40;
-        const resolvedProb = realSpace?.availability?.probabilityPercent || data?.recommendedSpace?.arrivalProbability || 88;
-        const resolvedDistance = realSpace?.distance?.value || data?.recommendedSpace?.distanceMeters || 120;
-
-        rec = {
-          spaceId: resolvedSpaceId,
-          hostId: resolvedHostId,
-          name: resolvedName,
-          address: resolvedAddress,
-          hourlyRate: resolvedPrice,
-          arrivalProbability: resolvedProb,
-          distanceMeters: resolvedDistance,
-          deepLink: data?.turnByTurnDeepLink || `geo:${userCoords.latitude},${userCoords.longitude}?q=${encodeURIComponent(resolvedName)}`,
-          entryInstructions: data?.entryInstructions || 'Enter through Gate 1. Security attendant will scan your QR pass.',
-        };
-
-        await cacheSet(CACHE_KEYS.LAST_CONCIERGE_REC, rec);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text: 'No active parking bays matched your criteria in that area. Try expanding to an adjacent zone.',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        return;
       }
 
-      const botMsg: Message = {
-        id: `assistant-${Date.now()}`,
-        sender: 'assistant',
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        recommendation: rec,
+      if (data?.action === 'CLARIFICATION_NEEDED') {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text:
+              data?.message ||
+              'Could you clarify the Chennai neighborhood, arrival time, or EV/covered requirement?',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        return;
+      }
+
+      const recommended = data?.recommendedSpace;
+      if (!recommended?.id) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}`,
+            sender: 'assistant',
+            text:
+              data?.message ||
+              'I could not confirm an open bay right now. Try searching from the Find tab.',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        return;
+      }
+
+      const rec: Recommendation = {
+        spaceId: recommended.id,
+        hostId: recommended.hostId,
+        name: recommended.name,
+        address: recommended.address || 'Chennai Smart Parking Grid',
+        hourlyRate: Number(recommended.hourlyRate ?? 40),
+        arrivalProbability: Number(recommended.arrivalProbability ?? 85),
+        distanceMeters: Number(recommended.distanceMeters ?? 350),
+        deepLink:
+          data?.turnByTurnDeepLink ||
+          `geo:${userCoords.latitude},${userCoords.longitude}?q=${encodeURIComponent(recommended.name)}`,
+        entryInstructions:
+          data?.entryInstructions ||
+          'Enter through the main barrier and scan your active QR pass.',
       };
 
-      setMessages((prev) => [...prev, botMsg]);
-    } catch {
-      const cachedRec = await cacheGet<Recommendation>(CACHE_KEYS.LAST_CONCIERGE_REC);
-      const fallbackRec: Recommendation = cachedRec || {
-        spaceId: 'sp-tng-001',
-        hostId: 'host-chennai-001',
-        name: 'T Nagar Parking Complex - Spot A',
-        address: '23, Panagal Park Road, T Nagar, Chennai 600017',
-        hourlyRate: 40,
-        arrivalProbability: 85,
-        distanceMeters: 150,
-        deepLink: 'geo:13.0418,80.2341?q=T+Nagar+Parking+Complex',
-        entryInstructions: 'Present offline QR pass at entry kiosk. On-site attendant ready.',
-      };
+      await cacheSet(CACHE_KEYS.LAST_CONCIERGE_REC, rec);
 
-      const fallbackMsg: Message = {
-        id: `assistant-${Date.now()}`,
-        sender: 'assistant',
-        text: 'Offline mode active. Here is a verified parking location matching your preferences:',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        recommendation: fallbackRec,
-      };
-      setMessages((prev) => [...prev, fallbackMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          sender: 'assistant',
+          text: data?.message || 'Here is the highest-confidence bay matching your route:',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          recommendation: rec,
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -190,12 +343,12 @@ export default function ConciergeScreen() {
     router.push({
       pathname: '/booking/create',
       params: {
-        spaceId: rec.spaceId || 'sp-tng-001',
-        spaceName: rec.name || 'T Nagar Parking Complex - Spot A',
-        hostId: rec.hostId || 'host-chennai-001',
+        spaceId: rec.spaceId,
+        spaceName: rec.name,
+        hostId: rec.hostId || '',
         hours: '2',
-        totalAmount: String((rec.hourlyRate || 40) * 2),
-        hourlyRate: String(rec.hourlyRate || 40),
+        totalAmount: String(rec.hourlyRate * 2),
+        hourlyRate: String(rec.hourlyRate),
       },
     });
   };
@@ -213,6 +366,14 @@ export default function ConciergeScreen() {
         <View style={{ flex: 1, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
           <View style={[styles.bubble, isUser ? styles.userBubble : styles.botBubble]}>
             <Text style={[styles.msgText, isUser && styles.userText]}>{item.text}</Text>
+            {item.errorStatusRoute && (
+              <Text
+                style={styles.statusLink}
+                onPress={() => router.push(item.errorStatusRoute!)}
+              >
+                Check Service Status →
+              </Text>
+            )}
             <Text style={[styles.msgTime, isUser && styles.userTime]}>{item.timestamp}</Text>
           </View>
 
@@ -236,7 +397,9 @@ export default function ConciergeScreen() {
                 </Text>
                 <View style={styles.distRow}>
                   <Ionicons name="navigate-outline" size={13} color={colors.textMuted} />
-                  <Text style={styles.recDistance}>{item.recommendation.distanceMeters}m away</Text>
+                  <Text style={styles.recDistance}>
+                    {formatDistanceLabel(item.recommendation.distanceMeters)}
+                  </Text>
                 </View>
               </View>
 
@@ -282,7 +445,17 @@ export default function ConciergeScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      <OfflineBanner visible={isOffline} message="Offline Mode — Showing cached AI Concierge recommendations" />
+      {isDemoMode ? (
+        <View style={styles.demoStrip}>
+          <Ionicons name="sparkles-outline" size={14} color={colors.navy} />
+          <Text style={styles.demoStripText}>DEMO MODE · Simulated Chennai AI Concierge</Text>
+        </View>
+      ) : (
+        <OfflineBanner
+          visible={isOffline}
+          message="Offline Mode — Live concierge unavailable until reconnected"
+        />
+      )}
 
       <View style={styles.promptBar}>
         <FlatList
@@ -347,6 +520,22 @@ export default function ConciergeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  demoStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    backgroundColor: colors.cardElevated,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  demoStripText: {
+    color: colors.navy,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
   promptBar: {
     paddingVertical: 10,
     borderBottomWidth: 1,
@@ -390,6 +579,13 @@ const styles = StyleSheet.create({
   },
   msgText: { color: colors.navy, fontSize: 14, lineHeight: 20, fontWeight: '500' },
   userText: { color: colors.white, fontWeight: '600' },
+  statusLink: {
+    color: colors.primary,
+    fontSize: 12.5,
+    fontWeight: '800',
+    marginTop: 6,
+    textDecorationLine: 'underline',
+  },
   msgTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, alignSelf: 'flex-end', fontVariant: ['tabular-nums'] },
   userTime: { color: '#9FB0C7' },
   recCard: {

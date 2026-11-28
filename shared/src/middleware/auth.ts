@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Request, Response, NextFunction } from 'express';
+import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 
 import { getConfig } from '../config';
@@ -66,6 +67,46 @@ export function requireRole(...roles: UserRole[]) {
 }
 
 /**
+ * Optional JWT validation middleware.
+ * Attaches req.user when a valid Bearer token is present; allows anonymous requests otherwise.
+ */
+export function optionalAuthenticate(req: Request, _res: Response, next: NextFunction): void {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    next();
+    return;
+  }
+  authenticate(req, _res, next);
+}
+
+/**
+ * Allows either an authenticated request carrying one of the permitted roles
+ * OR an internal service call carrying a matching X-Internal-Service-Key header.
+ */
+export function requireInternalOrRole(...roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const internalKey = getConfig().internalServiceKey;
+    const providedKey = req.headers['x-internal-service-key'];
+    if (internalKey && typeof providedKey === 'string' && providedKey.length > 0) {
+      const a = Buffer.from(providedKey, 'utf8');
+      const b = Buffer.from(internalKey, 'utf8');
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        next();
+        return;
+      }
+    }
+
+    authenticate(req, res, (authErr?: unknown) => {
+      if (authErr) {
+        next(authErr);
+        return;
+      }
+      requireRole(...roles)(req, res, next);
+    });
+  };
+}
+
+/**
  * Object ownership check — ensures the authenticated user owns the resource.
  */
 export function requireOwnership(getOwnerId: (req: Request) => string | undefined) {
@@ -76,7 +117,7 @@ export function requireOwnership(getOwnerId: (req: Request) => string | undefine
     }
     const ownerId = getOwnerId(req);
     if (!ownerId) {
-      next(); // ownership couldn't be determined, skip check
+      next(new AuthorizationError('Access denied: ownership could not be verified'));
       return;
     }
     if (req.user.sub !== ownerId && req.user.role !== 'admin') {

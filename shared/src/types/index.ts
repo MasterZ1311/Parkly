@@ -165,11 +165,7 @@ export interface Booking {
   totalAmount: number;
   currency: Currency;
   paymentId?: string;
-  cancellationReason?: string;
-  cancelledAt?: string;
-  completedAt?: string;
-  createdAt: string;
-  updatedAt: string;
+  qrToken?: string;
   space?: {
     id: string;
     name: string;
@@ -183,6 +179,11 @@ export interface Booking {
     licensePlate: string;
     vehicleType: VehicleType;
   };
+  cancellationReason?: string;
+  cancelledAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // --- Payment ---

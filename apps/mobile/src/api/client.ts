@@ -4,12 +4,32 @@
 // ============================================================
 
 import axios from 'axios';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
-export const BASE_URL =
-  process.env['EXPO_PUBLIC_API_URL'] || 'http://100.116.89.14:4000/api/v1';
+export function resolveBaseUrl(): string {
+  const configured = process.env['EXPO_PUBLIC_API_URL'];
+  if (configured && configured.trim().length > 0) {
+    return configured.trim();
+  }
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    if (host && host !== '127.0.0.1' && host !== 'localhost') {
+      return `http://${host}:4000/api/v1`;
+    }
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:4000/api/v1';
+  }
+  return 'http://localhost:4000/api/v1';
+}
+
+export const BASE_URL = resolveBaseUrl();
 
 export const tokenStorage = {
   async get(key: string): Promise<string | null> {
@@ -48,7 +68,7 @@ export const tokenStorage = {
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 8000,
+  timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -65,8 +85,15 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    const original = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
-    if (error.response?.status === 401 && original && !original._retry) {
+    const original = error.config as
+      | (typeof error.config & { _retry?: boolean; url?: string })
+      | undefined;
+    if (
+      error.response?.status === 401 &&
+      original &&
+      !original._retry &&
+      !original.url?.includes('/auth/refresh')
+    ) {
       original._retry = true;
       try {
         const refreshToken = await tokenStorage.get('refresh_token');
@@ -74,12 +101,16 @@ api.interceptors.response.use(
           throw new Error('No refresh token available');
         }
         const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
-        const newToken = data?.data?.tokens?.accessToken;
-        if (!newToken) {
+        const newAccessToken = data?.data?.tokens?.accessToken;
+        const newRefreshToken = data?.data?.tokens?.refreshToken;
+        if (!newAccessToken) {
           throw new Error('Invalid refresh response');
         }
-        await tokenStorage.set('access_token', newToken);
-        original.headers['Authorization'] = `Bearer ${newToken}`;
+        await tokenStorage.set('access_token', newAccessToken);
+        if (newRefreshToken) {
+          await tokenStorage.set('refresh_token', newRefreshToken);
+        }
+        original.headers['Authorization'] = `Bearer ${newAccessToken}`;
         return api(original);
       } catch {
         await tokenStorage.remove('access_token');
@@ -141,11 +172,11 @@ export const bookingApi = {
   create: (data: {
     spaceId: string;
     vehicleId: string;
-    hostId: string;
+    hostId?: string;
     type: string;
     startTime: string;
     endTime: string;
-    totalAmount: number;
+    totalAmount?: number;
   }) => api.post('/bookings', data),
   list: (status?: string) => api.get('/bookings', { params: { status } }),
   get: (id: string) => api.get(`/bookings/${id}`),
@@ -154,8 +185,8 @@ export const bookingApi = {
 };
 
 export const paymentApi = {
-  initiate: (bookingId: string, amount: number) =>
-    api.post('/payments/initiate', { bookingId, amount }),
+  initiate: (bookingId: string, amount?: number) =>
+    api.post('/payments/initiate', { bookingId, ...(amount ? { amount } : {}) }),
   confirm: (paymentId: string, providerPaymentId: string, signature: string) =>
     api.put(`/payments/${paymentId}/confirm`, { providerPaymentId, signature }),
 };
@@ -179,3 +210,5 @@ export const notificationApi = {
   updatePreferences: (prefs: NotificationPreferencesPayload) =>
     api.put('/notifications/preferences', prefs),
 };
+
+export default api;

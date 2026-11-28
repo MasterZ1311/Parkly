@@ -13,16 +13,45 @@ export const bookingRouter = Router();
 // All booking routes require authentication
 bookingRouter.use(authenticate);
 
+const idSchema = z.string().min(3).max(64).regex(/^[a-zA-Z0-9_-]+$/, 'Invalid ID format');
+
 const createBookingSchema = z.object({
-  spaceId: z.string().uuid(),
-  vehicleId: z.string().uuid(),
-  hostId: z.string().uuid(),
+  spaceId: idSchema,
+  vehicleId: idSchema,
+  hostId: idSchema.optional(),
   type: z.enum(['instant', 'scheduled', 'recurring']),
   startTime: z.string().datetime(),
   endTime: z.string().datetime(),
-  totalAmount: z.number().positive(),
+  totalAmount: z.number().positive().optional(),
   recurringFrequency: z.enum(['daily', 'weekly']).optional(),
   recurringEndDate: z.string().datetime().optional(),
+});
+
+const extendBookingSchema = z
+  .object({
+    hours: z.number().int().min(1, 'Minimum extension is 1 hour').max(24, 'Maximum extension is 24 hours').optional(),
+    additionalMinutes: z
+      .number()
+      .int()
+      .min(15, 'Minimum extension is 15 minutes')
+      .max(1440, 'Maximum extension is 24 hours')
+      .optional(),
+  })
+  .refine(
+    (data) => !(data.hours !== undefined && data.additionalMinutes !== undefined),
+    { message: 'Provide either hours or additionalMinutes, not both' },
+  );
+
+// GET /bookings/verify-qr?token=... — Gate pass verification (host/admin)
+bookingRouter.get('/verify-qr', requireRole('host', 'admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = String(req.query['token'] || req.query['qrToken'] || '');
+    if (!token) throw new ValidationError('token query parameter is required');
+    const result = await bookingService.verifyQrPass(token);
+    res.json({ success: true, data: result } as ApiResponse);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /bookings — Create a booking
@@ -73,27 +102,12 @@ bookingRouter.get('/', async (req: Request, res: Response, next: NextFunction) =
 // GET /bookings/:id — Get a booking
 bookingRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const booking = await bookingService.getBooking(req.params['id']!, req.user!.sub);
+    const booking = await bookingService.getBooking(req.params['id']!, req.user!.sub, req.user!.role);
     res.json({ success: true, data: booking } as ApiResponse);
   } catch (err) {
     next(err);
   }
 });
-
-const extendBookingSchema = z
-  .object({
-    hours: z.number().int().min(1, 'Minimum extension is 1 hour').max(24, 'Maximum extension is 24 hours').optional(),
-    additionalMinutes: z
-      .number()
-      .int()
-      .min(15, 'Minimum extension is 15 minutes')
-      .max(1440, 'Maximum extension is 24 hours')
-      .optional(),
-  })
-  .refine(
-    (data) => !(data.hours !== undefined && data.additionalMinutes !== undefined),
-    { message: 'Provide either hours or additionalMinutes, not both' },
-  );
 
 // PUT /bookings/:id/extend — Extend an active or confirmed booking
 bookingRouter.put('/:id/extend', async (req: Request, res: Response, next: NextFunction) => {

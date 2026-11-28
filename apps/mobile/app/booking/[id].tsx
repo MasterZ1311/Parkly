@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -6,33 +6,43 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   Platform,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { bookingApi } from '../../src/api/client';
+import { bookingApi, type VehiclePayloadType } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { colors, theme } from '../../src/constants/theme';
 import { ENTER_FADE_UP, PressScale, SkeletonBlock, triggerHaptic } from '../../src/components/Motion';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { QrPassSvg } from '../../src/components/QrPassSvg';
+import { VehicleIllustration } from '../../src/components/VehicleIllustration';
+import { useAuthStore } from '../../src/store/auth.store';
+import { createDemoBookings } from '../../src/data/demoFixtures';
+import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
+import { scheduleBookingReminderNotification } from '../../src/services/notifications';
 
 interface BookingDetail {
   id: string;
   spaceId: string;
-  spaceName?: string;
-  spaceAddress?: string;
+  hostId?: string;
+  spaceName: string;
+  spaceAddress: string;
   vehicleId?: string;
-  vehiclePlate?: string;
+  vehiclePlate: string;
+  vehicleType: VehiclePayloadType;
   status: string;
   startTime: string;
   endTime: string;
   totalAmount: number;
+  hourlyRate?: number;
   type: string;
   slotNumber?: string;
+  qrToken?: string;
 }
 
 const STATUS_STYLE: Record<string, { fg: string; bg: string; border: string }> = {
@@ -41,85 +51,139 @@ const STATUS_STYLE: Record<string, { fg: string; bg: string; border: string }> =
   active: { fg: colors.info, bg: colors.infoLight, border: colors.infoBorder },
   completed: { fg: colors.textSecondary, bg: colors.cardElevated, border: colors.border },
   cancelled: { fg: colors.danger, bg: colors.dangerLight, border: colors.dangerBorder },
+  expired: { fg: colors.warning, bg: colors.warningLight, border: colors.warningBorder },
   refunded: { fg: colors.navy, bg: colors.cardElevated, border: colors.border },
 };
+
+function formatBooking(raw: any, fallbackId: string): BookingDetail {
+  const rate = Number(raw.space?.hourlyRate ?? raw.hourlyRate ?? 0);
+  return {
+    id: String(raw.id || fallbackId),
+    spaceId: String(raw.spaceId || ''),
+    hostId: raw.hostId,
+    spaceName: raw.space?.name || raw.spaceName || 'Chennai Parking Bay',
+    spaceAddress: raw.space?.address || raw.spaceAddress || 'Chennai Smart Grid Facility',
+    vehicleId: raw.vehicleId,
+    vehiclePlate:
+      raw.vehicle?.licensePlate ||
+      raw.vehiclePlate ||
+      (typeof raw.vehicleId === 'string' && raw.vehicleId.startsWith('veh-')
+        ? raw.vehicleId.replace('veh-', '')
+        : 'VEHICLE'),
+    vehicleType: (raw.vehicle?.vehicleType || raw.vehicleType || 'sedan') as VehiclePayloadType,
+    status: String(raw.status || 'confirmed'),
+    startTime: String(raw.startTime || new Date().toISOString()),
+    endTime: String(raw.endTime || new Date(Date.now() + 2 * 3600000).toISOString()),
+    totalAmount: Number(raw.totalAmount || 0),
+    hourlyRate: Number.isFinite(rate) && rate > 0 ? rate : undefined,
+    type: String(raw.type || 'instant'),
+    slotNumber: raw.slotNumber || 'Assigned Bay',
+    qrToken: raw.qrToken,
+  };
+}
 
 export default function BookingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [isCachedView, setIsCachedView] = useState(false);
+  const [loadError, setLoadError] = useState<ClassifiedApiError | null>(null);
+  const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    loadBooking();
-  }, [id]);
+  const loadBooking = useCallback(async () => {
+    if (!id) {
+      setBooking(null);
+      setLoading(false);
+      return;
+    }
 
-  const loadBooking = async () => {
-    if (!id) return;
     setLoading(true);
+    setLoadError(null);
+    setIsCachedView(false);
+
+    if (isDemoMode) {
+      try {
+        const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+        const demoPool = cached.length > 0 ? cached : createDemoBookings();
+        const found = demoPool.find((b) => b.id === id) || demoPool[0];
+        if (found) {
+          setBooking(formatBooking(found, id));
+        } else {
+          setBooking(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     try {
       const { data } = await bookingApi.get(id);
       const apiBooking = data?.data?.booking || data?.data;
       if (apiBooking) {
-        setBooking(formatBooking(apiBooking));
+        const formatted = formatBooking(apiBooking, id);
+        setBooking(formatted);
+        try {
+          const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+          const next = [formatted, ...cached.filter((b) => b.id !== formatted.id)];
+          await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, next);
+        } catch {
+          // Best-effort offline pass cache
+        }
         return;
       }
-    } catch (err) {
-      console.warn('[BookingDetails] Live fetch error, trying offline cache:', err);
-    }
 
-    try {
-      const cached = await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS);
-      const found = cached?.find((b) => b.id === id);
-      if (found) {
-        setBooking(formatBooking(found));
-        setLoading(false);
+      setBooking(null);
+      setLoadError({ kind: 'not-found', message: 'Reservation could not be found.' });
+    } catch (err: unknown) {
+      const classified = classifyApiError(err, 'Unable to load booking pass.');
+      if (classified.kind === 'session-expired') {
+        router.replace('/status/session-expired');
         return;
       }
-    } catch (cacheErr) {
-      console.warn('[BookingDetails] Cache read error:', cacheErr);
+      if (classified.kind === 'maintenance') {
+        router.replace('/status/maintenance');
+        return;
+      }
+      if (classified.kind === 'server-error') {
+        router.replace('/status/server-error');
+        return;
+      }
+
+      if (classified.kind === 'offline') {
+        try {
+          const cached = await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS);
+          const found = cached?.find((b) => b.id === id);
+          if (found) {
+            setBooking(formatBooking(found, id));
+            setIsCachedView(true);
+            return;
+          }
+        } catch {
+          // Cache read unavailable
+        }
+      }
+
+      setBooking(null);
+      setLoadError(classified);
+    } finally {
+      setLoading(false);
     }
+  }, [id, isDemoMode]);
 
-    setBooking({
-      id,
-      spaceId: 'sp-tng-001',
-      spaceName: 'T Nagar Parking Complex',
-      spaceAddress: '23, Panagal Park Road, T Nagar, Chennai 600017',
-      vehiclePlate: 'TN01AB1234',
-      status: 'confirmed',
-      startTime: new Date().toISOString(),
-      endTime: new Date(Date.now() + 2 * 3600000).toISOString(),
-      totalAmount: 84,
-      type: 'instant',
-      slotNumber: 'Slot B-04',
-    });
-    setLoading(false);
-  };
-
-  const formatBooking = (raw: any): BookingDetail => ({
-    id: raw.id || id!,
-    spaceId: raw.spaceId || 'sp-tng-001',
-    spaceName: raw.space?.name || raw.spaceName || 'T Nagar Parking Complex',
-    spaceAddress: raw.space?.address || raw.spaceAddress || '23, Panagal Park Road, T Nagar, Chennai 600017',
-    vehicleId: raw.vehicleId,
-    vehiclePlate:
-      raw.vehicle?.licensePlate ||
-      raw.vehiclePlate ||
-      (raw.vehicleId?.startsWith('veh-') ? raw.vehicleId.replace('veh-', '') : 'TN01AB1234'),
-    status: raw.status || 'confirmed',
-    startTime: raw.startTime || new Date().toISOString(),
-    endTime: raw.endTime || new Date(Date.now() + 2 * 3600000).toISOString(),
-    totalAmount: Number(raw.totalAmount) || 84,
-    type: raw.type || 'instant',
-    slotNumber: raw.slotNumber || 'Slot B-04',
-  });
+  useFocusEffect(
+    useCallback(() => {
+      loadBooking();
+    }, [loadBooking]),
+  );
 
   const handleNavigate = () => {
     if (!booking) return;
     const address = booking.spaceAddress || 'Chennai';
-    const query = encodeURIComponent(`${booking.spaceName || 'Parking'} ${address}`);
+    const query = encodeURIComponent(`${booking.spaceName} ${address}`);
     const url = Platform.select({
       ios: `maps:0,0?q=${query}`,
       android: `geo:0,0?q=${query}`,
@@ -134,44 +198,111 @@ export default function BookingDetailScreen() {
   const handleCancelBooking = () => {
     if (!booking) return;
 
-    Alert.alert('Cancel Booking', 'Are you sure you want to cancel this reservation? A full refund will be processed.', [
-      { text: 'Keep Booking', style: 'cancel' },
-      {
-        text: 'Cancel Reservation',
-        style: 'destructive',
-        onPress: async () => {
-          setCancelling(true);
-          try {
-            await bookingApi.cancel(booking.id, 'User requested cancellation');
-            setBooking((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
+    Alert.alert(
+      'Cancel Booking',
+      'Are you sure you want to cancel this reservation? Eligible refunds process back to your UPI source.',
+      [
+        { text: 'Keep Booking', style: 'cancel' },
+        {
+          text: 'Cancel Reservation',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              if (!isDemoMode) {
+                await bookingApi.cancel(booking.id, 'User requested cancellation');
+              }
 
-            const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
-            const updated = cached.map((b) => (b.id === booking.id ? { ...b, status: 'cancelled' } : b));
-            await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, updated);
-            triggerHaptic('medium');
-            Alert.alert('Booking Cancelled', 'Your reservation has been cancelled.');
-          } catch {
-            setBooking((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
-            Alert.alert('Booking Cancelled', 'Your reservation has been cancelled.');
-          } finally {
-            setCancelling(false);
-          }
+              setBooking((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
+              const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+              const updated = cached.map((b) =>
+                b.id === booking.id ? { ...b, status: 'cancelled' } : b,
+              );
+              await cacheSet(CACHE_KEYS.RECENT_BOOKINGS, updated);
+              triggerHaptic('medium');
+              Alert.alert('Booking Cancelled', 'Your reservation has been cancelled.');
+            } catch (err: unknown) {
+              const classified = classifyApiError(err, 'Unable to cancel reservation right now.');
+              Alert.alert('Cancellation Failed', classified.message);
+            } finally {
+              setCancelling(false);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   const handleExtendParking = () => {
-    Alert.alert('Extend Parking', 'Extend parking by 1 hour for ₹40?', [
+    if (!booking) return;
+    const estHourly = booking.hourlyRate || 40;
+    Alert.alert('Extend Parking', `Extend reservation by 1 hour (approx. ₹${estHourly} + fee)?`, [
       { text: 'Not Now', style: 'cancel' },
       {
         text: 'Extend (+1h)',
-        onPress: () => {
-          if (!booking) return;
-          const extendedEnd = new Date(new Date(booking.endTime).getTime() + 3600000).toISOString();
-          setBooking((prev) => (prev ? { ...prev, endTime: extendedEnd, totalAmount: prev.totalAmount + 40 } : null));
-          triggerHaptic('success');
-          Alert.alert('Parking Extended', 'Your parking session has been extended by 1 hour.');
+        onPress: async () => {
+          setExtending(true);
+          try {
+            if (isDemoMode) {
+              const extendedEnd = new Date(
+                new Date(booking.endTime).getTime() + 3600_000,
+              ).toISOString();
+              const addAmt = Math.round(estHourly * 1.05);
+              const next = {
+                ...booking,
+                endTime: extendedEnd,
+                totalAmount: booking.totalAmount + addAmt,
+              };
+              setBooking(next);
+              const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+              await cacheSet(
+                CACHE_KEYS.RECENT_BOOKINGS,
+                cached.map((b) =>
+                  b.id === booking.id
+                    ? { ...b, endTime: extendedEnd, totalAmount: next.totalAmount }
+                    : b,
+                ),
+              );
+              triggerHaptic('success');
+              Alert.alert('Parking Extended', 'Demo reservation extended by 1 hour.');
+              return;
+            }
+
+            const { data } = await bookingApi.extend(booking.id, 1);
+            const rawUpdated = data?.data?.booking || data?.data;
+            const formatted = rawUpdated
+              ? formatBooking(rawUpdated, booking.id)
+              : {
+                  ...booking,
+                  endTime: new Date(
+                    new Date(booking.endTime).getTime() + 3600_000,
+                  ).toISOString(),
+                };
+
+            setBooking(formatted);
+            const cached = (await cacheGet<any[]>(CACHE_KEYS.RECENT_BOOKINGS)) || [];
+            await cacheSet(
+              CACHE_KEYS.RECENT_BOOKINGS,
+              cached.map((b) => (b.id === booking.id ? formatted : b)),
+            );
+            scheduleBookingReminderNotification({
+              bookingId: formatted.id,
+              spaceName: formatted.spaceName,
+              endTimeIso: formatted.endTime,
+              vehiclePlate: formatted.vehiclePlate,
+            }).catch(() => {});
+
+            triggerHaptic('success');
+            Alert.alert('Parking Extended', 'Your reservation window has been extended by 1 hour.');
+          } catch (err: unknown) {
+            const classified = classifyApiError(
+              err,
+              'Could not extend reservation due to an overlapping booking.',
+            );
+            Alert.alert('Extension Unavailable', classified.message);
+          } finally {
+            setExtending(false);
+          }
         },
       },
     ]);
@@ -193,7 +324,12 @@ export default function BookingDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { paddingTop: Math.max(insets.top + 16, 32), paddingHorizontal: 18, gap: 14 }]}>
+      <View
+        style={[
+          styles.container,
+          { paddingTop: Math.max(insets.top + 16, 32), paddingHorizontal: 18, gap: 14 },
+        ]}
+      >
         <StatusBar style="dark" backgroundColor={colors.background} />
         <SkeletonBlock height={120} />
         <SkeletonBlock height={240} />
@@ -206,17 +342,37 @@ export default function BookingDetailScreen() {
     return (
       <View style={styles.center}>
         <Ionicons name="alert-circle-outline" size={52} color={colors.danger} />
-        <Text style={styles.errorTitle}>Booking Not Found</Text>
-        <PressScale style={styles.backBtn} contentStyle={styles.backBtnContent} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Go Back</Text>
-        </PressScale>
+        <Text style={styles.errorTitle}>
+          {loadError?.kind === 'offline' ? 'Pass Not Cached Offline' : 'Booking Not Found'}
+        </Text>
+        <Text style={styles.errorSub}>
+          {loadError?.message || 'We could not load this reservation record.'}
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <PressScale
+            style={styles.backBtn}
+            contentStyle={styles.backBtnContent}
+            onPress={loadBooking}
+          >
+            <Text style={styles.backBtnText}>Retry</Text>
+          </PressScale>
+          <PressScale
+            style={[styles.backBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong }]}
+            contentStyle={styles.backBtnContent}
+            onPress={() => router.back()}
+          >
+            <Text style={[styles.backBtnText, { color: colors.navy }]}>Go Back</Text>
+          </PressScale>
+        </View>
       </View>
     );
   }
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=PARKLY:${booking.id}:${booking.vehiclePlate}`;
+  const qrPayload =
+    booking.qrToken || `PARKLY:${booking.id}:${booking.spaceId}:${booking.vehiclePlate}`;
   const statusTone = STATUS_STYLE[booking.status] || STATUS_STYLE.confirmed;
-  const isActiveOrConfirmed = ['confirmed', 'active'].includes(booking.status);
+  const isPassActive = ['confirmed', 'active'].includes(booking.status);
+  const canModify = ['created', 'confirmed', 'active'].includes(booking.status);
 
   return (
     <View style={styles.container}>
@@ -244,14 +400,27 @@ export default function BookingDetailScreen() {
         </PressScale>
       </View>
 
+      <OfflineBanner
+        visible={isCachedView}
+        message="Offline Mode — QR Gate Pass rendered locally"
+      />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 24, 36) }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom + 24, 36) },
+        ]}
       >
         <Animated.View entering={ENTER_FADE_UP}>
           <View style={styles.headerCard}>
             <View style={styles.statusRow}>
-              <View style={[styles.statusBadge, { backgroundColor: statusTone.bg, borderColor: statusTone.border }]}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: statusTone.bg, borderColor: statusTone.border },
+                ]}
+              >
                 <View style={[styles.statusDot, { backgroundColor: statusTone.fg }]} />
                 <Text style={[styles.statusText, { color: statusTone.fg }]}>
                   {booking.status.toUpperCase()}
@@ -269,14 +438,28 @@ export default function BookingDetailScreen() {
             </View>
           </View>
 
-          {isActiveOrConfirmed && (
+          {booking.status === 'created' && (
+            <View style={styles.pendingBanner}>
+              <Ionicons name="hourglass-outline" size={18} color={colors.warning} />
+              <Text style={styles.pendingBannerText}>
+                Awaiting UPI payment confirmation. Your gate QR code unlocks immediately after payment capture.
+              </Text>
+            </View>
+          )}
+
+          {isPassActive && (
             <View style={styles.qrCard}>
-              <Text style={styles.qrTitle}>Gate Entry &amp; Exit Pass</Text>
-              <Text style={styles.qrSubtitle}>Scan at boom barrier or show to on-site attendant</Text>
+              <Text style={styles.qrTitle}>Offline Gate Entry &amp; Exit Pass</Text>
+              <Text style={styles.qrSubtitle}>
+                Scan at boom barrier — works offline in underground basements
+              </Text>
               <View style={styles.qrWrapper}>
-                <Image source={{ uri: qrUrl }} style={styles.qrImage} resizeMode="contain" />
+                <QrPassSvg value={qrPayload} size={184} />
               </View>
-              <Text style={styles.qrPlateText}>{booking.vehiclePlate}</Text>
+              <View style={styles.qrPlateRow}>
+                <VehicleIllustration type={booking.vehicleType} width={54} height={30} />
+                <Text style={styles.qrPlateText}>{booking.vehiclePlate}</Text>
+              </View>
             </View>
           )}
 
@@ -287,7 +470,12 @@ export default function BookingDetailScreen() {
                 <Text style={styles.timeLabel}>Check-In</Text>
                 <Text style={styles.timeValue}>{formatDate(booking.startTime)}</Text>
               </View>
-              <Ionicons name="arrow-forward" size={18} color={colors.textMuted} style={{ alignSelf: 'center', marginHorizontal: 8 }} />
+              <Ionicons
+                name="arrow-forward"
+                size={18}
+                color={colors.textMuted}
+                style={{ alignSelf: 'center', marginHorizontal: 8 }}
+              />
               <View style={styles.timeBlock}>
                 <Text style={styles.timeLabel}>Check-Out</Text>
                 <Text style={styles.timeValue}>{formatDate(booking.endTime)}</Text>
@@ -310,10 +498,10 @@ export default function BookingDetailScreen() {
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoKey}>Payment Method</Text>
-              <Text style={styles.infoVal}>UPI / Auto-Debit</Text>
+              <Text style={styles.infoVal}>UPI / Razorpay</Text>
             </View>
             <View style={[styles.infoRow, styles.totalRow]}>
-              <Text style={styles.totalKey}>Amount Paid</Text>
+              <Text style={styles.totalKey}>Total Amount</Text>
               <Text style={styles.totalVal}>₹{booking.totalAmount}</Text>
             </View>
           </View>
@@ -330,17 +518,26 @@ export default function BookingDetailScreen() {
               <Text style={styles.primaryActionText}>Get Directions</Text>
             </PressScale>
 
-            {isActiveOrConfirmed && (
+            {canModify && (
               <View style={styles.secondaryActionsRow}>
-                <PressScale
-                  style={styles.secondaryActionBtn}
-                  contentStyle={styles.secondaryActionContent}
-                  haptic="selection"
-                  onPress={handleExtendParking}
-                >
-                  <Ionicons name="timer-outline" size={18} color={colors.navy} />
-                  <Text style={styles.secondaryActionText}>Extend (+1h)</Text>
-                </PressScale>
+                {isPassActive && (
+                  <PressScale
+                    style={[styles.secondaryActionBtn, extending && { opacity: 0.55 }]}
+                    contentStyle={styles.secondaryActionContent}
+                    haptic="selection"
+                    onPress={handleExtendParking}
+                    disabled={extending}
+                  >
+                    {extending ? (
+                      <ActivityIndicator size="small" color={colors.navy} />
+                    ) : (
+                      <>
+                        <Ionicons name="timer-outline" size={18} color={colors.navy} />
+                        <Text style={styles.secondaryActionText}>Extend (+1h)</Text>
+                      </>
+                    )}
+                  </PressScale>
+                )}
 
                 <PressScale
                   style={[styles.cancelActionBtn, cancelling && { opacity: 0.5 }]}
@@ -392,7 +589,8 @@ const styles = StyleSheet.create({
   appBarTitle: { color: colors.white, fontSize: 17.5, fontWeight: '800' },
   scrollContent: { padding: 18 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 24 },
-  errorTitle: { color: colors.navy, fontSize: 18, fontWeight: '800', marginTop: 14, marginBottom: 16 },
+  errorTitle: { color: colors.navy, fontSize: 18, fontWeight: '800', marginTop: 14, marginBottom: 8 },
+  errorSub: { color: colors.textSecondary, fontSize: 13.5, textAlign: 'center', marginBottom: 18, lineHeight: 20 },
   backBtn: { backgroundColor: colors.navy, borderRadius: 10, overflow: 'hidden' },
   backBtnContent: { paddingHorizontal: 22, minHeight: 48, justifyContent: 'center', alignItems: 'center' },
   backBtnText: { color: colors.white, fontWeight: '700' },
@@ -433,6 +631,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   slotText: { color: colors.navy, fontSize: 12.5, fontWeight: '800' },
+  pendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.warningLight,
+    borderWidth: 1,
+    borderColor: colors.warningBorder,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  pendingBannerText: {
+    flex: 1,
+    color: colors.warning,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
   qrCard: {
     backgroundColor: colors.surface,
     borderRadius: 18,
@@ -446,9 +662,8 @@ const styles = StyleSheet.create({
   qrTitle: { fontSize: 15, fontWeight: '800', color: colors.navy, marginBottom: 4 },
   qrSubtitle: { fontSize: 12, color: colors.textMuted, marginBottom: 14, textAlign: 'center' },
   qrWrapper: { padding: 8, backgroundColor: colors.white, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
-  qrImage: { width: 176, height: 176 },
+  qrPlateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
   qrPlateText: {
-    marginTop: 12,
     fontSize: 16,
     fontWeight: '800',
     color: colors.navy,
@@ -521,5 +736,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
-  cancelActionText: { color: colors.danger, fontSize: 13.5, fontWeight: '700' },
+  cancelActionText: { color: colors.danger, fontSize: 13.5, fontWeight: '800' },
 });

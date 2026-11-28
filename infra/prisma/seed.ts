@@ -1,11 +1,12 @@
 // ============================================================
 // Parkly — Database Seed Script (Development Fixtures Only)
 // Seeds: Chennai region, deterministic UUID test users/host/
-// vehicle, sample parking spaces, availability slots & rules.
+// vehicle, sample parking spaces, availability slots, rules,
+// and operational console defaults (alerts, audit, settings).
 //
 // Safety:
 //   - Refuses to run when NODE_ENV === 'production' unless
-//     ALLOW_PRODUCTION_SEED=true is explicitly set.
+//     ALLOW_UNSAFE_DEV_SEED=true is explicitly set.
 //   - Idempotent & repeatable (upserts by canonical keys/UUIDs).
 //   - Never auto-rewrites or duplicates legacy string fixtures
 //     (sp-tng-001, etc.); logs explicit conversion instructions.
@@ -164,18 +165,18 @@ export async function seedDatabase(client?: PrismaClient): Promise<void> {
   try {
     console.log('🌱 Seeding Parkly development fixtures...');
 
-    // ── Regions ───────────────────────────────────────────────
+    // ── Reference Regions (shared with production seed-regions.ts) ────
     const chennaiRegion = await seedRegions(prisma);
     console.log('✅ Region ready:', chennaiRegion.id);
 
     // ── Admin User ────────────────────────────────────────────
     const adminUser = await prisma.user.upsert({
-      where: { phone: '+919999999999' },
+      where: { phone: '+919840000001' },
       update: {},
       create: {
         id: SEED_USER_IDS.ADMIN,
-        phone: '+919999999999',
-        name: 'Parkly Admin (Dev)',
+        phone: '+919840000001',
+        name: 'Parkly Admin',
         email: 'admin@parkly.in',
         role: 'admin',
         isActive: true,
@@ -183,15 +184,15 @@ export async function seedDatabase(client?: PrismaClient): Promise<void> {
     });
     console.log('✅ Admin user ready:', adminUser.id);
 
-    // ── Host User & Profile ───────────────────────────────────
+    // ── Host User & Host Profile ──────────────────────────────
     const hostUser = await prisma.user.upsert({
       where: { phone: '+919876543210' },
       update: {},
       create: {
         id: SEED_USER_IDS.HOST,
         phone: '+919876543210',
-        name: 'Ravi Kumar (Dev Host)',
-        email: 'ravi@example.com',
+        name: 'Ravi Kumar (Host)',
+        email: 'ravi.host@parkly.in',
         role: 'host',
         isActive: true,
       },
@@ -203,21 +204,25 @@ export async function seedDatabase(client?: PrismaClient): Promise<void> {
       create: {
         id: SEED_HOST_IDS.KUMAR_PARKING,
         userId: hostUser.id,
-        businessName: 'Kumar Parking Solutions [DEV FIXTURE]',
+        businessName: 'Kumar Smart Parking',
+        panNumber: 'ABCDE1234F',
         verificationStatus: 'approved',
-        verifiedAt: new Date('2026-01-01T00:00:00.000Z'),
+        verifiedAt: new Date('2026-11-01T00:00:00.000Z'),
+        totalEarnings: 0,
+        totalPayouts: 0,
       },
     });
     console.log('✅ Host ready:', host.id);
 
-    // ── Driver User & Default Vehicle ─────────────────────────
+    // ── Driver User & Vehicle ─────────────────────────────────
     const driverUser = await prisma.user.upsert({
       where: { phone: '+919876543211' },
       update: {},
       create: {
         id: SEED_USER_IDS.DRIVER,
         phone: '+919876543211',
-        name: 'Arjun Kumar (Dev Driver)',
+        name: 'Arjun Nair (Driver)',
+        email: 'arjun.driver@parkly.in',
         role: 'driver',
         isActive: true,
       },
@@ -366,6 +371,57 @@ export async function seedDatabase(client?: PrismaClient): Promise<void> {
     }
 
     console.log('✅ Pricing rules ready');
+
+    // ── Operational Alerts, Audit Logs & Default Settings ────
+    if (
+      typeof (prisma as any).systemAlert?.upsert === 'function' &&
+      typeof (prisma as any).auditLog?.upsert === 'function' &&
+      typeof (prisma as any).platformSetting?.upsert === 'function'
+    ) {
+      await prisma.systemAlert.upsert({
+        where: { id: '00000000-0000-4000-8000-000000004001' },
+        update: {},
+        create: {
+          id: '00000000-0000-4000-8000-000000004001',
+          severity: 'info',
+          title: 'Chennai Grid Synchronized',
+          detail: 'Development parking fixtures initialized for Chennai metro corridor.',
+          source: 'seed-script',
+          resolved: false,
+        },
+      });
+
+      await prisma.auditLog.upsert({
+        where: { id: '00000000-0000-4000-8000-000000004002' },
+        update: {},
+        create: {
+          id: '00000000-0000-4000-8000-000000004002',
+          actorId: adminUser.id,
+          actorName: adminUser.email || adminUser.phone,
+          action: 'SYSTEM_SEED_INITIALIZED',
+          target: 'chennai-tn-in',
+          ipAddress: '127.0.0.1',
+        },
+      });
+
+      const defaultSettings: Array<[string, string]> = [
+        ['platformName', 'Parkly'],
+        ['supportEmail', 'support@parkly.in'],
+        ['defaultCity', 'Chennai'],
+        ['platformFeePercent', '5'],
+        ['autoApproveVerifiedHosts', 'false'],
+        ['maintenanceMode', 'false'],
+      ];
+      for (const [key, value] of defaultSettings) {
+        await prisma.platformSetting.upsert({
+          where: { key },
+          update: {},
+          create: { key, value, updatedBy: adminUser.id },
+        });
+      }
+      console.log('✅ Operational settings & audit defaults ready');
+    }
+
     console.log('\n🎉 Seeding complete! Development database fixtures are ready.');
   } finally {
     if (shouldDisconnect) {

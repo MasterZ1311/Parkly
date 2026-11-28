@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchApi, pricingApi } from '../../src/api/client';
 import { colors, theme } from '../../src/constants/theme';
 import { ENTER_FADE_UP, PressScale, SkeletonBlock } from '../../src/components/Motion';
+import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { useAuthStore } from '../../src/store/auth.store';
+import { DEMO_SPACES } from '../../src/data/demoFixtures';
+import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
+import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
 
 interface SpaceDetails {
   id: string;
@@ -33,70 +38,146 @@ export default function SpaceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [space, setSpace] = useState<SpaceDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCachedView, setIsCachedView] = useState(false);
+  const [loadError, setLoadError] = useState<ClassifiedApiError | null>(null);
   const [selectedHours, setSelectedHours] = useState(2);
+  const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    loadSpace();
-  }, [id]);
-
-  const loadSpace = async () => {
+  const loadSpace = useCallback(async () => {
     if (!id || id === 'not-found' || id === 'unavailable') {
       setSpace(null);
+      setLoadError(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setLoadError(null);
+    setIsCachedView(false);
+
+    if (isDemoMode) {
+      const foundDemo = DEMO_SPACES.find((s) => s.id === id) || DEMO_SPACES[0];
+      setSpace({
+        id: foundDemo.id,
+        name: foundDemo.name,
+        address: foundDemo.address,
+        hostId: foundDemo.hostId,
+        totalCapacity: foundDemo.totalCapacity,
+        amenities: foundDemo.amenities,
+        price: { value: foundDemo.price.value, currency: 'INR' },
+        availability: { probabilityPercent: foundDemo.availability.probabilityPercent },
+        photoUrls: [],
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await searchApi.getSpace(id);
       const data = response.data?.data;
       if (data) {
-        let priceVal = typeof data.hourlyRate === 'number' ? data.hourlyRate : 40;
+        const parsedRate = Number(data.hourlyRate ?? data.price?.value);
+        let priceVal = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 40;
         try {
-          const priceResp = await pricingApi.getPrice(id, new Date().toISOString());
-          if (priceResp.data?.data?.effectiveRate) {
-            priceVal = priceResp.data.data.effectiveRate;
+          const priceResp = await pricingApi.getPrice(
+            id,
+            new Date(Date.now() + 2 * 60 * 1000).toISOString(),
+          );
+          const dynamicRate = Number(priceResp.data?.data?.effectiveRate);
+          if (Number.isFinite(dynamicRate) && dynamicRate > 0) {
+            priceVal = dynamicRate;
           }
         } catch {
-          // Dynamic pricing fallback
+          // Base hourly rate remains authoritative if pricing quote call fails
         }
 
+        const parsedCap = Number(data.totalCapacity);
         setSpace({
           id: data.id,
           name: data.name,
           address: data.address,
           hostId: data.hostId,
-          totalCapacity: data.totalCapacity || 10,
+          totalCapacity: Number.isFinite(parsedCap) && parsedCap > 0 ? parsedCap : 10,
           amenities: {
             evCharging: Boolean(data.evCharging),
             covered: Boolean(data.covered),
             securityLevel: data.securityLevel || 'none',
           },
           price: { value: priceVal, currency: 'INR' },
-          availability: { probabilityPercent: 85 },
+          availability: {
+            probabilityPercent: Number(data.availability?.probabilityPercent ?? 85),
+          },
           photoUrls: data.photoUrls || [],
         });
         return;
       }
-    } catch (err) {
-      console.warn('Could not fetch live space, falling back to local dataset:', err);
+
+      setSpace(null);
+      setLoadError({
+        kind: 'not-found',
+        message: 'Parking space details could not be found.',
+      });
+    } catch (err: unknown) {
+      const classified = classifyApiError(err, 'Unable to load parking space details.');
+      if (classified.kind === 'session-expired') {
+        router.replace('/status/session-expired');
+        return;
+      }
+      if (classified.kind === 'maintenance') {
+        router.replace('/status/maintenance');
+        return;
+      }
+      if (classified.kind === 'server-error') {
+        router.replace('/status/server-error');
+        return;
+      }
+
+      if (classified.kind === 'offline') {
+        try {
+          const cachedSpaces = await cacheGet<any[]>(CACHE_KEYS.CACHED_SPACES);
+          const cachedMatch = cachedSpaces?.find((s) => s.id === id);
+          if (cachedMatch) {
+            const cachedRate = Number(cachedMatch.price?.value ?? cachedMatch.hourlyRate ?? 40);
+            setSpace({
+              id: cachedMatch.id,
+              name: cachedMatch.name,
+              address: cachedMatch.address,
+              hostId: cachedMatch.hostId,
+              totalCapacity: Number(cachedMatch.totalCapacity || 10),
+              amenities: {
+                evCharging: Boolean(cachedMatch.amenities?.evCharging ?? cachedMatch.evCharging),
+                covered: Boolean(cachedMatch.amenities?.covered ?? cachedMatch.covered),
+                securityLevel:
+                  cachedMatch.amenities?.securityLevel ?? cachedMatch.securityLevel ?? 'none',
+              },
+              price: {
+                value: Number.isFinite(cachedRate) && cachedRate > 0 ? cachedRate : 40,
+                currency: 'INR',
+              },
+              availability: {
+                probabilityPercent: Number(cachedMatch.availability?.probabilityPercent ?? 80),
+              },
+              photoUrls: cachedMatch.photoUrls || [],
+            });
+            setIsCachedView(true);
+            return;
+          }
+        } catch {
+          // Ignore cache error and present honest error card
+        }
+      }
+
+      setSpace(null);
+      setLoadError(classified);
     } finally {
       setLoading(false);
     }
+  }, [id, isDemoMode]);
 
-    setSpace({
-      id: id!,
-      name: id === 'sp-tng-001' ? 'Express Avenue Premium Parking' : 'T Nagar Parking Complex',
-      address: id === 'sp-tng-001' ? 'Royapettah / T Nagar Hub, Chennai' : '23, Panagal Park Road, T Nagar, Chennai 600017',
-      hostId: 'host-chennai-001',
-      totalCapacity: 25,
-      amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
-      price: { value: id === 'sp-tng-001' ? 60 : 40, currency: 'INR' },
-      availability: { probabilityPercent: 88 },
-      photoUrls: [],
-    });
-  };
+  useEffect(() => {
+    loadSpace();
+  }, [loadSpace]);
 
   const totalCost = space ? space.price.value * selectedHours : 0;
   const feeAmount = Math.round(totalCost * 0.05);
@@ -108,17 +189,22 @@ export default function SpaceDetailScreen() {
       params: {
         spaceId: space.id,
         spaceName: space.name,
-        hostId: space.hostId || 'host-chennai-001',
-        hours: selectedHours,
-        totalAmount: totalCost,
-        hourlyRate: space.price.value,
+        hostId: space.hostId || '',
+        hours: String(selectedHours),
+        totalAmount: String(totalCost),
+        hourlyRate: String(space.price.value),
       },
     });
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, { paddingTop: Math.max(insets.top + 16, 32), paddingHorizontal: 16, gap: 16 }]}>
+      <View
+        style={[
+          styles.container,
+          { paddingTop: Math.max(insets.top + 16, 32), paddingHorizontal: 16, gap: 16 },
+        ]}
+      >
         <StatusBar style="dark" backgroundColor={colors.background} />
         <SkeletonBlock height={180} borderRadius={16} />
         <SkeletonBlock height={110} />
@@ -140,60 +226,45 @@ export default function SpaceDetailScreen() {
         }}
       >
         <StatusBar style="dark" backgroundColor={colors.background} />
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderRadius: 18,
-            borderWidth: 1,
-            borderColor: colors.border,
-            padding: 24,
-            alignItems: 'center',
-            gap: 10,
-            ...theme.elevation.card,
-          }}
-        >
-          <View
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              backgroundColor: colors.primaryLight,
-              borderWidth: 1,
-              borderColor: colors.primaryBorder,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 4,
-            }}
-          >
-            <Ionicons name="alert-circle-outline" size={30} color={colors.primary} />
+        <View style={styles.unavailableCard}>
+          <View style={styles.unavailableIconWrap}>
+            <Ionicons
+              name={loadError?.kind === 'offline' ? 'cloud-offline-outline' : 'alert-circle-outline'}
+              size={30}
+              color={colors.primary}
+            />
           </View>
-          <Text style={{ color: colors.navy, fontSize: 20, fontWeight: '800', textAlign: 'center' }}>
-            Parking Space Unavailable
+          <Text style={styles.unavailableTitle}>
+            {loadError?.kind === 'offline' ? 'Unable to Reach Server' : 'Parking Space Unavailable'}
           </Text>
-          <Text style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 8 }}>
-            This Chennai bay listing is currently offline, unlisted by its host, or the shared link is invalid.
+          <Text style={styles.unavailableDesc}>
+            {loadError?.message ||
+              'This Chennai bay listing is currently offline, unlisted by its host, or the link is invalid.'}
           </Text>
           <View style={{ width: '100%', gap: 10 }}>
             <PressScale
-              style={{ backgroundColor: colors.primary, borderRadius: 12, overflow: 'hidden' }}
-              contentStyle={{ minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
+              style={styles.unavailablePrimaryBtn}
+              contentStyle={styles.unavailableBtnInner}
               rippleColor={colors.rippleLight}
-              onPress={() => router.replace('/(tabs)/map')}
+              onPress={loadSpace}
             >
-              <Text style={{ color: colors.white, fontSize: 15, fontWeight: '800' }}>Explore Nearby Map</Text>
+              <Text style={styles.unavailablePrimaryText}>Retry</Text>
             </PressScale>
+            {loadError?.statusRoute && (
+              <PressScale
+                style={styles.unavailableSecondaryBtn}
+                contentStyle={styles.unavailableBtnInner}
+                onPress={() => router.push(loadError.statusRoute!)}
+              >
+                <Text style={styles.unavailableSecondaryText}>Check Service Status</Text>
+              </PressScale>
+            )}
             <PressScale
-              style={{
-                backgroundColor: colors.surface,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                overflow: 'hidden',
-              }}
-              contentStyle={{ minHeight: 48, alignItems: 'center', justifyContent: 'center' }}
+              style={styles.unavailableSecondaryBtn}
+              contentStyle={styles.unavailableBtnInner}
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}
             >
-              <Text style={{ color: colors.navy, fontSize: 14.5, fontWeight: '700' }}>Back to Search</Text>
+              <Text style={styles.unavailableSecondaryText}>Back to Search</Text>
             </PressScale>
           </View>
         </View>
@@ -224,11 +295,22 @@ export default function SpaceDetailScreen() {
             <View style={styles.heroIconWrap}>
               <Ionicons name="car-sport" size={40} color={colors.navy} />
             </View>
-            <Text style={styles.heroTag}>VERIFIED OFF-STREET HUB · {space.totalCapacity} BAYS</Text>
+            <Text style={styles.heroTag}>
+              VERIFIED CHENNAI BAY · {space.totalCapacity} SLOTS
+            </Text>
           </View>
         </View>
 
-        <Animated.View entering={ENTER_FADE_UP} style={[styles.content, { paddingBottom: 110 + insets.bottom }]}>
+        <OfflineBanner
+          visible={isCachedView}
+          message="Showing cached space snapshot — verify rate when back online"
+        />
+
+        <Animated.View
+          entering={ENTER_FADE_UP}
+          style={[styles.content, { paddingBottom: 120 + insets.bottom }]}
+        >
+          {/* Header Info */}
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{space.name}</Text>
@@ -249,8 +331,13 @@ export default function SpaceDetailScreen() {
                   { backgroundColor: highAvail ? colors.success : colors.warning },
                 ]}
               />
-              <Text style={[styles.availText, { color: highAvail ? colors.success : colors.warning }]}>
-                {space.availability.probabilityPercent}% free
+              <Text
+                style={[
+                  styles.availText,
+                  { color: highAvail ? colors.success : colors.warning },
+                ]}
+              >
+                {space.availability.probabilityPercent}% open
               </Text>
             </View>
           </View>
@@ -262,16 +349,21 @@ export default function SpaceDetailScreen() {
 
           {/* Amenities */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Facility Amenities</Text>
+            <Text style={styles.sectionTitle}>Amenities</Text>
             <View style={styles.amenitiesGrid}>
               <View style={styles.amenityItem}>
                 <Ionicons
                   name="flash"
                   size={18}
-                  color={space.amenities.evCharging ? colors.info : colors.textMuted}
+                  color={space.amenities.evCharging ? colors.success : colors.textMuted}
                 />
-                <Text style={[styles.amenityLabel, !space.amenities.evCharging && styles.amenityDisabled]}>
-                  EV Charging
+                <Text
+                  style={[
+                    styles.amenityLabel,
+                    !space.amenities.evCharging && styles.amenityDisabled,
+                  ]}
+                >
+                  {space.amenities.evCharging ? 'EV Charging' : 'No EV'}
                 </Text>
               </View>
               <View style={styles.amenityItem}>
@@ -280,24 +372,26 @@ export default function SpaceDetailScreen() {
                   size={18}
                   color={space.amenities.covered ? colors.navy : colors.textMuted}
                 />
-                <Text style={[styles.amenityLabel, !space.amenities.covered && styles.amenityDisabled]}>
-                  Covered
+                <Text
+                  style={[
+                    styles.amenityLabel,
+                    !space.amenities.covered && styles.amenityDisabled,
+                  ]}
+                >
+                  {space.amenities.covered ? 'Covered Bay' : 'Open Air'}
                 </Text>
               </View>
               <View style={styles.amenityItem}>
                 <Ionicons name="shield-checkmark" size={18} color={colors.success} />
                 <Text style={styles.amenityLabel}>
-                  {SECURITY_LABELS[space.amenities.securityLevel] || 'Gated'}
+                  {SECURITY_LABELS[space.amenities.securityLevel] ||
+                    space.amenities.securityLevel}
                 </Text>
-              </View>
-              <View style={styles.amenityItem}>
-                <Ionicons name="car" size={18} color={colors.navy} />
-                <Text style={styles.amenityLabel}>{space.totalCapacity} slots</Text>
               </View>
             </View>
           </View>
 
-          {/* Duration Selector */}
+          {/* Duration Picker */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Duration</Text>
             <View style={styles.durationRow}>
@@ -360,7 +454,67 @@ export default function SpaceDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  unavailableCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 24,
+    alignItems: 'center',
+    gap: 10,
+    ...theme.elevation.card,
+  },
+  unavailableIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primaryBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  unavailableTitle: {
+    color: colors.navy,
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  unavailableDesc: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  unavailablePrimaryBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  unavailablePrimaryText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  unavailableSecondaryBtn: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden',
+  },
+  unavailableSecondaryText: {
+    color: colors.navy,
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  unavailableBtnInner: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   imageArea: {
     backgroundColor: colors.navy,
     paddingHorizontal: 16,
@@ -458,7 +612,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   durationChipActive: { backgroundColor: colors.navy, borderColor: colors.navy },
-  durationText: { color: colors.textSecondary, fontSize: 14.5, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  durationText: {
+    color: colors.textSecondary,
+    fontSize: 14.5,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   durationTextActive: { color: colors.white },
   summary: {
     backgroundColor: colors.surface,
@@ -481,7 +640,12 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   summaryTotalLabel: { color: colors.navy, fontSize: 15, fontWeight: '800' },
-  summaryTotalValue: { color: colors.primary, fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  summaryTotalValue: {
+    color: colors.primary,
+    fontSize: 20,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
   footer: {
     position: 'absolute',
     bottom: 0,
@@ -503,5 +667,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bookBtnText: { color: colors.white, fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  bookBtnText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
 });

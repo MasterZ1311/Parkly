@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { commonApi } from './api';
+import { commonApi } from './apiClient';
 
 export interface User {
   id: string;
@@ -15,7 +15,8 @@ export interface AuthStore {
   token: string | null;
   isLoading: boolean;
   error: string | null;
-  login: (phone: string, otp: string) => Promise<void>;
+  requestOtp: (phone: string) => Promise<{ devOtp?: string }>;
+  login: (phone: string, otp: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
@@ -29,16 +30,46 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isLoading: false,
   error: null,
 
-  login: async (phone: string, otp: string) => {
+  requestOtp: async (phone: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await commonApi.verifyOtp(phone, otp);
-      const { token, user } = response.data;
-      localStorage.setItem('authToken', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      set({ user, token, isLoading: false });
+      const response = await commonApi.requestOtp(phone);
+      set({ isLoading: false });
+      return { devOtp: response.data?.data?.devOtp };
     } catch (err: any) {
-      const message = err.response?.data?.message || 'Login failed';
+      const message =
+        err.response?.data?.error?.message || err.response?.data?.message || 'Failed to send OTP';
+      set({ error: message, isLoading: false });
+      throw err;
+    }
+  },
+
+  login: async (phone: string, otp: string, name?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await commonApi.verifyOtp(phone, otp, name);
+      const payload = response.data?.data;
+      const user: User | undefined = payload?.user;
+      const accessToken: string | undefined = payload?.tokens?.accessToken;
+      const refreshToken: string | undefined = payload?.tokens?.refreshToken;
+
+      if (!user || !accessToken) {
+        throw new Error('Authentication response missing session tokens');
+      }
+
+      if (user.role !== 'admin') {
+        throw new Error('Admin privileges required to access Parkly Command Center.');
+      }
+
+      localStorage.setItem('authToken', accessToken);
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      localStorage.setItem('user', JSON.stringify(user));
+      set({ user, token: accessToken, isLoading: false });
+    } catch (err: any) {
+      const message =
+        err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Login failed';
       set({ error: message, isLoading: false });
       throw err;
     }
@@ -47,11 +78,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
   logout: async () => {
     await commonApi.logout();
     localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     set({ user: null, token: null });
   },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    if (user) {
+      localStorage.setItem('user', JSON.stringify(user));
+    }
+    set({ user });
+  },
   setToken: (token) => set({ token }),
   clearError: () => set({ error: null }),
 
@@ -62,8 +99,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
       try {
         const user = JSON.parse(userJson);
         set({ user, token });
-      } catch (e) {
+      } catch {
         localStorage.removeItem('authToken');
+        localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
       }
     }
@@ -71,11 +109,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
 }));
 
 export function useIsAuthenticated() {
-  const { user } = useAuthStore();
-  return !!user;
-}
-
-export function useUserRole() {
-  const { user } = useAuthStore();
-  return user?.role || null;
+  const { user, token } = useAuthStore();
+  return !!(user && token);
 }

@@ -26,14 +26,22 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate --schema=infra/prisma/schema.prisma
 
-      - name: Run Autonomous Multi-Agent Tests (360 tests)
-        run: npm test -w packages/ai-agents
+      - name: Build Shared & AI Packages
+        run: |
+          npm run build -w @parkly/shared
+          npm run build -w @parkly/ai-agents
 
-      - name: Typecheck Microservices & Libraries
+      - name: Run All Workspace Test Suites (Jest & Vitest)
+        run: npm test
+
+      - name: Typecheck AI Agents Tests
+        run: npm run typecheck
+
+      - name: Typecheck & Build All Workspaces
         run: npm run build
 
-  web-frontends:
-    name: Verify Web Dashboards (Host & Admin)
+  web-and-mobile:
+    name: Verify Web Dashboards & Mobile Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -53,6 +61,12 @@ jobs:
 
       - name: Build Admin Portal (React/Vite)
         run: npm run build -w apps/admin-portal
+
+      - name: Typecheck & Test Mobile App (Expo)
+        run: |
+          npm --prefix apps/mobile ci --no-audit --no-fund
+          npx --prefix apps/mobile tsc --noEmit
+          npm --prefix apps/mobile test --if-present
 
   cdk-synth:
     name: AWS CDK Infrastructure Synthesis
@@ -86,8 +100,10 @@ jobs:
 
       - name: Verify CloudFormation Artifacts Generated
         run: |
+          test -f infra/cdk/cdk.out/ParklyNetworkStack.template.json
+          test -f infra/cdk/cdk.out/ParklyDatabaseStack.template.json
           test -f infra/cdk/cdk.out/ParklyStack.template.json
-          echo "CDK synthesis successfully produced ParklyStack CloudFormation template."
+          echo "CDK synthesis successfully produced all CloudFormation templates."
 
   database-verification:
     name: Prisma Schema Validation & Migration Check
@@ -144,3 +160,7 @@ jobs:
           npx ts-node infra/prisma/seed.ts
           npx ts-node infra/prisma/seed.ts
 
+      - name: Verify No Migration Drift (Migrated DB vs Schema)
+        env:
+          DATABASE_URL: postgresql://parkly:password@localhost:5432/parkly_test?schema=public
+        run: npx prisma migrate diff --from-schema-datasource infra/prisma/schema.prisma --to-schema-datamodel infra/prisma/schema.prisma --exit-code

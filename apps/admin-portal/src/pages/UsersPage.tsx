@@ -14,13 +14,15 @@ export default function UsersPage() {
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [roleModalUser, setRoleModalUser] = useState<AdminUser | null>(null);
-  const [selectedRole, setSelectedRole] = useState('driver');
+  const [selectedRole, setSelectedRole] = useState<'driver' | 'host' | 'admin'>('driver');
 
   const [suspendModalUser, setSuspendModalUser] = useState<AdminUser | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
 
-  const { users, loading: usersLoading, refetch } = useUsers(
-    roleFilter === 'All Roles' ? undefined : roleFilter.toLowerCase()
+  const [anonymizeModalUser, setAnonymizeModalUser] = useState<AdminUser | null>(null);
+
+  const { users, loading: usersLoading, error: usersError, refetch } = useUsers(
+    roleFilter === 'All Roles' ? undefined : roleFilter.toLowerCase(),
   );
 
   const filteredUsers = users.filter((u: AdminUser) => {
@@ -33,19 +35,24 @@ export default function UsersPage() {
   });
 
   const confirmSuspend = async () => {
-    if (!suspendModalUser || !suspendReason.trim()) return;
+    if (!suspendModalUser) return;
     setLoading(true);
     setBanner(null);
     try {
-      await adminApi.suspendUser(suspendModalUser.id, suspendReason.trim());
-      setBanner({ type: 'success', text: `User ${suspendModalUser.name || suspendModalUser.phone} status updated.` });
+      if (suspendModalUser.isActive) {
+        await adminApi.suspendUser(suspendModalUser.id, suspendReason.trim() || 'Policy violation');
+        setBanner({ type: 'success', text: `User ${suspendModalUser.name || suspendModalUser.phone} suspended.` });
+      } else {
+        await adminApi.unsuspendUser(suspendModalUser.id);
+        setBanner({ type: 'success', text: `User ${suspendModalUser.name || suspendModalUser.phone} unsuspended.` });
+      }
       setSuspendModalUser(null);
       setSuspendReason('');
       refetch();
     } catch (err: any) {
       setBanner({
         type: 'error',
-        text: 'Error suspending user: ' + (err.response?.data?.message || err.message),
+        text: err.response?.data?.error?.message || err.message || 'Error updating user status',
       });
       setSuspendModalUser(null);
     } finally {
@@ -61,7 +68,7 @@ export default function UsersPage() {
     setLoading(true);
     setBanner(null);
     try {
-      await adminApi.updateUserRole(roleModalUser.id, selectedRole.toLowerCase());
+      await adminApi.updateUserRole(roleModalUser.id, selectedRole);
       setBanner({
         type: 'success',
         text: `Role updated to ${selectedRole.toUpperCase()} for ${roleModalUser.name || roleModalUser.phone}.`,
@@ -71,9 +78,32 @@ export default function UsersPage() {
     } catch (err: any) {
       setBanner({
         type: 'error',
-        text: 'Error updating role: ' + (err.response?.data?.message || err.message),
+        text: err.response?.data?.error?.message || err.message || 'Error updating role',
       });
       setRoleModalUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmAnonymize = async () => {
+    if (!anonymizeModalUser) return;
+    setLoading(true);
+    setBanner(null);
+    try {
+      await adminApi.anonymizeUser(anonymizeModalUser.id);
+      setBanner({
+        type: 'success',
+        text: `Account anonymized under DPDPA compliance for ${anonymizeModalUser.phone}.`,
+      });
+      setAnonymizeModalUser(null);
+      refetch();
+    } catch (err: any) {
+      setBanner({
+        type: 'error',
+        text: err.response?.data?.error?.message || err.message || 'Failed to anonymize user',
+      });
+      setAnonymizeModalUser(null);
     } finally {
       setLoading(false);
     }
@@ -86,7 +116,7 @@ export default function UsersPage() {
         <div>
           <h1 className="page-title">Platform Users &amp; Roles</h1>
           <p className="page-subtitle">
-            Manage drivers, hosts, platform administrators, and government nodal accounts.
+            Manage drivers, hosts, platform administrators, and DPDPA anonymization compliance.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -109,10 +139,15 @@ export default function UsersPage() {
             <option>Driver</option>
             <option>Host</option>
             <option>Admin</option>
-            <option>Government</option>
           </select>
         </div>
       </div>
+
+      {usersError && (
+        <div className="status-banner status-banner--error" style={{ marginBottom: 16 }}>
+          <span>{usersError}</span>
+        </div>
+      )}
 
       {banner && (
         <div className={`status-banner status-banner--${banner.type}`} role="status">
@@ -132,6 +167,8 @@ export default function UsersPage() {
         <div className="table-wrap">
           {usersLoading ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading users...</div>
+          ) : filteredUsers.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No users match your filter.</div>
           ) : (
             <table>
               <thead>
@@ -141,90 +178,66 @@ export default function UsersPage() {
                   <th>Email</th>
                   <th>Role</th>
                   <th>Status</th>
-                  <th>Joined</th>
+                  <th>Joined Date</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
-                      No users match the current search or role filter.{' '}
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        style={{ marginLeft: 8 }}
-                        onClick={() => {
-                          setSearch('');
-                          setRoleFilter('All Roles');
-                        }}
-                      >
-                        Reset Filters
-                      </button>
-                    </td>
-                  </tr>
-                )}
                 {filteredUsers.map((u) => (
                   <tr key={u.id}>
                     <td className="mono-num" style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
                       #{u.id.slice(0, 8)}
                     </td>
                     <td>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {u.name || 'Unregistered Name'}
-                      </div>
-                      <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {u.phone}
-                      </div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{u.name || 'Unregistered'}</div>
+                      <div className="mono-num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.phone}</div>
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{u.email || '—'}</td>
                     <td>
-                      <span
-                        className={`badge badge-${
-                          u.role === 'admin'
-                            ? 'red'
-                            : u.role === 'host'
-                            ? 'blue'
-                            : u.role === 'government'
-                            ? 'yellow'
-                            : 'green'
-                        }`}
-                      >
+                      <span className={`badge badge-${u.role === 'admin' ? 'red' : u.role === 'host' ? 'blue' : 'green'}`}>
                         {u.role.toUpperCase()}
                       </span>
                     </td>
                     <td>
-                      <span className={`badge badge-${u.isActive ? 'green' : 'red'}`}>
-                        {u.isActive ? 'Active' : 'Suspended'}
+                      <span className={`badge badge-${u.isAnonymized ? 'yellow' : u.isActive ? 'green' : 'red'}`}>
+                        {u.isAnonymized ? 'Anonymized' : u.isActive ? 'Active' : 'Suspended'}
                       </span>
                     </td>
-                    <td className="mono-num" style={{ fontSize: 12 }}>
-                      {new Date(u.createdAt).toLocaleDateString()}
-                    </td>
+                    <td className="mono-num" style={{ fontSize: 12 }}>{new Date(u.createdAt).toLocaleDateString('en-IN')}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn btn-outline btn-sm"
                           onClick={() => {
                             setRoleModalUser(u);
-                            setSelectedRole(u.role);
+                            setSelectedRole((u.role as 'driver' | 'host' | 'admin') || 'driver');
                           }}
-                          disabled={loading}
+                          disabled={loading || Boolean(u.isAnonymized)}
                         >
-                          Change Role
+                          Role
                         </button>
                         <button
                           type="button"
-                          className="btn btn-danger-outline btn-sm"
+                          className={u.isActive ? 'btn btn-danger-outline btn-sm' : 'btn btn-success btn-sm'}
                           onClick={() => {
                             setSuspendModalUser(u);
                             setSuspendReason('');
                           }}
-                          disabled={loading}
+                          disabled={loading || Boolean(u.isAnonymized)}
                         >
                           {u.isActive ? 'Suspend' : 'Unsuspend'}
                         </button>
+                        {!u.isAnonymized && (
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setAnonymizeModalUser(u)}
+                            disabled={loading}
+                          >
+                            Anonymize
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -248,7 +261,7 @@ export default function UsersPage() {
               Cancel
             </button>
             <button type="button" className="btn btn-primary" onClick={confirmRoleChange} disabled={loading}>
-              {loading ? 'Updating...' : 'Update Role'}
+              {loading ? 'Updating...' : 'Save Role'}
             </button>
           </>
         }
@@ -256,66 +269,97 @@ export default function UsersPage() {
         {roleModalUser && (
           <>
             <p style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>
-              Select role for <strong>{roleModalUser.name || roleModalUser.phone}</strong>:
+              Select the access role for <strong>{roleModalUser.name || roleModalUser.phone}</strong>:
             </p>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" htmlFor="select-user-role">Assigned Role</label>
+              <label className="form-label" htmlFor="role-select">Role</label>
               <select
-                id="select-user-role"
+                id="role-select"
                 className="form-select"
+                style={{ width: '100%' }}
                 value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
+                onChange={(e) => setSelectedRole(e.target.value as 'driver' | 'host' | 'admin')}
               >
                 <option value="driver">Driver</option>
                 <option value="host">Host</option>
                 <option value="admin">Admin</option>
-                <option value="government">Government</option>
               </select>
             </div>
           </>
         )}
       </Modal>
 
-      {/* Suspend Modal */}
+      {/* Suspend / Unsuspend Modal */}
       <Modal
         open={Boolean(suspendModalUser)}
         onClose={() => setSuspendModalUser(null)}
         titleId="suspend-modal-title"
-        maxWidth={440}
-        title={suspendModalUser?.isActive ? 'Suspend Account' : 'Restore Account'}
+        maxWidth={420}
+        title={suspendModalUser?.isActive ? 'Suspend Account' : 'Unsuspend Account'}
         footer={
-          <>
-            <button type="button" className="btn btn-outline" onClick={() => setSuspendModalUser(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={confirmSuspend}
-              disabled={loading || !suspendReason.trim()}
-            >
-              {loading ? 'Applying...' : 'Confirm Action'}
-            </button>
-          </>
+          suspendModalUser && (
+            <>
+              <button type="button" className="btn btn-outline" onClick={() => setSuspendModalUser(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={suspendModalUser.isActive ? 'btn btn-primary' : 'btn btn-success'}
+                onClick={confirmSuspend}
+                disabled={loading}
+              >
+                {loading ? 'Processing...' : suspendModalUser.isActive ? 'Confirm Suspend' : 'Restore Access'}
+              </button>
+            </>
+          )
         }
       >
         {suspendModalUser && (
           <>
             <p style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>
-              Record an audit reason for updating{' '}
-              <strong>{suspendModalUser.name || suspendModalUser.phone}</strong>.
+              {suspendModalUser.isActive
+                ? `Provide an audit reason for suspending ${suspendModalUser.name || suspendModalUser.phone}.`
+                : `Restore platform access for ${suspendModalUser.name || suspendModalUser.phone}?`}
             </p>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" htmlFor="suspend-reason-input">Audit Reason *</label>
-              <input
-                id="suspend-reason-input"
-                className="form-input"
-                placeholder="e.g. Repeated no-show dispute escalation"
-                value={suspendReason}
-                onChange={(e) => setSuspendReason(e.target.value)}
-              />
-            </div>
+            {suspendModalUser.isActive && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" htmlFor="suspend-reason">Suspension Reason</label>
+                <input
+                  id="suspend-reason"
+                  className="form-input"
+                  placeholder="e.g., Fraudulent bookings / Policy breach"
+                  value={suspendReason}
+                  onChange={(e) => setSuspendReason(e.target.value)}
+                />
+              </div>
+            )}
           </>
+        )}
+      </Modal>
+
+      {/* DPDPA Anonymize Modal */}
+      <Modal
+        open={Boolean(anonymizeModalUser)}
+        onClose={() => setAnonymizeModalUser(null)}
+        titleId="anonymize-modal-title"
+        maxWidth={440}
+        title="DPDPA User Anonymization"
+        footer={
+          <>
+            <button type="button" className="btn btn-outline" onClick={() => setAnonymizeModalUser(null)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-danger" onClick={confirmAnonymize} disabled={loading}>
+              {loading ? 'Anonymizing...' : 'Permanently Anonymize'}
+            </button>
+          </>
+        }
+      >
+        {anonymizeModalUser && (
+          <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+            Irreversibly scrub personal identifiers (phone, email, license plates) for{' '}
+            <strong>{anonymizeModalUser.name || anonymizeModalUser.phone}</strong> while preserving statutory booking ledger integrity?
+          </p>
         )}
       </Modal>
     </div>

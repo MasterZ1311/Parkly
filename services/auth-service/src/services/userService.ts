@@ -3,7 +3,15 @@
 // ============================================================
 
 import { PrismaClient, Prisma } from '@prisma/client';
-import { User, UserRole, generateId, ConflictError, NotFoundError } from '@parkly/shared';
+import {
+  User,
+  UserRole,
+  Vehicle,
+  generateId,
+  ConflictError,
+  NotFoundError,
+} from '@parkly/shared';
+import { vehicleService, type CreateVehicleInput } from './vehicleService';
 
 const defaultPrisma = new PrismaClient();
 
@@ -54,11 +62,11 @@ export class UserService {
   }
 
   /**
-   * Update user profile.
+   * Update user profile (and optional host bank settlement fields).
    */
   async updateUser(
     id: string,
-    data: { name?: string; email?: string | null },
+    data: { name?: string; email?: string | null; bankAccount?: string; ifscCode?: string },
   ): Promise<User> {
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) {
@@ -79,6 +87,17 @@ export class UserService {
         where: { id },
         data: updateData,
       });
+
+      if ((data.bankAccount || data.ifscCode) && user.role === 'host') {
+        await this.prisma.host.updateMany({
+          where: { userId: id },
+          data: {
+            ...(data.bankAccount ? { bankAccountNumber: data.bankAccount.trim() } : {}),
+            ...(data.ifscCode ? { ifscCode: data.ifscCode.trim().toUpperCase() } : {}),
+          },
+        });
+      }
+
       return this.mapUser(user);
     } catch (err: unknown) {
       const prismaCode = (err as { code?: string })?.code;
@@ -87,6 +106,22 @@ export class UserService {
       }
       throw err;
     }
+  }
+
+  async listVehicles(userId: string): Promise<Vehicle[]> {
+    return vehicleService.listVehicles(userId);
+  }
+
+  async upsertVehicle(userId: string, input: CreateVehicleInput): Promise<Vehicle> {
+    return vehicleService.createVehicle(userId, input);
+  }
+
+  async setDefaultVehicle(userId: string, vehicleId: string): Promise<Vehicle> {
+    return vehicleService.setDefaultVehicle(userId, vehicleId);
+  }
+
+  async deleteVehicle(userId: string, vehicleId: string): Promise<{ deleted: true; id: string }> {
+    return vehicleService.deleteVehicle(userId, vehicleId);
   }
 
   private mapUser(raw: {
@@ -113,3 +148,4 @@ export class UserService {
 }
 
 export const userService = new UserService();
+export type { CreateVehicleInput };

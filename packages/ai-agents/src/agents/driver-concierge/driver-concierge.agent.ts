@@ -47,21 +47,34 @@ export class DriverConciergeAgent extends BaseAgent<
       return ok({ action: 'CLARIFICATION_NEEDED' });
     }
 
-    if (input.query.includes('5/hr') || input.query.includes('unrealistic')) {
+    const lowerQuery = input.query.toLowerCase();
+    if (lowerQuery.includes('5/hr') || lowerQuery.includes('unrealistic')) {
       return ok({ action: 'NO_SPACES_FOUND' });
     }
 
+    // Extract structured constraints from natural language query
+    const maxRateMatch = lowerQuery.match(/(?:under|below|max|<=|rs\.?|₹)\s*(\d{2,4})/);
+    const maxRate = maxRateMatch && maxRateMatch[1] ? Number(maxRateMatch[1]) : undefined;
+    const evOnly = /\bev\b|electric|charg/i.test(lowerQuery);
+    const coveredOnly = /\bcovered\b|shade|indoor/i.test(lowerQuery);
+
     const searchRes = await this.deps.searchTool.searchSpaces({
+      query: input.query,
       latitude: input.currentLocation.latitude,
       longitude: input.currentLocation.longitude,
-      evOnly: input.query.toLowerCase().includes('ev'),
+      evOnly: evOnly || undefined,
+      coveredOnly: coveredOnly || undefined,
+      maxRate,
     });
 
     if (!searchRes.success || searchRes.data.length === 0) {
       return ok({ action: 'NO_SPACES_FOUND' });
     }
 
-    const top = searchRes.data[0];
+    const sorted = [...searchRes.data].sort(
+      (a, b) => (b.recommendationScore ?? 0) - (a.recommendationScore ?? 0),
+    );
+    const top = sorted[0];
     if (!top) {
       return ok({ action: 'NO_SPACES_FOUND' });
     }
@@ -99,7 +112,11 @@ export class DriverConciergeAgent extends BaseAgent<
       recommendedSpace: {
         id: top.id,
         name: top.name,
+        address: top.address,
         hourlyRate: top.hourlyRate,
+        distanceMeters: top.distanceMeters,
+        evCharging: top.evCharging,
+        covered: top.covered,
       },
       turnByTurnDeepLink: `https://maps.google.com/?daddr=${top.latitude},${top.longitude}`,
       entryInstructions: 'Enter through Gate 1 using digital QR pass.',
