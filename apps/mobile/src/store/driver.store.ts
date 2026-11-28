@@ -29,6 +29,10 @@ export interface DriverVehicle {
   make?: string;
   model?: string;
   color?: string;
+  rcNumber?: string;
+  rcDocumentUrl?: string;
+  insuranceNumber?: string;
+  verificationStatus?: 'pending' | 'approved' | 'rejected';
   isDefault: boolean;
   createdAt: string;
 }
@@ -114,6 +118,9 @@ interface DriverState {
     make?: string;
     model?: string;
     color?: string;
+    rcNumber?: string;
+    rcDocumentUrl?: string;
+    insuranceNumber?: string;
     isDefault?: boolean;
   }) => Promise<DriverVehicle>;
   setDefaultVehicle: (id: string) => Promise<void>;
@@ -207,6 +214,10 @@ export const useDriverStore = create<DriverState>((set, get) => ({
         make: input.make?.trim() || undefined,
         model: input.model?.trim() || undefined,
         color: input.color?.trim() || undefined,
+        rcNumber: input.rcNumber?.trim().toUpperCase() || undefined,
+        rcDocumentUrl: input.rcDocumentUrl?.trim() || undefined,
+        insuranceNumber: input.insuranceNumber?.trim().toUpperCase() || undefined,
+        verificationStatus: input.rcNumber ? 'pending' : undefined,
         isDefault: shouldBeDefault,
         createdAt: new Date().toISOString(),
       };

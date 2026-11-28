@@ -35,7 +35,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
       ]
     },
     "web": {
@@ -45,6 +47,13 @@
     "plugins": [
       "expo-router",
       "expo-location",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Parkly to attach parking plot photos, RC Book, and Driving Licence documents.",
+          "cameraPermission": "Allow Parkly to capture photos of your parking plot, Driving Licence, and RC Book."
+        }
+      ],
       [
         "expo-secure-store",
         {

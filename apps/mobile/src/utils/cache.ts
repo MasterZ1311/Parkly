@@ -19,6 +19,9 @@ export const CACHE_KEYS = {
   UPI_METHODS: '@parkly/upi_methods',
   NOTIFICATION_PREFS: '@parkly/notification_prefs',
   NOTIFICATION_INBOX: '@parkly/notification_inbox',
+  HOST_SPACES: '@parkly/host_spaces',
+  DRIVER_KYC: '@parkly/driver_kyc',
+  HOST_KYC: '@parkly/host_kyc',
 } as const;
 
 export type CacheKey = (typeof CACHE_KEYS)[keyof typeof CACHE_KEYS];

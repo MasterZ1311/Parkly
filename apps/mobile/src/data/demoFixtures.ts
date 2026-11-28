@@ -1,10 +1,13 @@
 import type { AuthUser } from '../store/auth.store';
+import type { SpaceType } from '../api/client';
 import type { VehicleClass } from '../components/VehicleIllustration';
 
 export interface DemoSpaceItem {
   id: string;
   hostId: string;
   name: string;
+  spaceType: SpaceType;
+  entryInstructions?: string;
   address: string;
   coordinates: { lat: number; lng: number };
   distance: { value: number; unit: string };
@@ -12,6 +15,23 @@ export interface DemoSpaceItem {
   availability: { probabilityPercent: number; confidencePercent: number };
   amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
   totalCapacity: number;
+}
+
+export function getSpaceTypeMeta(spaceType?: SpaceType | string): {
+  label: string;
+  shortLabel: string;
+  isPrivate: boolean;
+} {
+  switch (spaceType) {
+    case 'private_house':
+      return { label: 'Private House / Driveway', shortLabel: 'Private Home', isPrivate: true };
+    case 'apartment_bay':
+      return { label: 'Apartment Visitor Bay', shortLabel: 'Apartment Bay', isPrivate: true };
+    case 'gated_compound':
+      return { label: 'Gated Private Compound', shortLabel: 'Gated Private', isPrivate: true };
+    default:
+      return { label: 'Official Commercial Lot', shortLabel: 'Official Lot', isPrivate: false };
+  }
 }
 
 export interface DemoVehicle {
@@ -43,6 +63,12 @@ export interface DemoBooking {
   hourlyRate: number;
   type: string;
   slotNumber: string;
+  gateCode?: string;
+  checkedInAt?: string;
+  checkedOutAt?: string;
+  leavingNotifiedAt?: string;
+  overstayMinutes?: number;
+  overstayAmount?: number;
 }
 
 export const DEMO_USER: AuthUser = {
@@ -60,6 +86,8 @@ export const DEMO_SPACES: DemoSpaceItem[] = [
     id: '00000000-0000-4000-8000-000000001001',
     hostId: DEMO_HOST_ID,
     name: 'T Nagar Parking Complex - Spot A',
+    spaceType: 'commercial',
+    entryInstructions: 'Scan QR pass at Panagal Park Road boom barrier.',
     address: '23, Panagal Park Road, T Nagar, Chennai 600017',
     coordinates: { lat: 13.0418, lng: 80.2341 },
     distance: { value: 0.4, unit: 'km' },
@@ -69,9 +97,24 @@ export const DEMO_SPACES: DemoSpaceItem[] = [
     totalCapacity: 24,
   },
   {
+    id: '00000000-0000-4000-8000-000000001005',
+    hostId: DEMO_HOST_ID,
+    name: '14B Thirumalai House Driveway',
+    spaceType: 'private_house',
+    entryInstructions: 'Private residential porch. Ring gate bell or call homeowner on arrival.',
+    address: '14B, Thirumalai Pillai Road, T Nagar, Chennai 600017',
+    coordinates: { lat: 13.0452, lng: 80.2372 },
+    distance: { value: 0.5, unit: 'km' },
+    price: { value: 25, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 94, confidencePercent: 92 },
+    amenities: { evCharging: false, covered: true, securityLevel: 'gated' },
+    totalCapacity: 1,
+  },
+  {
     id: '00000000-0000-4000-8000-000000001002',
     hostId: DEMO_HOST_ID,
     name: 'Pondy Bazaar Smart Multi-Level',
+    spaceType: 'commercial',
     address: '25, Panagal Park Road, T Nagar, Chennai 600017',
     coordinates: { lat: 13.042, lng: 80.2345 },
     distance: { value: 0.8, unit: 'km' },
@@ -81,9 +124,24 @@ export const DEMO_SPACES: DemoSpaceItem[] = [
     totalCapacity: 18,
   },
   {
+    id: '00000000-0000-4000-8000-000000001006',
+    hostId: DEMO_HOST_ID,
+    name: '22, 4th Main Villa Carport',
+    spaceType: 'private_house',
+    entryInstructions: 'Shaded independent house carport with 15A EV wall socket inside gate.',
+    address: '22, 4th Main Road, Anna Nagar, Chennai 600040',
+    coordinates: { lat: 13.0849, lng: 80.2101 },
+    distance: { value: 1.2, unit: 'km' },
+    price: { value: 30, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 90, confidencePercent: 91 },
+    amenities: { evCharging: true, covered: true, securityLevel: 'gated' },
+    totalCapacity: 2,
+  },
+  {
     id: '00000000-0000-4000-8000-000000001003',
     hostId: DEMO_HOST_ID,
     name: 'Adyar Smart Park',
+    spaceType: 'commercial',
     address: '12, Gandhi Nagar, Adyar, Chennai 600020',
     coordinates: { lat: 13.0067, lng: 80.2566 },
     distance: { value: 1.5, unit: 'km' },
@@ -93,9 +151,24 @@ export const DEMO_SPACES: DemoSpaceItem[] = [
     totalCapacity: 15,
   },
   {
+    id: '00000000-0000-4000-8000-000000001007',
+    hostId: DEMO_HOST_ID,
+    name: 'Besant Ave Villa Stilt Bay',
+    spaceType: 'apartment_bay',
+    entryInstructions: 'Show Parkly pass to watchman at Gate 1 and park in Bay G-02.',
+    address: '8, Besant Avenue, Adyar, Chennai 600020',
+    coordinates: { lat: 13.0038, lng: 80.2598 },
+    distance: { value: 1.8, unit: 'km' },
+    price: { value: 25, currency: 'INR', per: 'hour' },
+    availability: { probabilityPercent: 86, confidencePercent: 89 },
+    amenities: { evCharging: false, covered: true, securityLevel: 'staffed' },
+    totalCapacity: 1,
+  },
+  {
     id: '00000000-0000-4000-8000-000000001004',
     hostId: DEMO_HOST_ID,
     name: 'Velachery EV Parking Hub',
+    spaceType: 'commercial',
     address: '89, 100 Feet Road, Velachery, Chennai 600042',
     coordinates: { lat: 12.9791, lng: 80.2204 },
     distance: { value: 2.3, unit: 'km' },

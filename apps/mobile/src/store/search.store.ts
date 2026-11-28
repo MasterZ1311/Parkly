@@ -5,12 +5,14 @@ export type ArrivalOffsetMinutes = 0 | 15 | 30 | 60 | 120;
 export type DurationHours = 1 | 2 | 3 | 4 | 6;
 
 export interface SearchAmenitiesFilter {
+  privateOnly: boolean;
   evOnly: boolean;
   coveredOnly: boolean;
   gatedOnly: boolean;
 }
 
 export interface SearchFilterItem {
+  spaceType?: string;
   amenities: {
     evCharging: boolean;
     covered: boolean;
@@ -41,6 +43,7 @@ export function buildServerSearchFilters(
   vehicleType?: VehiclePayloadType,
 ): Record<string, unknown> | undefined {
   const filters: Record<string, unknown> = {};
+  if (amenities.privateOnly) filters.spaceType = 'private';
   if (amenities.evOnly) filters.evCharging = true;
   if (amenities.coveredOnly) filters.coveredParking = true;
   if (amenities.gatedOnly) filters.securityLevel = 'gated';
@@ -53,6 +56,9 @@ export function filterSpaceResults<T extends SearchFilterItem>(
   amenities: SearchAmenitiesFilter,
 ): T[] {
   return items.filter((item) => {
+    if (amenities.privateOnly && (!item.spaceType || item.spaceType === 'commercial')) {
+      return false;
+    }
     if (amenities.evOnly && !item.amenities.evCharging) return false;
     if (amenities.coveredOnly && !item.amenities.covered) return false;
     if (amenities.gatedOnly) {
@@ -83,6 +89,7 @@ interface SearchSessionState {
 }
 
 const DEFAULT_AMENITIES: SearchAmenitiesFilter = {
+  privateOnly: false,
   evOnly: false,
   coveredOnly: false,
   gatedOnly: false,

@@ -126,12 +126,79 @@ api.interceptors.response.use(
 // ============================================================
 
 export type VehiclePayloadType = 'motorcycle' | 'compact' | 'sedan' | 'suv' | 'van' | 'truck';
+export type SpaceType = 'commercial' | 'private_house' | 'apartment_bay' | 'gated_compound';
+export type GovIdType = 'aadhaar' | 'pan' | 'passport' | 'voter_id';
+export type OwnershipProofType =
+  | 'property_tax'
+  | 'electricity_bill'
+  | 'sale_deed'
+  | 'noc_society'
+  | 'rental_agreement';
+export type KycVerificationStatus = 'pending' | 'approved' | 'rejected';
 
 export interface NotificationPreferencesPayload {
   bookingReminders: boolean;
   gateAlerts: boolean;
   paymentReceipts: boolean;
   promoOffers: boolean;
+}
+
+export interface CreateHostSpacePayload {
+  name: string;
+  description?: string;
+  spaceType: SpaceType;
+  entryInstructions?: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  totalCapacity: number;
+  vehicleTypes: VehiclePayloadType[];
+  evCharging: boolean;
+  covered: boolean;
+  securityLevel: 'none' | 'basic' | 'monitored' | 'staffed' | 'gated';
+  hourlyRate: number;
+  photoUrls?: string[];
+  ownershipProofUrl?: string;
+}
+
+export interface DriverKycPayload {
+  fullName: string;
+  dateOfBirth?: string;
+  address?: string;
+  emergencyContact?: string;
+  drivingLicenseNumber: string;
+  drivingLicenseExpiry?: string;
+  drivingLicenseFrontUrl: string;
+  drivingLicenseBackUrl?: string;
+  govIdType: GovIdType;
+  govIdNumberMasked: string;
+  govIdDocumentUrl: string;
+  vehiclePlate: string;
+  rcNumber: string;
+  rcDocumentUrl: string;
+  insuranceDocumentUrl?: string;
+  selfieUrl?: string;
+}
+
+export interface HostKycPayload {
+  kycFullName: string;
+  kycPhone?: string;
+  businessName?: string;
+  panNumber?: string;
+  govIdType: GovIdType;
+  govIdNumberMasked: string;
+  govIdDocumentUrl: string;
+  ownershipProofType: OwnershipProofType;
+  ownershipDocumentUrl: string;
+  addressProofUrl?: string;
+  plotPhotoUrls: string[];
+  bankAccountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+  kycNotes?: string;
 }
 
 export const authApi = {
@@ -149,10 +216,27 @@ export const authApi = {
     make?: string;
     model?: string;
     color?: string;
+    rcNumber?: string;
+    rcDocumentUrl?: string;
+    insuranceNumber?: string;
     isDefault?: boolean;
   }) => api.post('/auth/vehicles', payload),
   setDefaultVehicle: (id: string) => api.put(`/auth/vehicles/${id}/default`),
   deleteVehicle: (id: string) => api.delete(`/auth/vehicles/${id}`),
+  becomeHost: (payload?: { businessName?: string; bankAccount?: string; ifscCode?: string }) =>
+    api.post('/auth/become-host', payload || {}),
+  getDriverKyc: () => api.get('/auth/driver-kyc'),
+  submitDriverKyc: (payload: DriverKycPayload) => api.put('/auth/driver-kyc', payload),
+};
+
+export const hostApi = {
+  listMySpaces: () => api.get('/host/listings'),
+  createSpace: (payload: CreateHostSpacePayload) => api.post('/host/listings', payload),
+  updateSpace: (id: string, payload: Partial<CreateHostSpacePayload> & { status?: 'active' | 'inactive' }) =>
+    api.patch(`/host/listings/${id}`, payload),
+  getRevenue: () => api.get('/host/revenue'),
+  getKyc: () => api.get('/host/kyc'),
+  submitKyc: (payload: HostKycPayload) => api.put('/host/kyc', payload),
 };
 
 export const searchApi = {
@@ -180,6 +264,10 @@ export const bookingApi = {
   }) => api.post('/bookings', data),
   list: (status?: string) => api.get('/bookings', { params: { status } }),
   get: (id: string) => api.get(`/bookings/${id}`),
+  checkIn: (id: string, gateCode?: string) =>
+    api.post(`/bookings/${id}/check-in`, gateCode ? { gateCode } : {}),
+  checkOut: (id: string) => api.post(`/bookings/${id}/check-out`, {}),
+  notifyLeaving: (id: string) => api.post(`/bookings/${id}/leaving-soon`, {}),
   extend: (id: string, hours = 1) => api.put(`/bookings/${id}/extend`, { hours }),
   cancel: (id: string, reason?: string) => api.put(`/bookings/${id}/cancel`, { reason }),
 };
