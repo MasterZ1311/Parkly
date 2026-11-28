@@ -236,8 +236,13 @@ Every service enforces strict Zod schema validation, response timing headers (`X
 | **`api-gateway`** | `4000` | `/health` | `GET` | Public | `< 2ms` |
 | **`auth-service`** | `4001` | `/auth/otp/request` | `POST` | Public | `< 120ms` (DynamoDB TTL write) |
 | **`auth-service`** | `4001` | `/auth/otp/verify` | `POST` | Public | `< 80ms` (JWT generation) |
+| **`auth-service`** | `4001` | `/auth/driver-kyc` | `GET` / `PUT` | `driver` | `< 40ms` (DL, RC & Govt ID) |
 | **`booking-service`**| `4002` | `/bookings` | `POST` | `driver` | `< 45ms` (Prisma transaction) |
 | **`booking-service`**| `4002` | `/bookings` | `GET` | `driver`, `host` | `< 30ms` (Indexed search) |
+| **`booking-service`**| `4002` | `/bookings/verify-pass` | `POST` | `host`, `admin` | `< 30ms` (QR or 4-digit PIN) |
+| **`booking-service`**| `4002` | `/bookings/:id/check-in` | `POST` | `driver`, `host` | `< 35ms` (`confirmed → active`) |
+| **`booking-service`**| `4002` | `/bookings/:id/leaving-soon` | `POST` | `driver` | `< 25ms` (Host exit alert) |
+| **`booking-service`**| `4002` | `/bookings/:id/check-out` | `POST` | `driver`, `host` | `< 40ms` (Overstay + release) |
 | **`payment-service`**| `4003` | `/payments/initiate` | `POST` | `driver` | `< 150ms` (Razorpay order API) |
 | **`payment-service`**| `4003` | `/payments/:id/confirm`| `PUT` | `driver` | `< 40ms` (HMAC verify + DB) |
 | **`payment-service`**| `4003` | `/payments/webhook` | `POST` | Razorpay Webhook | `< 25ms` (Timing-safe HMAC) |
@@ -245,10 +250,19 @@ Every service enforces strict Zod schema validation, response timing headers (`X
 | **`prediction-service`** | `4005` | `/concierge` | `POST` | Public (Gateway) | `< 110ms` (DriverConciergeAgent) |
 | **`pricing-service`**| `4008` | `/pricing/:spaceId` | `GET` | Authenticated | `< 15ms` (Lookup multiplier table)|
 | **`pricing-service`**| `4008` | `/pricing/ai-quote` | `POST` | Authenticated | `< 50ms` (DynamicPricingAgent) |
-| **`host-service`** | `4010` | `/host/listings` | `POST` | `host`, `admin` | `< 55ms` (Geohash + DB write) |
+| **`host-service`** | `4010` | `/host/listings` | `POST` | `host`, `admin` | `< 55ms` (Commercial & private spaces) |
+| **`host-service`** | `4010` | `/host/kyc` | `GET` / `PUT` | `host`, `driver` | `< 45ms` (Owner ID & plot photos) |
 | **`host-service`** | `4010` | `/host/listings/:id/ai-verify` | `POST`| `host`, `admin`| `< 280ms` (Onboarding + Vision AI)|
+| **`admin-service`** | `4011` | `/admin/verifications` | `GET` | `admin` | `< 50ms` (Plots + Driver/Host KYC) |
 | **`admin-service`** | `4011` | `/admin/disputes/:id/mediate` | `POST`| `admin` | `< 120ms` (DisputeMediationAgent)|
 | **`admin-service`** | `4011` | `/admin/analytics/city` | `GET` | `admin` | `< 90ms` (CityAnalyticsAgent) |
+
+### C. Critical MVP Go-Live Switches
+Before pointing real mobile traffic at staging or production:
+1. Set `NODE_ENV=production`, `RETURN_DEV_OTP=false`, and `ALLOW_MOCK_PAYMENTS=false`.
+2. Wire `react-native-razorpay` (or Razorpay UPI checkout) into `apps/mobile/app/booking/create.tsx` so confirmed bookings submit real gateway payment signatures instead of local test strings.
+3. Upload picked KYC & plot images from `apps/mobile` directly to presigned `S3_BUCKET_UPLOADS` URLs and serve them via short-lived signed `GET` URLs in `admin-service`.
+4. Deploy all Prisma migrations (`npx prisma migrate deploy --schema=infra/prisma/schema.prisma`), enable DynamoDB TTL on `expiresAt`, and build mobile release binaries with `EXPO_PUBLIC_API_URL=https://api.<domain>/api/v1`.
 
 ---
 

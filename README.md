@@ -25,10 +25,13 @@
 In metro cities like Chennai, **30% of downtown traffic** consists of cars cruising for parking—wasting **20–35 minutes per trip** per driver while 60%–80% of private residential driveways and commercial office bays sit idle.
 
 **Parkly** ("Airbnb for Parking") turns invisible urban bays into guaranteed, reservable digital inventory:
+- **Private Residential & House Parking (`SpaceType`)**: Homeowners and societies can list vacant house driveways (`private_house`), apartment visitor bays (`apartment_bay`), and gated compounds (`gated_compound`) with custom `entryInstructions`, filtered via the **`Private / Home`** chip in discovery.
+- **Dual KYC & Review Team Verification**: Drivers submit **Driving Licence, Vehicle Reg. No., RC Book, and Govt ID** (`DriverKyc`), while hosts upload **Identity, Property Ownership Proof, and Plot Photos** (`Host KYC`); spaces remain locked in `pending_verification` until approved by the Parkly Review Team in `Admin Portal`.
+- **Host–Driver Gate Handshake & Timing Protocol**: Combines an HMAC-signed **Offline QR Pass** and a backup **4-digit Gate PIN** (`gateCode`) for residential driveways, with **15-minute early check-in**, live session countdowns, **`+1h` capacity-checked extend**, **`Leaving Soon`** host alerts, and automated **10-minute grace / overstay settlement** on check-out.
 - **Predict Open Bays at Your ETA**: Live availability probability scoring (**88% open**, **72% open**) across high-density Chennai corridors (T. Nagar, Anna Nagar, Adyar, Velachery, OMR).
 - **AI Driver Concierge**: Ask naturally (*"Covered spot near Pothys under ₹60/hr"*) and get distance-ranked, rule-verified parking with one-tap **`Instant Reserve`**.
-- **The 3-Tap Rule + Zero Hardware Start**: Select bay → confirm Indian registration (`TN01AB1234`) + UPI (`₹126`) → unlock boom barriers with a digital **Entry Gate QR Pass (`#BK-LIVE-1001`)**.
-- **Atomic Concurrency Guarantee**: PostgreSQL row-level locking prevents double-bookings under concurrent demand spikes.
+- **The 3-Tap Rule + Zero Hardware Start**: Select bay → confirm Indian registration (`TN01AB1234`) + UPI (`₹126`) → check in with a digital **Entry Gate QR Pass** or **4-Digit Gate PIN**.
+- **Atomic Concurrency Guarantee**: PostgreSQL row-level locking (`SELECT ... FOR UPDATE`) prevents double-bookings under concurrent demand spikes.
 - **Full Two-Sided + Municipal Grid**: Automated **80–85% UPI payouts** for property hosts + **8 Autonomous AI Agents** powering KYC onboarding, vision inspection, surge pricing, dispute mediation, and city CO₂ analytics.
 
 ---

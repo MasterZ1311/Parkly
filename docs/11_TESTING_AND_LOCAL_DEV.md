@@ -114,8 +114,16 @@ npm run test:ai
 # Typecheck all workspaces
 npm run typecheck
 
-# Compile all workspaces cleanly
+# Compile all workspaces & run service/app tests
 npm run build
+npm test -w services/auth-service
+npm test -w services/booking-service
+npm test -w services/host-service
+npm test -w services/admin-service
+
+# Mobile TypeScript & Jest verification (apps/mobile)
+npx tsc -p apps/mobile/tsconfig.json --noEmit
+cd apps/mobile && npx jest --runInBand
 
 # Build web portals
 npm run build -w apps/host-dashboard

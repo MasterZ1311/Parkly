@@ -1,7 +1,7 @@
 # 🅿️ Parkly — System Architecture & Infrastructure Design
 
-> **Document Version**: 1.0.0  
-> **Status**: Approved Foundation  
+> **Document Version**: 1.1.0  
+> **Status**: Updated Architecture (Private Residential Spaces, Dual KYC & Gate Handshake)  
 > **Scope**: Cloud Native, Event-Driven, Distributed Architecture
 
 ---
@@ -107,18 +107,19 @@ When rebuilding Parkly from scratch, we establish clear software boundaries. We 
 Synchronous HTTP calls between microservices create tight coupling, latency buildup, and cascading outages. Parkly enforces asynchronous communication via **Amazon EventBridge**:
 
 ### Key Domain Events Catalog
-1. `Booking.Created`:
-   - Emitted by: **Booking Service**
-   - Consumers: **Payment Service** (initiates payment intent), **Notification Service** (sends provisional SMS).
-2. `Payment.Completed`:
-   - Emitted by: **Payment Service**
-   - Consumers: **Booking Service** (transitions status from `created` to `confirmed`), **Occupancy Service** (reserves slot), **Notification Service** (sends receipt & navigation link).
-3. `Occupancy.Changed`:
-   - Emitted by: **Occupancy Service** (via IoT sensor or QR scan check-in/out)
+1. `BookingCreated` / `BookingConfirmed`:
+   - Emitted by: **Booking Service** / **Payment Service**
+   - Consumers: **Payment Service** (initiates payment intent), **Occupancy Service** (reserves capacity), **Notification Service** (issues offline QR Pass, 4-digit Gate PIN, and 15m-prior reminders).
+2. `BookingCheckedIn` & `BookingLeavingSoon`:
+   - Emitted by: **Booking Service** on arrival check-in (`POST /bookings/:id/check-in` or host QR/PIN verification) and when driver sends a pre-departure alert (`POST /bookings/:id/leaving-soon`).
+   - Consumers: **Host Dashboard** (updates active session timer & "Leaving Soon" indicator), **Occupancy Service**.
+3. `BookingCompleted` / `BookingExtended`:
+   - Emitted by: **Booking Service** on capacity-checked extension (`PUT /bookings/:id/extend`) or exit check-out (`POST /bookings/:id/check-out`), including any overstay settlement past the 10-minute grace window.
+4. `OccupancyChanged`:
+   - Emitted by: **Occupancy Service** (via IoT sensor, simulator, or QR/PIN gate check-in/out)
    - Consumers: **Pricing Service** (recalculates real-time demand multiplier), **Prediction Service** (updates historical occupancy training logs in S3).
-4. `Host.Verified`:
-   - Emitted by: **Admin Service**
-   - Consumers: **Host Service** (activates public search visibility of host spaces), **Notification Service** (notifies host to set live calendar).
+5. `HostVerificationRequested` / `HostVerificationCompleted`:
+   - Triggered by **Auth / Host Services** (`DriverKyc`, `Host KYC`, and private residential `ParkingSpace` submissions in `pending_verification`) and finalized by **Admin Service** Verification Queue before spaces go live in Search.
 
 ---
 

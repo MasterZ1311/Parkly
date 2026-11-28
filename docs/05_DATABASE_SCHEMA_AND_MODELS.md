@@ -1,7 +1,7 @@
 # 🅿️ Parkly — Database Schemas, Data Models & State Machines
 
-> **Document Version**: 1.0.0  
-> **Status**: Approved Foundation  
+> **Document Version**: 1.1.0  
+> **Status**: Updated Schema (Private Spaces, Dual KYC & Gate Check-In/Overstay)  
 > **Databases**: Amazon RDS PostgreSQL 16 (Relational/ACID) + Amazon DynamoDB (NoSQL/TTL)
 
 ---
@@ -11,6 +11,7 @@
 ```mermaid
 erDiagram
     User ||--o{ Vehicle : owns
+    User ||--o| DriverKyc : submits_kyc
     User ||--o{ Booking : creates
     User ||--o| Host : registers_as
     User ||--o{ Dispute : raises
@@ -45,14 +46,29 @@ erDiagram
         boolean is_default
     }
 
+    DriverKyc {
+        string id PK
+        string user_id FK,UK
+        string vehicle_id FK
+        string full_name
+        string driving_license_number
+        string vehicle_plate
+        string rc_number
+        string gov_id_type
+        enum verification_status "not_submitted | pending | approved | rejected"
+    }
+
     Host {
         string id PK
         string user_id FK
         string business_name
+        string kyc_full_name
         string pan_number
+        string ownership_proof_type
+        string[] plot_photo_urls
         string bank_account_number
         string ifsc_code
-        enum verification_status "pending | approved | rejected"
+        enum verification_status "not_submitted | pending | approved | rejected"
         decimal total_earnings
         decimal total_payouts
     }
@@ -61,6 +77,8 @@ erDiagram
         string id PK
         string host_id FK
         string name
+        enum space_type "commercial | private_house | apartment_bay | gated_compound"
+        string entry_instructions
         decimal latitude
         decimal longitude
         string geohash
@@ -70,6 +88,8 @@ erDiagram
         boolean ev_charging
         boolean covered
         decimal hourly_rate
+        string[] photo_urls
+        string ownership_proof_url
         enum status "draft | pending_verification | active | inactive | suspended"
     }
 
@@ -80,8 +100,14 @@ erDiagram
         string vehicle_id FK
         enum type "instant | scheduled | recurring"
         enum status "created | confirmed | active | completed | cancelled | refunded"
+        string gate_code
         timestamp start_time
         timestamp end_time
+        timestamp checked_in_at
+        timestamp checked_out_at
+        timestamp leaving_notified_at
+        int overstay_minutes
+        decimal overstay_amount
         int duration_minutes
         decimal total_amount
     }
@@ -114,36 +140,41 @@ erDiagram
 * Unique Constraints: `license_plate` (normalized alphanumeric, e.g., `TN01AB1234`).
 * Columns: `id`, `user_id` (FK to `users`), `license_plate`, `vehicle_type` (`motorcycle`, `compact`, `sedan`, `suv`, `van`, `truck`), `make`, `model`, `color`, `is_default`, `created_at`.
 
-#### 3. `hosts`
-* Extended profile for property owners monetizing parking spots.
-* Columns: `id`, `user_id` (FK to `users`), `business_name`, `pan_number` (tax identification), `bank_account_number`, `ifsc_code`, `verification_status` (`pending`, `approved`, `rejected`), `verified_at`, `total_earnings`, `total_payouts`.
+#### 3. `driver_kyc`
+* Stores Driver KYC verification packets submitted before/while using the platform.
+* Columns: `id`, `user_id` (unique FK to `users`), `vehicle_id` (nullable FK to `vehicles`), `full_name`, `date_of_birth`, `address`, `emergency_contact`, `driving_license_number`, `driving_license_expiry`, `driving_license_front_url`, `driving_license_back_url`, `gov_id_type`, `gov_id_number_masked`, `gov_id_document_url`, `vehicle_plate`, `rc_number`, `rc_document_url`, `insurance_document_url`, `selfie_url`, `verification_status` (`not_submitted` | `pending` | `approved` | `rejected`), `review_notes`, `reviewed_by`, `reviewed_at`.
 
-#### 4. `parking_spaces`
-* Core inventory table representing physical parking properties.
+#### 4. `hosts`
+* Extended profile and KYC dossier for commercial operators and residential homeowners monetizing parking plots.
+* Columns: `id`, `user_id` (FK to `users`), `business_name`, `kyc_full_name`, `kyc_phone`, `pan_number`, `gov_id_type`, `gov_id_number_masked`, `gov_id_document_url`, `ownership_proof_type`, `ownership_document_url`, `address_proof_url`, `plot_photo_urls`, `bank_account_number`, `ifsc_code`, `upi_id`, `kyc_notes`, `verification_status` (`not_submitted`, `pending`, `approved`, `rejected`), `review_notes`, `reviewed_by`, `verified_at`, `total_earnings`, `total_payouts`.
+
+#### 5. `parking_spaces`
+* Core inventory table representing commercial and private residential parking properties.
 * Spatial Columns: `latitude`, `longitude` (Decimal degrees), `geohash` (precision 7, ~150m spatial clustering).
+* Classification & Entry: `space_type` (`commercial`, `private_house`, `apartment_bay`, `gated_compound`), `entry_instructions` (arrival bell/intercom/gate guidance), `photo_urls`, `ownership_proof_url`, `review_notes`, `verified_at`.
 * Attributes: `name`, `description`, `address`, `city`, `state`, `pincode`, `region_id`, `total_capacity`, `vehicle_types` (Array of enum), `ev_charging` (Boolean), `covered` (Boolean), `security_level` (`none`, `basic`, `monitored`, `staffed`, `gated`), `cctv`, `lighting`, `attendant`.
 * Pricing: `hourly_rate` (Base rate in INR), `dynamic_pricing` (Boolean flag allowing automated surge), `min_booking_hours`, `max_booking_hours`.
 * Status: `status` (`draft`, `pending_verification`, `active`, `inactive`, `suspended`).
-* Performance Indexes: `@@index([geohash])`, `@@index([city])`, `@@index([status])`.
+* Performance Indexes: `@@index([geohash])`, `@@index([city])`, `@@index([status])`, `@@index([spaceType])`.
 
-#### 5. `availability_slots`
+#### 6. `availability_slots`
 * Defines weekly recurring availability windows set by hosts.
 * Columns: `id`, `space_id` (FK to `parking_spaces`), `day_of_week` (0=Sunday to 6=Saturday), `start_time` ("08:00"), `end_time` ("18:00").
 
-#### 6. `bookings`
-* Core transactional table managing reservations.
-* Columns: `id`, `user_id`, `space_id`, `vehicle_id`, `host_id`, `type` (`instant`, `scheduled`, `recurring`), `status` (`created`, `confirmed`, `active`, `completed`, `cancelled`, `refunded`), `start_time`, `end_time`, `duration_minutes`, `recurring_frequency`, `recurring_end_date`, `total_amount`, `currency` ("INR"), `payment_id`, `cancellation_reason`, `cancelled_at`, `completed_at`, `created_at`.
+#### 7. `bookings`
+* Core transactional table managing reservations, gate handshakes, actual arrival/departure times, and overstays.
+* Columns: `id`, `user_id`, `space_id`, `vehicle_id`, `host_id`, `type` (`instant`, `scheduled`, `recurring`), `status` (`created`, `confirmed`, `active`, `completed`, `cancelled`, `refunded`), `gate_code` (4-digit backup PIN), `start_time`, `end_time`, `checked_in_at`, `checked_out_at`, `leaving_notified_at`, `overstay_minutes`, `overstay_amount`, `duration_minutes`, `recurring_frequency`, `recurring_end_date`, `total_amount`, `currency` ("INR"), `payment_id`, `cancellation_reason`, `cancelled_at`, `completed_at`, `created_at`.
+* Gate & Leaving Timing Rules: Check-in opens **15 minutes before `start_time`** (`confirmed → active`, stamps `checked_in_at`). Leaving within **`end_time + 10 minutes`** grace incurs `0` extra charges; leaving beyond 10 minutes bills prorated `hourly_rate + 5%` platform fee as `overstay_amount`.
 * Performance Indexes: `@@index([userId])`, `@@index([spaceId])`, `@@index([status])`, `@@index([startTime, endTime])`.
 
-#### 7. `payments` & `payouts`
+#### 8. `payments` & `payouts`
 * `payments`: Records every payment attempt, gateway transaction ID, payment token reference, and refund records. Never stores raw card or bank account credentials.
 * `payouts`: Tracks platform host balance settlements minus platform commission (e.g. 15%–20%).
 
-#### 8. `pricing_rules`
-* Custom or global surge rules (e.g., peak rush 08:00–10:00 multiplier 1.25x; weekend evening multiplier 1.30x).
-
-#### 9. `disputes`
-* Audited dispute resolution between driver and host (e.g., `no_show`, `unauthorized_use`, `blocked_driveway`).
+#### 9. `pricing_rules` & `disputes` & `audit_logs`
+* `pricing_rules`: Custom or global surge rules (e.g., peak rush 08:00–10:00 multiplier 1.25x; weekend evening multiplier 1.30x).
+* `disputes`: Audited dispute resolution between driver and host (`no_show`, `unauthorized_use`, `payment_dispute`, `other`).
+* `audit_logs`: Immutable compliance trail recording Admin KYC verdicts, space activations, and host mutations.
 
 ---
 

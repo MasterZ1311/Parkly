@@ -1,6 +1,6 @@
 # 🅿️ Parkly — Core Services & Detailed API Specifications
 
-> **Document Version**: 1.0.0  
+> **Document Version**: 1.1.0  
 > **Protocol**: REST over HTTPS / JSON  
 > **Base URL Format**: `https://api.parkly.in/api/v1` (or `http://localhost:4000/api/v1` for local dev)
 
@@ -99,6 +99,10 @@
   }
   ```
 
+#### `GET /api/v1/auth/driver-kyc` & `PUT /api/v1/auth/driver-kyc`
+* **Description**: Retrieves or submits Driver KYC verification documents (**Driving Licence**, **Vehicle Reg. No.**, **RC Book**, optional **Insurance / Selfie**, and **Govt ID**) for Review Team verification.
+* **Access**: Authenticated Driver / User (`driver`)
+
 ---
 
 ### 2.2 Geospatial Search Service (`search-service` / `:4004`)
@@ -161,7 +165,7 @@
 ### 2.3 Booking Service (`booking-service` / `:4002`)
 
 #### `POST /api/v1/bookings`
-* **Description**: Reserves a parking slot with atomic concurrency validation.
+* **Description**: Reserves a parking slot with atomic PostgreSQL row-level locking (`SELECT ... FOR UPDATE`), capacity overlap validation, server-side pricing (`+5%` platform fee), Offline QR Pass generation, and a 4-digit backup `gateCode`.
 * **Access**: Driver / Authenticated
 * **Request Body**:
   ```json
@@ -170,23 +174,17 @@
     "vehicleId": "veh_3811f92a",
     "type": "instant",
     "startTime": "2026-09-05T14:00:00Z",
-    "durationMinutes": 120
+    "endTime": "2026-09-05T16:00:00Z"
   }
   ```
-* **Response (201 Created)**:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "bookingId": "bkg_7718aa09",
-      "status": "created",
-      "totalAmount": 80.00,
-      "currency": "INR",
-      "holdExpiresAt": "2026-09-05T14:10:00Z",
-      "paymentIntentToken": "pi_token_99182319"
-    }
-  }
-  ```
+
+#### Host–Driver Gate Handshake & Timing Endpoints
+* **`GET /api/v1/bookings/verify-qr?token=...&action=verify|check_in|check_out`** *(Host / Admin)* — Verifies HMAC QR pass signature (`PARKLY.v1.<bookingId>.<sig>`) and optionally transitions arrival/exit status.
+* **`POST /api/v1/bookings/verify-pass`** *(Host / Admin)* — Verifies either a `qrToken` or a `bookingId` + 4-digit `gateCode` (for residential driveways without QR hardware) and supports optional `action` (`verify`, `check_in`, `check_out`).
+* **`POST /api/v1/bookings/:id/check-in`** *(Driver / Host / Admin)* — Transitions `confirmed → active` within `[startTime - 15m, endTime]`, validates optional `gateCode`, and stamps `checkedInAt`.
+* **`PUT /api/v1/bookings/:id/extend`** *(Driver)* — Extends leaving time (`hours` or `additionalMinutes`, 15–1440m) after re-checking upcoming slot capacity.
+* **`POST /api/v1/bookings/:id/leaving-soon`** *(Driver)* — Stamps `leavingNotifiedAt` and emits `BookingLeavingSoon` so the host knows the vehicle is preparing to exit.
+* **`POST /api/v1/bookings/:id/check-out`** *(Driver / Host / Admin)* — Transitions `confirmed/active → completed`, stamps `checkedOutAt`, enforces the 10-minute exit grace window, bills any overstay beyond grace, and frees bay capacity immediately.
 
 ---
 
@@ -285,22 +283,28 @@
 
 ### 2.8 Host Management Service (`host-service` / `:4010`)
 
-#### `POST /api/v1/host/spaces`
-* **Description**: Host registers a new parking space listing. Submits details, geolocation, photos, and base hourly rate for admin review.
-* **Access**: Host Role
+#### `POST /api/v1/host/spaces` (alias `/api/v1/host/listings`)
+* **Description**: Host (or driver promoting a vacant home driveway) lists a commercial or private residential space (`spaceType`: `commercial | private_house | apartment_bay | gated_compound`, `entryInstructions`, `photoUrls`, `ownershipProofUrl`). Stored in `pending_verification` until Review Team approval.
+* **Access**: Host / Authenticated Driver (via `/auth/become-host` or `/host/spaces`)
 
-#### `GET /api/v1/host/earnings`
-* **Description**: Returns host gross revenue, net payouts received, and upcoming pending settlements.
+#### `GET /api/v1/host/kyc` & `PUT /api/v1/host/kyc`
+* **Description**: Retrieves or submits Host KYC identity (`govIdType`, `govIdDocumentUrl`), property proof (`ownershipProofType`, `ownershipDocumentUrl`), and parking plot pictures (`plotPhotoUrls`) for Review Team approval.
+* **Access**: Authenticated Host / User
+
+#### `GET /api/v1/host/bookings` & `GET /api/v1/host/revenue`
+* **Description**: Lists incoming reservations (with `gateCode`, `checkedInAt`, `checkedOutAt`, `leavingNotifiedAt`, and overstay metrics) plus host gross revenue, commission breakdown, and payout requests (`POST /api/v1/host/payouts`).
 * **Access**: Host Role
 
 ---
 
-### 2.9 Admin Governance & Platform Operations (`admin-service` / `:4011`)
+### 2.9 Admin Governance & Review Team Verification (`admin-service` / `:4011`)
 
 #### `GET /api/v1/admin/verifications`
-* **Description**: Lists pending host KYC documents and property deeds awaiting human verification.
+* **Description**: Lists all pending Review Team items across **Parking Plots (`spaces`)**, **Driver KYC (`driverKycs`)**, and **Host KYC (`hostKycs`)**.
 * **Access**: Admin Role
 
-#### `POST /api/v1/admin/verifications/:hostId/approve`
-* **Description**: Approves host credentials and activates their listed parking spaces on the public search index.
+#### Review Team Decision Endpoints
+* **Parking Plot Review**: `POST /api/v1/admin/verifications/:spaceId/approve` & `POST /api/v1/admin/verifications/:spaceId/reject`
+* **Driver KYC Review**: `POST /api/v1/admin/verifications/drivers/:kycId/approve` & `POST /api/v1/admin/verifications/drivers/:kycId/reject`
+* **Host KYC Review**: `POST /api/v1/admin/verifications/hosts/:hostId/approve` & `POST /api/v1/admin/verifications/hosts/:hostId/reject`
 * **Access**: Admin Role

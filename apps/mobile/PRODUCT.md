@@ -12,15 +12,15 @@ Daily commuters, shoppers, and EV drivers across Chennai (including two-wheeler,
 
 ## Product Purpose
 
-Help drivers rapidly discover available Chennai parking spaces, inspect live probability/pricing/amenities, complete UPI reservations with minimal friction, display crisp scannable gate QR passes, and ask the Chennai Driver Concierge for spot recommendations.
+Help drivers rapidly discover available Chennai commercial & private residential parking spaces (`Private / Home` driveways, apartment visitor bays, gated compounds), submit Driver/Host KYC documents (`Driving Licence`, `Vehicle Reg.`, `RC Book`, plot photos), inspect live probability/pricing/instructions, complete UPI reservations with minimal friction, display crisp scannable gate QR passes + 4-digit backup Gate PINs, manage live arrival check-in / leaving-time extensions / pre-departure check-out, and ask the Chennai Driver Concierge for spot recommendations.
 
 ## Positioning
 
-Unifies real-time local discovery (including neighborhood filtering, Chennai corridor prompts, and OpenFreeMap on web / native marker fallback), instant INR + UPI booking, offline-resilient cached QR passes, and conversational Concierge routing in one native-feeling experience.
+Unifies real-time local discovery (including neighborhood filtering, `Private / Home` inventory filtering, Chennai corridor prompts, and OpenFreeMap on web / native marker fallback), instant INR + UPI booking, offline-resilient cached QR passes + Gate PINs, live check-in/out session controls, and conversational Concierge routing in one native-feeling experience.
 
 ## Operating Context
 
-Used outdoors in bright Chennai sunlight while preparing to drive or arriving at parking gates (`apps/mobile`, Expo SDK 54, `expo-router ~6`). Drivers switch tabs seamlessly between Search (`home`), Map (`map`), Bookings (`bookings`), Concierge (`concierge`), and Profile (`profile`), plus detail flows (`space/[id]`, `booking/create`, `booking/[id]`).
+Used outdoors in bright Chennai sunlight while preparing to drive or arriving at parking gates (`apps/mobile`, Expo SDK 54, `expo-router ~6`). Drivers switch tabs seamlessly between Search (`home`), Map (`map`), Bookings (`bookings`), Concierge (`concierge`), and Profile (`profile`), plus detail & verification flows (`space/[id]`, `booking/create`, `booking/[id]`, `profile/driver-kyc`, `host/spaces`, `host/kyc`).
 
 ## Capabilities and Constraints
 
@@ -36,7 +36,7 @@ Used outdoors in bright Chennai sunlight while preparing to drive or arriving at
 
 ## Evidence on Hand
 
-- Expo SDK 54 app with `(auth)/login`, `(auth)/otp`, `(tabs)/{home,map,bookings,concierge,profile}`, `space/[id]`, `booking/create`, `booking/[id]`, `FreeMap.tsx` + `FreeMap.web.tsx`, `OfflineBanner.tsx`, and `assets/{logo.png,icon.png,adaptive-icon.png,splash.png,favicon.png}`.
+- Expo SDK 54 app with `(auth)/login`, `(auth)/otp`, `(tabs)/{home,map,bookings,concierge,profile}`, `space/[id]`, `booking/create`, `booking/[id]`, `profile/driver-kyc`, `host/spaces`, `host/kyc`, `FreeMap.tsx` + `FreeMap.web.tsx`, `OfflineBanner.tsx`, and `assets/{logo.png,icon.png,adaptive-icon.png,splash.png,favicon.png}` (`33/33` Jest tests across `9` suites).
 
 ## Product Principles
 

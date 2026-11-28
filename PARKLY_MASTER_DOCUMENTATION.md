@@ -61,11 +61,13 @@ Property owners (homeowners, commercial complexes, gated societies, malls) can l
 ## 2. Unique Selling Proposition (USP) & Competitive Moat
 
 1. **AI Predictive Vacancy at Arrival (ETA)**: Forecasts slot availability at the driver's projected arrival time with confidence scores rather than brittle live-only snapshots.
-2. **Decentralized Crowdsourced Supply**: Zero real-estate CapEx; unlocks residential driveways and commercial bays across dense corridors.
-3. **Atomic Concurrency (Zero Double-Booking Guarantee)**: Strict PostgreSQL row-level transactional locking guarantees exclusive bay holds.
-4. **Zero-Hardware to IoT-Ready Hybrid Onboarding**: Launches today with contactless Gate QR passes and software geofences; seamlessly integrates ultrasonic sensors and ANPR boom gates as sites scale.
-5. **UPI-Native Checkout & Automated Host Payouts**: Instant UPI intent checkout and automated 80–85% split payouts for property hosts.
-6. **Verified Trust & Autonomous Operations**: 8 specialized TypeScript AI agents (`@parkly/ai-agents`) automate host KYC verification, gate clearance photo audits, demand surge pricing, conversational routing, overstay dispute adjudication, and city CO₂ abatement reporting.
+2. **Decentralized Crowdsourced Supply (Commercial + Private Homes)**: Zero real-estate CapEx; supports commercial lots (`commercial`) alongside private house driveways (`private_house`), apartment visitor bays (`apartment_bay`), and gated compounds (`gated_compound`) with custom arrival/gate instructions.
+3. **Dual Driver & Host KYC + Review Team Gate**: Drivers verify with **Driving Licence, Vehicle Reg. No., RC Book, and Govt ID**; hosts verify with **Owner ID, Property Ownership Proof, and Parking Plot Pictures**. Submissions queue in `admin-service` / `Admin Portal` before listings become publicly bookable.
+4. **Host–Driver Gate Handshake & Timing Protocol**: Every reservation pairs an offline HMAC **QR Pass** with a backup **4-digit Gate PIN** (`gateCode`) for residential driveways, enforcing a **15-minute early check-in window**, live countdowns, **15m-prior reminders**, **`Leaving Soon`** host alerts, capacity-checked extensions, and a **10-minute exit grace period** before automated prorated overstay settlement.
+5. **Atomic Concurrency (Zero Double-Booking Guarantee)**: Strict PostgreSQL row-level transactional locking guarantees exclusive bay holds.
+6. **Zero-Hardware to IoT-Ready Hybrid Onboarding**: Launches today with contactless Gate QR/PIN passes and software geofences; seamlessly integrates ultrasonic sensors and ANPR boom gates as sites scale.
+7. **UPI-Native Checkout & Automated Host Payouts**: Instant UPI intent checkout and automated 80–85% split payouts for property hosts.
+8. **Verified Trust & Autonomous Operations**: 8 specialized TypeScript AI agents (`@parkly/ai-agents`) automate host KYC verification, gate clearance photo audits, demand surge pricing, conversational routing, overstay dispute adjudication, and city CO₂ abatement reporting.
 
 ---
 
@@ -114,6 +116,7 @@ Property owners (homeowners, commercial complexes, gated societies, malls) can l
 
 ## 5. Current Implementation Status
 
-The monorepo is fully scaffolded and runnable end-to-end across all three client surfaces, 11 microservices, 8 autonomous agents, PostgreSQL migrations, Docker Compose local infra, and AWS CDK deployment stacks:
-- **`packages/ai-agents`**: **24 test files / 360 tests passing** cleanly offline via `npm test -w packages/ai-agents`.
+The monorepo is scaffolded and runnable end-to-end across all three client surfaces, 11 microservices, 8 autonomous agents, PostgreSQL migrations (including private spaces, Driver/Host KYC, and gate check-in/overstay columns), Docker Compose local infra, and AWS CDK deployment stacks:
+- **`packages/ai-agents`**: **24 test files / 360 tests passing** offline via `npm test -w packages/ai-agents`.
+- **Service & App Jest Suites**: Unit & integration suites across `auth-service`, `booking-service`, `host-service`, `admin-service`, and `apps/mobile` (`9 suites / 33 tests` passing), alongside Vite builds for `host-dashboard` and `admin-portal`.
 - **Developer Onboarding & Deployment**: See [11. Local Development & Testing](./docs/11_TESTING_AND_LOCAL_DEV.md) and [Production Credentials & Deployment Guide](./PRODUCTION_CREDENTIALS_AND_DEPLOYMENT_GUIDE.md).

@@ -33,23 +33,24 @@
 
 ### 2.1 Driver Mobile App (`apps/mobile`)
 * **Framework**: React Native `0.79.1` with **Expo SDK 54** and **React 19.0.0**.
-* **State Management**: **Zustand** + local offline cache utilities (`AsyncStorage` / `SecureStore`) for zero-crash fallback mode.
-* **Navigation**: **Expo Router v6** (`apps/mobile/app/` file-based tabs & stack routing).
+* **State Management**: **Zustand** (`auth.store`, `driver.store`, `search.store`, `host.store`, `kyc.store`) + local offline cache utilities (`AsyncStorage` / `SecureStore`) for zero-crash fallback mode.
+* **Navigation**: **Expo Router v6** (`apps/mobile/app/` file-based tabs & stack routing), including **Driver KYC** (`profile/driver-kyc`), **Private Residential Space Listing** (`host/spaces`), and **Host KYC & Plot Proof** (`host/kyc`).
+* **Media & Gate Tools**: `expo-image-picker` for camera/gallery KYC & plot photo capture, custom SVG QR pass (`QrPassSvg`) + backup 4-digit Gate PIN, live check-in / leaving-soon / check-out session controls, and `expo-notifications` local checkout reminders.
 * **Maps & Geolocation**: `expo-location`, `maplibre-gl` (web map stage) & `react-native-maps` / custom styled fallback.
-* **UI Components**: Bespoke dark Navy & Crimson mobile design system defined in `apps/mobile/src/constants/theme.ts`.
+* **UI Components**: Crisp light Harbor Navy & Crimson mobile design system defined in `apps/mobile/src/constants/theme.ts`.
 * **Authentication**: Passwordless Phone + 6-digit OTP verification with local dev quick-fill.
 
 ### 2.2 Host Web Dashboard (`apps/host-dashboard`)
 * **Framework**: React 18 with **Vite** (port `3001`).
 * **Styling**: Custom CSS variables implementing Parkly Navy (`#0A1425`) and Crimson (`#EF010C`) tokens (`apps/host-dashboard/src/index.css`).
-* **Data Visualization**: **Recharts** for real-time monthly revenue trends, bookings charts, and occupancy percentages.
-* **State & API**: Zustand + Axios client with JWT interceptors (`apps/host-dashboard/src/utils/api.ts`).
+* **Key Capabilities**: Commercial & Private Residential space creation (`spaceType`, `entryInstructions`, plot photos), **Gate Arrival & Exit Verification (QR Pass or 4-Digit Gate PIN)**, inline **Check In / Confirm Exit & Check Out** with overstay display, live **"Leaving Soon"** notices, and **Recharts** revenue/occupancy trends.
+* **State & API**: Zustand + Axios client with JWT interceptors (`apps/host-dashboard/src/utils/apiClient.ts`).
 
 ### 2.3 Admin Portal (`apps/admin-portal`)
 * **Framework**: React 18 + Vite (port `3002`).
 * **Key Capabilities**: 
-  - Real-time host KYC review & AI verification audits (`Verifications.tsx`).
-  - Interactive platform KPI overview and audit streams (`Overview.tsx`).
+  - **3-Tab Review Team Verification Console** (`Verifications.tsx`): Review & approve/reject **Driver KYC** (DL, Vehicle Reg, RC Book, Govt ID), **Host KYC** (Owner ID, ownership deed, plot photos), and **Private/Commercial Parking Plots**.
+  - Interactive platform KPI overview and audit streams (`Overview.tsx` & `AuditLogs.tsx`).
   - City-wide mobility & CO₂ abatement analytics (`CityAnalytics.tsx`).
   - User management and dispute mediation console.
 
