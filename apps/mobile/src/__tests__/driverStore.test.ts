@@ -41,6 +41,8 @@ jest.mock('../api/client', () => ({
     updateMe: jest.fn(),
   },
   notificationApi: {
+    list: jest.fn(),
+    markRead: jest.fn(),
     getPreferences: jest.fn(),
     updatePreferences: jest.fn(),
   },
@@ -67,6 +69,9 @@ describe('useDriverStore — vehicles, saved places, UPI handles & notifications
         promoOffers: false,
       },
       prefsLoading: false,
+      notifications: [],
+      notificationsLoading: false,
+      unreadCount: 0,
     });
   });
 
@@ -153,5 +158,40 @@ describe('useDriverStore — vehicles, saved places, UPI handles & notifications
     expect(useDriverStore.getState().savedPlaces[0].areaQuery).toBe('Guindy');
     await useDriverStore.getState().removeSavedPlace(added.id);
     expect(useDriverStore.getState().savedPlaces).toHaveLength(0);
+  });
+
+  it('fetches notifications inbox, tracks unreadCount, and marks notifications read', async () => {
+    (notificationApi.list as jest.Mock).mockResolvedValueOnce({
+      data: {
+        data: [
+          {
+            id: 'notif-1',
+            type: 'gate',
+            title: 'Gate Open',
+            body: 'Barrier opened for TN01AB1234',
+            read: false,
+            createdAt: '2026-11-28T05:00:00.000Z',
+          },
+          {
+            id: 'notif-2',
+            type: 'payment',
+            title: 'UPI Paid',
+            body: 'Settled ₹84',
+            read: true,
+            createdAt: '2026-11-28T04:00:00.000Z',
+          },
+        ],
+      },
+    });
+    (notificationApi.markRead as jest.Mock).mockResolvedValue({ data: { success: true } });
+
+    const list = await useDriverStore.getState().loadNotifications();
+    expect(list).toHaveLength(2);
+    expect(useDriverStore.getState().unreadCount).toBe(1);
+
+    await useDriverStore.getState().markNotificationRead('notif-1');
+    expect(notificationApi.markRead).toHaveBeenCalledWith('notif-1');
+    expect(useDriverStore.getState().unreadCount).toBe(0);
+    expect(useDriverStore.getState().notifications[0].read).toBe(true);
   });
 });

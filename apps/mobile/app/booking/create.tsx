@@ -58,7 +58,7 @@ function formatHoldClock(seconds: number): string {
 }
 
 export default function BookingCreateScreen() {
-  const { spaceId, spaceName, hostId, hours, totalAmount, hourlyRate } =
+  const { spaceId, spaceName, hostId, hours, totalAmount, hourlyRate, arrivalTime } =
     useLocalSearchParams<{
       spaceId: string;
       spaceName: string;
@@ -66,6 +66,7 @@ export default function BookingCreateScreen() {
       hours: string;
       totalAmount: string;
       hourlyRate: string;
+      arrivalTime?: string;
     }>();
 
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
@@ -259,10 +260,13 @@ export default function BookingCreateScreen() {
     setLoading(true);
     try {
       const activeVehicle = await resolveActiveVehicle();
-      const startTimeIso = new Date(Date.now() + 30_000).toISOString();
-      const endTimeIso = new Date(
-        Date.now() + 30_000 + parsedHours * 3600_000,
-      ).toISOString();
+      const parsedArrivalMs = arrivalTime ? Date.parse(arrivalTime) : NaN;
+      const startMs =
+        Number.isFinite(parsedArrivalMs) && parsedArrivalMs > Date.now() + 30_000
+          ? parsedArrivalMs
+          : Date.now() + 30_000;
+      const startTimeIso = new Date(startMs).toISOString();
+      const endTimeIso = new Date(startMs + parsedHours * 3600_000).toISOString();
 
       if (isDemoMode) {
         const demoBookingId = `11111111-1111-4111-8111-${String(Date.now()).slice(-12).padStart(12, '0')}`;
@@ -647,7 +651,14 @@ export default function BookingCreateScreen() {
           <View style={styles.row}>
             <Ionicons name="time-outline" size={16} color={colors.textMuted} />
             <Text style={styles.cardDetail}>
-              Duration: {parsedHours} hours · 15-minute checkout hold active
+              Duration: {parsedHours} hours ·{' '}
+              {arrivalTime && Number.isFinite(Date.parse(arrivalTime))
+                ? `Arrive ~${new Date(arrivalTime).toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}`
+                : 'Immediate check-in'}{' '}
+              · 15-min hold
             </Text>
           </View>
         </View>

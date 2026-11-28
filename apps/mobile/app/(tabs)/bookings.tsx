@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../src/api/client';
@@ -49,14 +49,86 @@ function normalizeBooking(raw: any): BookingListItem {
   };
 }
 
+function formatDurationLeft(ms: number): string {
+  const totalMins = Math.max(1, Math.ceil(ms / 60_000));
+  if (totalMins < 60) return `${totalMins}m`;
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+function getLiveCountdownInfo(
+  item: BookingListItem,
+  nowMs: number,
+): { text: string; urgent: boolean; fg: string; bg: string; border: string } | null {
+  if (item.status === 'created') {
+    return {
+      text: 'Awaiting UPI authorization · Tap to resume',
+      urgent: true,
+      fg: colors.warning,
+      bg: colors.warningLight,
+      border: colors.warningBorder,
+    };
+  }
+  if (!['confirmed', 'active'].includes(item.status)) {
+    return null;
+  }
+
+  const startMs = Date.parse(item.startTime);
+  const endMs = Date.parse(item.endTime);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return null;
+  }
+
+  if (nowMs < startMs) {
+    return {
+      text: `Starts in ${formatDurationLeft(startMs - nowMs)}`,
+      urgent: false,
+      fg: colors.info,
+      bg: colors.infoLight,
+      border: colors.infoBorder,
+    };
+  }
+
+  if (nowMs <= endMs) {
+    const remaining = endMs - nowMs;
+    const isSoon = remaining <= 20 * 60_000;
+    return {
+      text: isSoon
+        ? `Ending soon · ${formatDurationLeft(remaining)} left`
+        : `Session live · Ends in ${formatDurationLeft(remaining)}`,
+      urgent: isSoon,
+      fg: isSoon ? colors.danger : colors.success,
+      bg: isSoon ? colors.dangerLight : colors.successLight,
+      border: isSoon ? colors.dangerBorder : colors.successBorder,
+    };
+  }
+
+  return {
+    text: 'Window elapsed · Check out or extend pass',
+    urgent: true,
+    fg: colors.warning,
+    bg: colors.warningLight,
+    border: colors.warningBorder,
+  };
+}
+
 export default function BookingsScreen() {
   const [bookings, setBookings] = useState<BookingListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOfflineData, setIsOfflineData] = useState(false);
   const [listError, setListError] = useState<ClassifiedApiError | null>(null);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const isOffline = useAuthStore((s) => s.isOffline);
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+    }, 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -141,6 +213,7 @@ export default function BookingsScreen() {
 
   const renderBooking = ({ item }: { item: BookingListItem }) => {
     const tone = STATUS_STYLE[item.status] || STATUS_STYLE.confirmed;
+    const countdown = getLiveCountdownInfo(item, nowMs);
     return (
       <PressScale
         onPress={() => router.push({ pathname: '/booking/[id]', params: { id: item.id } })}
@@ -167,6 +240,25 @@ export default function BookingsScreen() {
             </Text>
           </View>
         </View>
+
+        {countdown && (
+          <View
+            style={[
+              styles.countdownStrip,
+              {
+                backgroundColor: countdown.bg,
+                borderColor: countdown.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name={countdown.urgent ? 'hourglass-outline' : 'timer-outline'}
+              size={13}
+              color={countdown.fg}
+            />
+            <Text style={[styles.countdownText, { color: countdown.fg }]}>{countdown.text}</Text>
+          </View>
+        )}
 
         <View style={styles.cardDetails}>
           <View style={styles.timeRow}>
@@ -272,8 +364,14 @@ export default function BookingsScreen() {
           keyExtractor={(item, index) => `${item.id}-${index}`}
           renderItem={renderBooking}
           contentContainerStyle={styles.list}
-          refreshing={loading}
-          onRefresh={loadBookings}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={loadBookings}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
         />
       )}
     </View>
@@ -373,6 +471,21 @@ const styles = StyleSheet.create({
   bookingType: { color: colors.textMuted, fontSize: 12, fontWeight: '600', marginTop: 2, fontVariant: ['tabular-nums'] },
   statusBadge: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { fontSize: 11.5, fontWeight: '800' },
+  countdownStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  countdownText: {
+    fontSize: 12,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
   cardDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -2,7 +2,24 @@ import { create } from 'zustand';
 import { authApi, notificationApi, type VehiclePayloadType, type NotificationPreferencesPayload } from '../api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../utils/cache';
 import { useAuthStore } from './auth.store';
-import { DEMO_VEHICLES, DEMO_USER } from '../data/demoFixtures';
+import { DEMO_VEHICLES, DEMO_USER, DEMO_NOTIFICATIONS } from '../data/demoFixtures';
+
+let localIdSeq = 0;
+
+function createLocalId(prefix: string): string {
+  localIdSeq += 1;
+  return `${prefix}-${Date.now()}-${localIdSeq}`;
+}
+
+export interface DriverNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+  data?: Record<string, string>;
+}
 
 export interface DriverVehicle {
   id: string;
@@ -86,6 +103,9 @@ interface DriverState {
   upiMethods: UpiMethod[];
   notificationPrefs: NotificationPreferencesPayload;
   prefsLoading: boolean;
+  notifications: DriverNotification[];
+  notificationsLoading: boolean;
+  unreadCount: number;
 
   loadVehicles: () => Promise<DriverVehicle[]>;
   addVehicle: (input: {
@@ -110,6 +130,26 @@ interface DriverState {
 
   loadNotificationPrefs: () => Promise<NotificationPreferencesPayload>;
   saveNotificationPrefs: (prefs: NotificationPreferencesPayload) => Promise<NotificationPreferencesPayload>;
+
+  loadNotifications: () => Promise<DriverNotification[]>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+}
+
+function normalizeNotification(raw: any): DriverNotification {
+  return {
+    id: String(raw?.id || createLocalId('notif')),
+    type: String(raw?.type || 'booking'),
+    title: String(raw?.title || 'Parkly Update'),
+    body: String(raw?.body || ''),
+    read: Boolean(raw?.read),
+    createdAt: String(raw?.createdAt || raw?.sentAt || new Date().toISOString()),
+    data: raw?.data && typeof raw.data === 'object' ? raw.data : undefined,
+  };
+}
+
+function countUnread(list: DriverNotification[]): number {
+  return list.reduce((acc, item) => (item.read ? acc : acc + 1), 0);
 }
 
 export const useDriverStore = create<DriverState>((set, get) => ({
@@ -119,6 +159,9 @@ export const useDriverStore = create<DriverState>((set, get) => ({
   upiMethods: DEFAULT_UPI_METHODS,
   notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
   prefsLoading: false,
+  notifications: [],
+  notificationsLoading: false,
+  unreadCount: 0,
 
   loadVehicles: async () => {
     const isDemo = useAuthStore.getState().isDemoMode;
@@ -226,7 +269,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
   addSavedPlace: async (place) => {
     const nextPlace: SavedPlace = {
       ...place,
-      id: `place-${Date.now()}`,
+      id: createLocalId('place'),
     };
     const next = [nextPlace, ...get().savedPlaces];
     await cacheSet(CACHE_KEYS.SAVED_PLACES, next);
@@ -255,7 +298,7 @@ export const useDriverStore = create<DriverState>((set, get) => ({
     const current = get().upiMethods;
     const makeDefault = isDefault ?? current.length === 0;
     const created: UpiMethod = {
-      id: `upi-${Date.now()}`,
+      id: createLocalId('upi'),
       vpa: vpa.trim().toLowerCase(),
       label: label.trim() || appName,
       appName,
@@ -324,5 +367,71 @@ export const useDriverStore = create<DriverState>((set, get) => ({
       return saved;
     }
     return prefs;
+  },
+
+  loadNotifications: async () => {
+    const isDemo = useAuthStore.getState().isDemoMode;
+    set({ notificationsLoading: true });
+    try {
+      if (isDemo) {
+        const cached = await cacheGet<DriverNotification[]>(CACHE_KEYS.NOTIFICATION_INBOX);
+        const list =
+          cached && cached.length > 0
+            ? cached.map(normalizeNotification)
+            : DEMO_NOTIFICATIONS.map(normalizeNotification);
+        await cacheSet(CACHE_KEYS.NOTIFICATION_INBOX, list);
+        set({ notifications: list, unreadCount: countUnread(list) });
+        return list;
+      }
+
+      const cached = await cacheGet<DriverNotification[]>(CACHE_KEYS.NOTIFICATION_INBOX);
+      if (cached && cached.length > 0) {
+        const normalizedCached = cached.map(normalizeNotification);
+        set({ notifications: normalizedCached, unreadCount: countUnread(normalizedCached) });
+      }
+
+      const { data } = await notificationApi.list();
+      const rawItems =
+        data?.data?.notifications ||
+        (Array.isArray(data?.data) ? data.data : []);
+      const list = (rawItems as any[]).map(normalizeNotification);
+      await cacheSet(CACHE_KEYS.NOTIFICATION_INBOX, list);
+      set({ notifications: list, unreadCount: countUnread(list) });
+      return list;
+    } catch {
+      const fallback = get().notifications;
+      return fallback;
+    } finally {
+      set({ notificationsLoading: false });
+    }
+  },
+
+  markNotificationRead: async (id: string) => {
+    const isDemo = useAuthStore.getState().isDemoMode;
+    const next = get().notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+    await cacheSet(CACHE_KEYS.NOTIFICATION_INBOX, next);
+    set({ notifications: next, unreadCount: countUnread(next) });
+
+    if (!isDemo) {
+      try {
+        await notificationApi.markRead(id);
+      } catch {
+        // Optimistic read status preserved locally when offline
+      }
+    }
+  },
+
+  markAllNotificationsRead: async () => {
+    const unread = get().notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+
+    const isDemo = useAuthStore.getState().isDemoMode;
+    const next = get().notifications.map((n) => ({ ...n, read: true }));
+    await cacheSet(CACHE_KEYS.NOTIFICATION_INBOX, next);
+    set({ notifications: next, unreadCount: 0 });
+
+    if (!isDemo) {
+      await Promise.allSettled(unread.map((item) => notificationApi.markRead(item.id)));
+    }
   },
 }));

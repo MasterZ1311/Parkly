@@ -10,6 +10,7 @@ import { colors, theme } from '../../src/constants/theme';
 import { ENTER_FADE_UP, PressScale, SkeletonBlock } from '../../src/components/Motion';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { useAuthStore } from '../../src/store/auth.store';
+import { computeArrivalIso, useSearchStore } from '../../src/store/search.store';
 import { DEMO_SPACES } from '../../src/data/demoFixtures';
 import { cacheGet, CACHE_KEYS } from '../../src/utils/cache';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
@@ -35,12 +36,28 @@ const SECURITY_LABELS: Record<string, string> = {
 };
 
 export default function SpaceDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, hours, arrivalTime } = useLocalSearchParams<{
+    id: string;
+    hours?: string;
+    arrivalTime?: string;
+  }>();
+  const initialDuration = (() => {
+    const parsed = Number(hours);
+    if (Number.isFinite(parsed) && [1, 2, 3, 4, 6, 8].includes(parsed)) {
+      return parsed;
+    }
+    return useSearchStore.getState().durationHours || 2;
+  })();
+  const effectiveArrivalIso =
+    arrivalTime && Number.isFinite(Date.parse(arrivalTime))
+      ? arrivalTime
+      : computeArrivalIso(useSearchStore.getState().arrivalOffsetMinutes);
+
   const [space, setSpace] = useState<SpaceDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCachedView, setIsCachedView] = useState(false);
   const [loadError, setLoadError] = useState<ClassifiedApiError | null>(null);
-  const [selectedHours, setSelectedHours] = useState(2);
+  const [selectedHours, setSelectedHours] = useState(initialDuration);
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const insets = useSafeAreaInsets();
 
@@ -80,10 +97,7 @@ export default function SpaceDetailScreen() {
         const parsedRate = Number(data.hourlyRate ?? data.price?.value);
         let priceVal = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 40;
         try {
-          const priceResp = await pricingApi.getPrice(
-            id,
-            new Date(Date.now() + 2 * 60 * 1000).toISOString(),
-          );
+          const priceResp = await pricingApi.getPrice(id, effectiveArrivalIso);
           const dynamicRate = Number(priceResp.data?.data?.effectiveRate);
           if (Number.isFinite(dynamicRate) && dynamicRate > 0) {
             priceVal = dynamicRate;
@@ -173,7 +187,7 @@ export default function SpaceDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id, isDemoMode]);
+  }, [id, isDemoMode, effectiveArrivalIso]);
 
   useEffect(() => {
     loadSpace();
@@ -193,6 +207,7 @@ export default function SpaceDetailScreen() {
         hours: String(selectedHours),
         totalAmount: String(totalCost),
         hourlyRate: String(space.price.value),
+        arrivalTime: effectiveArrivalIso,
       },
     });
   };

@@ -57,8 +57,16 @@ function MenuItem({
 
 export default function ProfileScreen() {
   const { user, logout, updateProfile, isDemoMode, isOffline } = useAuthStore();
-  const { vehicles, savedPlaces, upiMethods, loadVehicles, loadSavedPlaces, loadUpiMethods } =
-    useDriverStore();
+  const {
+    vehicles,
+    savedPlaces,
+    upiMethods,
+    unreadCount,
+    loadVehicles,
+    loadSavedPlaces,
+    loadUpiMethods,
+    loadNotifications,
+  } = useDriverStore();
 
   const [bookingCount, setBookingCount] = useState(0);
   const [totalHours, setTotalHours] = useState(0);
@@ -73,6 +81,7 @@ export default function ProfileScreen() {
     loadVehicles().catch(() => {});
     loadSavedPlaces().catch(() => {});
     loadUpiMethods().catch(() => {});
+    loadNotifications().catch(() => {});
 
     const computeFromList = (list: any[]) => {
       setBookingCount(list.length);
@@ -268,7 +277,11 @@ export default function ProfileScreen() {
             <MenuItem
               icon="notifications-outline"
               label="Notifications"
-              subtitle="Gate alerts, reminders & Expo push test"
+              subtitle={
+                unreadCount > 0
+                  ? `${unreadCount} unread alert${unreadCount === 1 ? '' : 's'} · Gate & reminders`
+                  : 'Inbox clear · Gate alerts, reminders & push'
+              }
               onPress={() => router.push('/profile/notifications')}
             />
             <MenuItem

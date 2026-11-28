@@ -5,19 +5,26 @@ import {
   TextInput,
   FlatList,
   StyleSheet,
-  ScrollView,
+  RefreshControl,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated from 'react-native-reanimated';
 import { searchApi } from '../../src/api/client';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { useAuthStore } from '../../src/store/auth.store';
 import { useDriverStore } from '../../src/store/driver.store';
+import {
+  buildServerSearchFilters,
+  computeArrivalIso,
+  filterSpaceResults,
+  formatArrivalSummary,
+  useSearchStore,
+} from '../../src/store/search.store';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { SearchFilterBar } from '../../src/components/SearchFilterBar';
 import { colors, theme } from '../../src/constants/theme';
 import {
-  CHIP_LAYOUT_TRANSITION,
   ENTER_FADE_UP,
   PressScale,
   SkeletonBlock,
@@ -37,38 +44,37 @@ export interface SpaceResult {
   amenities: { evCharging: boolean; covered: boolean; securityLevel: string };
 }
 
-interface FilterOption {
-  id: 'All' | 'EV' | 'Covered' | 'Secure';
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}
-
-const FILTERS: FilterOption[] = [
-  { id: 'All', label: 'All Spaces', icon: 'apps-outline' },
-  { id: 'EV', label: 'EV Ready', icon: 'flash-outline' },
-  { id: 'Covered', label: 'Covered', icon: 'umbrella-outline' },
-  { id: 'Secure', label: 'Gated', icon: 'shield-checkmark-outline' },
-];
-
-type FilterId = FilterOption['id'];
-
 export default function HomeScreen() {
   const { area } = useLocalSearchParams<{ area?: string }>();
-  const [query, setQuery] = useState('');
+  const {
+    query,
+    arrivalOffsetMinutes,
+    durationHours,
+    amenities,
+    matchDefaultVehicle,
+    setQuery,
+  } = useSearchStore();
+
   const [results, setResults] = useState<SpaceResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [isOfflineResults, setIsOfflineResults] = useState(false);
   const [searchError, setSearchError] = useState<ClassifiedApiError | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterId>('All');
 
   const isOffline = useAuthStore((s) => s.isOffline);
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
   const savedPlaces = useDriverStore((s) => s.savedPlaces);
+  const vehicles = useDriverStore((s) => s.vehicles);
+  const unreadCount = useDriverStore((s) => s.unreadCount);
   const loadSavedPlaces = useDriverStore((s) => s.loadSavedPlaces);
+  const loadVehicles = useDriverStore((s) => s.loadVehicles);
+  const loadNotifications = useDriverStore((s) => s.loadNotifications);
+
+  const defaultVehicle = vehicles.find((v) => v.isDefault) || vehicles[0];
 
   useEffect(() => {
     loadSavedPlaces().catch(() => {});
+    loadVehicles().catch(() => {});
     cacheGet<{ query: string; results: SpaceResult[] }>(CACHE_KEYS.LAST_SEARCH).then((cached) => {
       if (cached && cached.results && cached.results.length > 0 && !area) {
         setQuery(cached.query || '');
@@ -76,29 +82,28 @@ export default function HomeScreen() {
         setSearched(true);
       }
     });
-  }, [loadSavedPlaces, area]);
+  }, [loadSavedPlaces, loadVehicles, area, setQuery]);
 
-  const matchesFilter = (item: SpaceResult): boolean => {
-    switch (activeFilter) {
-      case 'EV':
-        return item.amenities.evCharging;
-      case 'Covered':
-        return item.amenities.covered;
-      case 'Secure': {
-        const level = (item.amenities.securityLevel || '').toLowerCase();
-        return level !== '' && level !== 'none' && level !== 'low';
-      }
-      default:
-        return true;
-    }
-  };
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications().catch(() => {});
+    }, [loadNotifications]),
+  );
 
-  const visibleResults = results.filter(matchesFilter);
+  const visibleResults = filterSpaceResults(results, amenities);
 
   const handleSearch = useCallback(
     async (searchQuery?: string) => {
-      const q = (typeof searchQuery === 'string' ? searchQuery : query).trim();
+      const q = (typeof searchQuery === 'string' ? searchQuery : useSearchStore.getState().query).trim();
       if (!q) return;
+
+      const {
+        arrivalOffsetMinutes: offsetMins,
+        durationHours: hrs,
+        amenities: activeAmenities,
+        matchDefaultVehicle: useVeh,
+      } = useSearchStore.getState();
+
       setLoading(true);
       setSearched(true);
       setSearchError(null);
@@ -121,11 +126,13 @@ export default function HomeScreen() {
       }
 
       try {
+        const vehType = useVeh ? defaultVehicle?.vehicleType : undefined;
         const { data } = await searchApi.search({
           location: { type: 'text', value: q },
-          arrivalTime: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
-          duration: 60,
+          arrivalTime: computeArrivalIso(offsetMins),
+          duration: hrs * 60,
           radius: 8,
+          filters: buildServerSearchFilters(activeAmenities, vehType),
           page: 1,
           pageSize: 20,
         });
@@ -172,7 +179,7 @@ export default function HomeScreen() {
         setLoading(false);
       }
     },
-    [query, isDemoMode],
+    [isDemoMode, defaultVehicle?.vehicleType],
   );
 
   useEffect(() => {
@@ -180,13 +187,22 @@ export default function HomeScreen() {
       setQuery(area);
       handleSearch(area);
     }
-  }, [area, handleSearch]);
+  }, [area, handleSearch, setQuery]);
 
   const renderItem = ({ item }: { item: SpaceResult }) => {
     const highAvail = item.availability.probabilityPercent > 60;
     return (
       <PressScale
-        onPress={() => router.push({ pathname: '/space/[id]', params: { id: item.id } })}
+        onPress={() =>
+          router.push({
+            pathname: '/space/[id]',
+            params: {
+              id: item.id,
+              hours: String(durationHours),
+              arrivalTime: computeArrivalIso(arrivalOffsetMinutes),
+            },
+          })
+        }
         haptic="light"
         style={styles.card}
         contentStyle={styles.cardInner}
@@ -277,8 +293,25 @@ export default function HomeScreen() {
         <ParklyBrandBadge size="sm" darkSurface />
         <View style={{ flex: 1 }}>
           <Text style={styles.brandTitle}>Parkly Chennai</Text>
-          <Text style={styles.brandSubtitle}>OFF-STREET BAY DISCOVERY</Text>
+          <Text style={styles.brandSubtitle}>
+            {formatArrivalSummary(arrivalOffsetMinutes).toUpperCase()} · {durationHours}H WINDOW
+            {matchDefaultVehicle && defaultVehicle ? ` · ${defaultVehicle.vehicleType.toUpperCase()}` : ''}
+          </Text>
         </View>
+        <PressScale
+          style={styles.bellBtn}
+          contentStyle={styles.bellBtnInner}
+          rippleColor={colors.rippleLight}
+          onPress={() => router.push('/profile/notifications')}
+          accessibilityLabel={`Notifications inbox${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+        >
+          <Ionicons name="notifications-outline" size={20} color={colors.white} />
+          {unreadCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </PressScale>
       </View>
 
       {/* Search Bar */}
@@ -322,39 +355,15 @@ export default function HomeScreen() {
         </PressScale>
       </View>
 
-      {/* Filter Chips */}
-      <View style={styles.quickFiltersWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.quickFilters}
-        >
-          {FILTERS.map((filter) => {
-            const active = activeFilter === filter.id;
-            return (
-              <Animated.View key={filter.id} layout={CHIP_LAYOUT_TRANSITION}>
-                <PressScale
-                  onPress={() => setActiveFilter(filter.id)}
-                  haptic="selection"
-                  accessibilityState={{ selected: active }}
-                  rippleColor={active ? colors.rippleLight : colors.rippleDark}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
-                  contentStyle={styles.filterChipContent}
-                >
-                  <Ionicons
-                    name={filter.icon}
-                    size={14}
-                    color={active ? colors.white : colors.textSecondary}
-                  />
-                  <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                    {filter.label}
-                  </Text>
-                </PressScale>
-              </Animated.View>
-            );
-          })}
-        </ScrollView>
-      </View>
+      {/* Shared Timing & Amenity Filter Strip */}
+      <SearchFilterBar
+        defaultVehicle={defaultVehicle}
+        onApply={() => {
+          if (searched && query.trim()) {
+            void handleSearch(query);
+          }
+        }}
+      />
 
       {/* Results */}
       {loading ? (
@@ -460,9 +469,9 @@ export default function HomeScreen() {
           <View style={styles.emptyIconBox}>
             <Ionicons name="options-outline" size={34} color={colors.textMuted} />
           </View>
-          <Text style={styles.emptyTitle}>No Matches for &ldquo;{activeFilter}&rdquo;</Text>
+          <Text style={styles.emptyTitle}>No Matches for Active Filters</Text>
           <Text style={styles.emptySubtitle}>
-            {results.length} space{results.length === 1 ? '' : 's'} nearby. Tap &ldquo;All Spaces&rdquo; to view them.
+            {results.length} space{results.length === 1 ? '' : 's'} nearby. Reset EV, Covered, or Gated filters to see all bays.
           </Text>
         </View>
       ) : (
@@ -472,10 +481,18 @@ export default function HomeScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={() => void handleSearch(query)}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
           ListHeaderComponent={
             <Text style={styles.resultCount}>
-              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} available
-              {activeFilter !== 'All' ? ` · ${activeFilter}` : ''}
+              {visibleResults.length} space{visibleResults.length === 1 ? '' : 's'} available ·{' '}
+              {formatArrivalSummary(arrivalOffsetMinutes)} · {durationHours}h
             </Text>
           }
         />
@@ -519,6 +536,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.9,
     marginTop: 2,
+  },
+  bellBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.navySurface,
+    borderWidth: 1,
+    borderColor: colors.navyBorder,
+    overflow: 'hidden',
+  },
+  bellBtnInner: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: colors.navy,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  bellBadgeText: {
+    color: colors.white,
+    fontSize: 9.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   searchContainer: {
     flexDirection: 'row',

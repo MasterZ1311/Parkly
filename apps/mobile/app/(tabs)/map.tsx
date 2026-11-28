@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -13,9 +13,17 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { searchApi } from '../../src/api/client';
 import FreeMap, { MapSpace } from '../../src/components/FreeMap';
+import { SearchFilterBar } from '../../src/components/SearchFilterBar';
 import { colors, theme } from '../../src/constants/theme';
 import { PressScale, SkeletonBlock, triggerHaptic } from '../../src/components/Motion';
 import { useAuthStore } from '../../src/store/auth.store';
+import { useDriverStore } from '../../src/store/driver.store';
+import {
+  buildServerSearchFilters,
+  computeArrivalIso,
+  filterSpaceResults,
+  useSearchStore,
+} from '../../src/store/search.store';
 import { DEMO_SPACES } from '../../src/data/demoFixtures';
 import { cacheGet, cacheSet, CACHE_KEYS } from '../../src/utils/cache';
 import { classifyApiError, type ClassifiedApiError } from '../../src/utils/apiErrors';
@@ -28,12 +36,17 @@ interface ApiSpace {
   coordinates?: { lat: number; lng: number };
   price?: { value: number };
   availability?: { probabilityPercent: number };
+  amenities?: { evCharging: boolean; covered: boolean; securityLevel: string };
 }
 
 const EXPANDED_OFFSET = -110;
 
 export default function MapScreen() {
   const [center, setCenter] = useState(CHENNAI);
+  const [pannedCenter, setPannedCenter] = useState(CHENNAI);
+  const [areaMoved, setAreaMoved] = useState(false);
+  const lastFetchedCoordsRef = useRef(CHENNAI);
+
   const [spaces, setSpaces] = useState<MapSpace[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,6 +56,10 @@ export default function MapScreen() {
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
 
   const isDemoMode = useAuthStore((s) => s.isDemoMode);
+  const vehicles = useDriverStore((s) => s.vehicles);
+  const defaultVehicle = vehicles.find((v) => v.isDefault) || vehicles[0];
+  const { arrivalOffsetMinutes, durationHours } = useSearchStore();
+
   const reducedMotion = useReducedMotion();
   const sheetY = useSharedValue(0);
   const startY = useSharedValue(0);
@@ -82,10 +99,20 @@ export default function MapScreen() {
     async (targetCoords?: { lat: number; lng: number }) => {
       setLoading(true);
       setMapError(null);
-      const queryCoords = targetCoords || center;
+      const queryCoords = targetCoords || lastFetchedCoordsRef.current || center;
+      lastFetchedCoordsRef.current = queryCoords;
+      setAreaMoved(false);
+
+      const {
+        arrivalOffsetMinutes: offsetMins,
+        durationHours: hrs,
+        amenities: activeAmenities,
+        matchDefaultVehicle: useVeh,
+      } = useSearchStore.getState();
 
       if (isDemoMode) {
-        const demoMapped: MapSpace[] = DEMO_SPACES.map((s) => ({
+        const filteredDemo = filterSpaceResults(DEMO_SPACES, activeAmenities);
+        const demoMapped: MapSpace[] = filteredDemo.map((s) => ({
           id: s.id,
           name: s.name,
           lat: s.coordinates.lat,
@@ -100,11 +127,13 @@ export default function MapScreen() {
       }
 
       try {
+        const vehType = useVeh ? defaultVehicle?.vehicleType : undefined;
         const { data } = await searchApi.search({
           location: { type: 'coordinates', lat: queryCoords.lat, lng: queryCoords.lng },
-          arrivalTime: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
-          duration: 120,
+          arrivalTime: computeArrivalIso(offsetMins),
+          duration: hrs * 60,
           radius: 15,
+          filters: buildServerSearchFilters(activeAmenities, vehType),
           page: 1,
           pageSize: 50,
         });
@@ -139,16 +168,19 @@ export default function MapScreen() {
 
         if (classified.kind === 'offline') {
           const cached = await cacheGet<ApiSpace[]>(CACHE_KEYS.CACHED_SPACES);
-          const mappedCache: MapSpace[] = (cached || [])
-            .filter((r) => r.coordinates)
-            .map((r) => ({
-              id: r.id,
-              name: r.name,
-              lat: r.coordinates!.lat,
-              lng: r.coordinates!.lng,
-              available: (r.availability?.probabilityPercent ?? 0) > 50,
-              price: r.price?.value ?? 0,
-            }));
+          const filteredCache = (cached || []).filter((r) => {
+            if (!r.coordinates) return false;
+            if (!r.amenities) return true;
+            return filterSpaceResults([{ amenities: r.amenities }], activeAmenities).length > 0;
+          });
+          const mappedCache: MapSpace[] = filteredCache.map((r) => ({
+            id: r.id,
+            name: r.name,
+            lat: r.coordinates!.lat,
+            lng: r.coordinates!.lng,
+            available: (r.availability?.probabilityPercent ?? 0) > 50,
+            price: r.price?.value ?? 0,
+          }));
           if (mappedCache.length > 0) {
             setSpaces(mappedCache);
             setSourceMode('cache');
@@ -163,7 +195,7 @@ export default function MapScreen() {
         setLoading(false);
       }
     },
-    [center, isDemoMode],
+    [center, isDemoMode, defaultVehicle?.vehicleType],
   );
 
   useEffect(() => {
@@ -186,9 +218,35 @@ export default function MapScreen() {
     await loadSpaces(coords);
   };
 
+  const handleRegionChange = useCallback(
+    (coords: { lat: number; lng: number }, userInitiated: boolean) => {
+      if (!userInitiated) return;
+      const last = lastFetchedCoordsRef.current;
+      const approxKm = Math.hypot((coords.lat - last.lat) * 111, (coords.lng - last.lng) * 108);
+      if (approxKm >= 0.4) {
+        setPannedCenter(coords);
+        setAreaMoved(true);
+      }
+    },
+    [],
+  );
+
+  const handleSearchThisArea = async () => {
+    triggerHaptic('medium');
+    setCenter(pannedCenter);
+    await loadSpaces(pannedCenter);
+  };
+
   const openSpace = (id: string) => {
     setSelectedId(id);
-    router.push({ pathname: '/space/[id]', params: { id } });
+    router.push({
+      pathname: '/space/[id]',
+      params: {
+        id,
+        hours: String(durationHours),
+        arrivalTime: computeArrivalIso(arrivalOffsetMinutes),
+      },
+    });
   };
 
   const snapHaptic = useCallback(() => {
@@ -258,7 +316,23 @@ export default function MapScreen() {
           selectedId={selectedId}
           hasLocationPermission={hasLocationPermission}
           onMarkerPress={openSpace}
+          onRegionChange={handleRegionChange}
         />
+
+        {areaMoved && (
+          <View style={[styles.searchAreaWrap, locationDenied && { top: 68 }]}>
+            <PressScale
+              onPress={handleSearchThisArea}
+              style={styles.searchAreaBtn}
+              contentStyle={styles.searchAreaInner}
+              rippleColor={colors.rippleLight}
+              accessibilityLabel="Search parking spaces in visible map area"
+            >
+              <Ionicons name="refresh" size={15} color={colors.white} />
+              <Text style={styles.searchAreaText}>Search This Area</Text>
+            </PressScale>
+          </View>
+        )}
 
         {locationDenied && (
           <View style={styles.gpsBannerWrap}>
@@ -322,6 +396,12 @@ export default function MapScreen() {
             </View>
           </Pressable>
         </GestureDetector>
+
+        <SearchFilterBar
+          compact
+          defaultVehicle={defaultVehicle}
+          onApply={() => void loadSpaces(lastFetchedCoordsRef.current)}
+        />
 
         {loading ? (
           <View style={{ gap: 8 }}>
@@ -395,6 +475,32 @@ const styles = StyleSheet.create({
     right: 12,
     zIndex: 20,
   },
+  searchAreaWrap: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    zIndex: 21,
+  },
+  searchAreaBtn: {
+    backgroundColor: colors.navy,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.white,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#0B1628',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+  },
+  searchAreaInner: {
+    minHeight: 48,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  searchAreaText: { color: colors.white, fontSize: 13, fontWeight: '800' },
   gpsBanner: {
     backgroundColor: colors.infoLight,
     borderWidth: 1,

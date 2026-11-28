@@ -23,6 +23,7 @@ interface FreeMapProps {
   selectedId?: string | null;
   hasLocationPermission?: boolean;
   onMarkerPress?: (id: string) => void;
+  onRegionChange?: (coords: { lat: number; lng: number }, userInitiated: boolean) => void;
 }
 
 export default function FreeMap({
@@ -30,13 +31,16 @@ export default function FreeMap({
   spaces,
   selectedId,
   onMarkerPress,
+  onRegionChange,
 }: FreeMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const userMarkerRef = useRef<maplibregl.Marker | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const onMarkerPressRef = useRef(onMarkerPress);
+  const onRegionChangeRef = useRef(onRegionChange);
   onMarkerPressRef.current = onMarkerPress;
+  onRegionChangeRef.current = onRegionChange;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -49,6 +53,13 @@ export default function FreeMap({
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right');
+    map.on('moveend', (ev) => {
+      const c = map.getCenter();
+      onRegionChangeRef.current?.(
+        { lat: c.lat, lng: c.lng },
+        Boolean((ev as { originalEvent?: unknown }).originalEvent),
+      );
+    });
 
     const userMarker = new maplibregl.Marker({ color: '#0B1628' })
       .setLngLat([center.lng, center.lat])

@@ -106,7 +106,7 @@ export function classifyApiError(
     };
   }
 
-  if (status >= 500) {
+  if (typeof status === 'number' && status >= 500) {
     return {
       kind: 'server-error',
       status,

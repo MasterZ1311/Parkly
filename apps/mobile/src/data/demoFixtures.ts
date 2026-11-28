@@ -172,3 +172,48 @@ export function createDemoBookings(): DemoBooking[] {
     },
   ];
 }
+
+export interface DemoNotificationItem {
+  id: string;
+  type: 'booking' | 'payment' | 'gate' | 'reminder';
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+  data?: Record<string, string>;
+}
+
+export function createDemoNotifications(): DemoNotificationItem[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'notif-demo-001',
+      type: 'gate',
+      title: 'Gate Pass Ready · T Nagar Complex',
+      body: 'Present QR pass #00000001 for TN01AB1234 at Panagal Park Road entry barrier.',
+      read: false,
+      createdAt: new Date(now - 8 * 60_000).toISOString(),
+      data: { bookingId: '11111111-1111-4111-8111-000000000001' },
+    },
+    {
+      id: 'notif-demo-002',
+      type: 'payment',
+      title: 'UPI Capture Confirmed · ₹84',
+      body: 'Razorpay UPI receipt settled for Bay A-04 (2 hours).',
+      read: false,
+      createdAt: new Date(now - 25 * 60_000).toISOString(),
+      data: { bookingId: '11111111-1111-4111-8111-000000000001' },
+    },
+    {
+      id: 'notif-demo-003',
+      type: 'reminder',
+      title: 'Pondy Bazaar Session Completed',
+      body: 'Exited Bay B-12 smoothly. Tax receipt ₹37 saved to Past Bookings.',
+      read: true,
+      createdAt: new Date(now - 82_800_000).toISOString(),
+      data: { bookingId: '11111111-1111-4111-8111-000000000002' },
+    },
+  ];
+}
+
+export const DEMO_NOTIFICATIONS: DemoNotificationItem[] = createDemoNotifications();

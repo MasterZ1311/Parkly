@@ -31,6 +31,7 @@ interface FreeMapProps {
   selectedId?: string | null;
   hasLocationPermission?: boolean;
   onMarkerPress?: (id: string) => void;
+  onRegionChange?: (coords: { lat: number; lng: number }, userInitiated: boolean) => void;
 }
 
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -41,6 +42,7 @@ export default function FreeMap({
   selectedId,
   hasLocationPermission = false,
   onMarkerPress,
+  onRegionChange,
 }: FreeMapProps) {
   const cameraRef = useRef<CameraRef | null>(null);
   const hasMountedRef = useRef(false);
@@ -69,6 +71,10 @@ export default function FreeMap({
         compassPosition={{ top: 12, right: 12 }}
         attribution
         attributionPosition={{ top: 12, left: 12 }}
+        onRegionDidChange={(event) => {
+          const [lng, lat] = event.nativeEvent.center;
+          onRegionChange?.({ lat, lng }, event.nativeEvent.userInteraction);
+        }}
       >
         <Camera
           ref={cameraRef}
