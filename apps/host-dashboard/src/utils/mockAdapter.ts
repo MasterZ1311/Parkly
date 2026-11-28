@@ -28,11 +28,17 @@ interface HostSpaceRecord {
 interface HostBookingRecord {
   id: string;
   spaceId: string;
-  space: { id: string; name: string };
+  space: { id: string; name: string; hourlyRate?: number };
   user: { id: string; name: string; phone: string };
   vehicle: { id: string; licensePlate: string; vehicleType: string };
   startTime: string;
   endTime: string;
+  checkedInAt?: string | null;
+  checkedOutAt?: string | null;
+  leavingNotifiedAt?: string | null;
+  gateCode?: string;
+  overstayMinutes?: number;
+  overstayAmount?: number;
   totalAmount: number;
   status: string;
 }
@@ -144,22 +150,32 @@ function createInitialState(): HostState {
       {
         id: 'bk-9a41f001',
         spaceId: 'sp-tng-001',
-        space: { id: 'sp-tng-001', name: 'T Nagar Panagal Park Plaza' },
+        space: { id: 'sp-tng-001', name: 'T Nagar Panagal Park Plaza', hourlyRate: 50 },
         user: { id: 'usr-d-01', name: 'Ananya Krishnan', phone: '+919840112233' },
         vehicle: { id: 'veh-01', licensePlate: 'TN01CD4512', vehicleType: 'sedan' },
         startTime: new Date(now - 0.5 * h).toISOString(),
         endTime: new Date(now + 1.5 * h).toISOString(),
+        checkedInAt: new Date(now - 0.45 * h).toISOString(),
+        leavingNotifiedAt: null,
+        gateCode: '4821',
+        overstayMinutes: 0,
+        overstayAmount: 0,
         totalAmount: 105,
         status: 'active',
       },
       {
         id: 'bk-9a41f002',
         spaceId: 'sp-ana-002',
-        space: { id: 'sp-ana-002', name: 'Anna Nagar Tower Covered Hub' },
+        space: { id: 'sp-ana-002', name: 'Anna Nagar Tower Covered Hub', hourlyRate: 60 },
         user: { id: 'usr-d-02', name: 'Rohan Sundaram', phone: '+919840223344' },
         vehicle: { id: 'veh-02', licensePlate: 'TN09EF8821', vehicleType: 'suv' },
-        startTime: new Date(now + 1 * h).toISOString(),
-        endTime: new Date(now + 4 * h).toISOString(),
+        startTime: new Date(now + 0.1 * h).toISOString(),
+        endTime: new Date(now + 3.1 * h).toISOString(),
+        checkedInAt: null,
+        leavingNotifiedAt: null,
+        gateCode: '7319',
+        overstayMinutes: 0,
+        overstayAmount: 0,
         totalAmount: 189,
         status: 'confirmed',
       },
@@ -495,6 +511,81 @@ export async function hostMockAdapter(config: InternalAxiosRequestConfig): Promi
         ? state.bookings.filter((b) => b.status === statusFilter)
         : state.bookings;
     return okResponse(config, { bookings: filtered, total: filtered.length });
+  }
+
+  // Gate Check-In / Check-Out & PIN/QR Verification
+  const checkInMatch = path.match(/^\/bookings\/([^/]+)\/check-in$/);
+  if (method === 'POST' && checkInMatch) {
+    const idx = state.bookings.findIndex((b) => b.id === checkInMatch[1]);
+    if (idx < 0) errorResponse(config, 404, 'NOT_FOUND', 'Booking not found');
+    const booking = state.bookings[idx]!;
+    if (body.gateCode && booking.gateCode && String(body.gateCode) !== booking.gateCode) {
+      errorResponse(config, 403, 'INVALID_PIN', 'Invalid 4-digit Gate PIN');
+    }
+    const updated: HostBookingRecord = {
+      ...booking,
+      status: 'active',
+      checkedInAt: booking.checkedInAt || new Date().toISOString(),
+    };
+    state.bookings[idx] = updated;
+    saveState(state);
+    return okResponse(config, updated);
+  }
+
+  const checkOutMatch = path.match(/^\/bookings\/([^/]+)\/check-out$/);
+  if (method === 'POST' && checkOutMatch) {
+    const idx = state.bookings.findIndex((b) => b.id === checkOutMatch[1]);
+    if (idx < 0) errorResponse(config, 404, 'NOT_FOUND', 'Booking not found');
+    const booking = state.bookings[idx]!;
+    const nowMs = Date.now();
+    const endMs = new Date(booking.endTime).getTime();
+    let overstayMinutes = 0;
+    let overstayAmount = 0;
+    if (nowMs > endMs + 10 * 60_000) {
+      overstayMinutes = Math.ceil((nowMs - endMs) / 60_000);
+      const rate = booking.space.hourlyRate || 45;
+      overstayAmount = Math.round(rate * (overstayMinutes / 60) * 1.05 * 100) / 100;
+    }
+    const nowIso = new Date(nowMs).toISOString();
+    const updated: HostBookingRecord = {
+      ...booking,
+      status: 'completed',
+      checkedInAt: booking.checkedInAt || booking.startTime,
+      checkedOutAt: nowIso,
+      overstayMinutes,
+      overstayAmount,
+      totalAmount: Math.round((booking.totalAmount + overstayAmount) * 100) / 100,
+    };
+    state.bookings[idx] = updated;
+    saveState(state);
+    return okResponse(config, updated);
+  }
+
+  if (method === 'POST' && path === '/bookings/verify-pass') {
+    const qrToken = String(body.qrToken || '').trim();
+    const gateCode = String(body.gateCode || '').trim();
+    const match = state.bookings.find((b) => {
+      if (qrToken && qrToken.includes(b.id)) return true;
+      if (gateCode && b.gateCode === gateCode && ['confirmed', 'active'].includes(b.status)) return true;
+      return false;
+    });
+    if (!match) {
+      return okResponse(config, { valid: false, reason: 'No active booking matches this QR token or 4-digit Gate PIN.' });
+    }
+    if (body.action === 'check_in') {
+      const updated = { ...match, status: 'active', checkedInAt: match.checkedInAt || new Date().toISOString() };
+      state.bookings = state.bookings.map((b) => (b.id === match.id ? updated : b));
+      saveState(state);
+      return okResponse(config, { valid: true, booking: updated });
+    }
+    if (body.action === 'check_out') {
+      const nowIso = new Date().toISOString();
+      const updated = { ...match, status: 'completed', checkedOutAt: nowIso };
+      state.bookings = state.bookings.map((b) => (b.id === match.id ? updated : b));
+      saveState(state);
+      return okResponse(config, { valid: true, booking: updated });
+    }
+    return okResponse(config, { valid: true, booking: match });
   }
 
   // Revenue & Payouts

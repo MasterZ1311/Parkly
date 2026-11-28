@@ -5,9 +5,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isDemoModeEnabled, hostApi } from '../utils/apiClient';
 
+export type HostSpaceType = 'commercial' | 'private_house' | 'apartment_bay' | 'gated_compound';
+
 export interface HostListing {
   id: string;
   name: string;
+  spaceType?: HostSpaceType;
+  entryInstructions?: string;
   address: string;
   city: string;
   state: string;
@@ -30,10 +34,17 @@ export interface HostBooking {
   id: string;
   spaceId: string;
   spaceName?: string;
+  spaceType?: string;
   driverName?: string;
   driverPhone?: string;
   startTime: string;
   endTime: string;
+  checkedInAt?: string | null;
+  checkedOutAt?: string | null;
+  leavingNotifiedAt?: string | null;
+  gateCode?: string;
+  overstayMinutes?: number;
+  overstayAmount?: number;
   totalAmount: number;
   status: string;
   vehiclePlate?: string;
@@ -85,6 +96,8 @@ export function useListings() {
             return {
               id: s.id,
               name: s.name,
+              spaceType: s.spaceType || 'commercial',
+              entryInstructions: s.entryInstructions,
               address: s.address,
               city: s.city,
               state: s.state,
@@ -153,10 +166,17 @@ export function useBookings(status?: string) {
             id: b.id,
             spaceId: b.spaceId,
             spaceName: b.space?.name || b.spaceName || b.spaceId,
+            spaceType: b.space?.spaceType || b.spaceType,
             driverName: b.user?.name || b.driverName || 'Driver',
             driverPhone: b.user?.phone,
             startTime: b.startTime,
             endTime: b.endTime,
+            checkedInAt: b.checkedInAt || null,
+            checkedOutAt: b.checkedOutAt || null,
+            leavingNotifiedAt: b.leavingNotifiedAt || null,
+            gateCode: b.gateCode,
+            overstayMinutes: Number(b.overstayMinutes || 0),
+            overstayAmount: Number(b.overstayAmount || 0),
             totalAmount: Number(b.totalAmount || 0),
             status: b.status,
             vehiclePlate: b.vehicle?.licensePlate || b.vehiclePlate || '—',

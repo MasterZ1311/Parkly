@@ -104,6 +104,8 @@ export function initializeApiClient(): AxiosInstance {
 export interface ListingPayload {
   name: string;
   description?: string;
+  spaceType?: 'commercial' | 'private_house' | 'apartment_bay' | 'gated_compound';
+  entryInstructions?: string;
   latitude: number;
   longitude: number;
   address: string;
@@ -115,6 +117,8 @@ export interface ListingPayload {
   hourlyRate: number;
   evCharging?: boolean;
   covered?: boolean;
+  photoUrls?: string[];
+  ownershipProofUrl?: string;
 }
 
 export const commonApi = {
@@ -144,6 +148,15 @@ export const hostApi = {
 
   // Host Bookings & Live Occupancy
   getBookings: (status?: string) => apiClient.get('/host/bookings', { params: { status } }),
+  verifyGatePass: (payload: {
+    qrToken?: string;
+    bookingId?: string;
+    gateCode?: string;
+    action?: 'verify' | 'check_in' | 'check_out';
+  }) => apiClient.post('/bookings/verify-pass', payload),
+  checkInBooking: (bookingId: string, gateCode?: string) =>
+    apiClient.post(`/bookings/${bookingId}/check-in`, gateCode ? { gateCode } : {}),
+  checkOutBooking: (bookingId: string) => apiClient.post(`/bookings/${bookingId}/check-out`, {}),
   getOccupancy: (spaceId: string) => apiClient.get(`/occupancy/current/${spaceId}`),
 
   // Host Revenue & Payouts
