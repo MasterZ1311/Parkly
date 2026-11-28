@@ -40,6 +40,11 @@ export interface Vehicle {
   make?: string;
   model?: string;
   color?: string;
+  rcNumber?: string;
+  rcDocumentUrl?: string;
+  insuranceNumber?: string;
+  pucValidUntil?: string;
+  verificationStatus?: VerificationStatus;
   isDefault: boolean;
   createdAt: string;
 }
@@ -68,6 +73,41 @@ export interface AuthTokens {
 
 // --- Host ---
 export type VerificationStatus = 'pending' | 'approved' | 'rejected';
+export type GovIdType = 'aadhaar' | 'pan' | 'passport' | 'voter_id';
+export type OwnershipProofType =
+  | 'property_tax'
+  | 'electricity_bill'
+  | 'sale_deed'
+  | 'noc_society'
+  | 'rental_agreement';
+
+export interface DriverKyc {
+  id: string;
+  userId: string;
+  fullName: string;
+  dateOfBirth?: string;
+  address?: string;
+  emergencyContact?: string;
+  drivingLicenseNumber: string;
+  drivingLicenseExpiry?: string;
+  drivingLicenseFrontUrl: string;
+  drivingLicenseBackUrl?: string;
+  govIdType: GovIdType;
+  govIdNumberMasked: string;
+  govIdDocumentUrl: string;
+  vehicleId?: string;
+  vehiclePlate: string;
+  rcNumber: string;
+  rcDocumentUrl: string;
+  insuranceDocumentUrl?: string;
+  selfieUrl?: string;
+  status: VerificationStatus;
+  reviewNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  submittedAt: string;
+  updatedAt: string;
+}
 
 export interface Host {
   id: string;
@@ -76,7 +116,21 @@ export interface Host {
   panNumber?: string;       // for KYC
   bankAccountNumber?: string; // masked
   ifscCode?: string;
+  kycFullName?: string;
+  kycPhone?: string;
+  govIdType?: GovIdType;
+  govIdNumberMasked?: string;
+  govIdDocumentUrl?: string;
+  ownershipProofType?: OwnershipProofType;
+  ownershipDocumentUrl?: string;
+  addressProofUrl?: string;
+  plotPhotoUrls?: string[];
+  upiId?: string;
+  kycNotes?: string;
   verificationStatus: VerificationStatus;
+  reviewNotes?: string;
+  reviewedBy?: string;
+  submittedAt?: string;
   verifiedAt?: string;
   totalEarnings: number;
   totalPayouts: number;
@@ -86,6 +140,11 @@ export interface Host {
 
 // --- Parking Space ---
 export type SpaceStatus = 'draft' | 'pending_verification' | 'active' | 'inactive' | 'suspended';
+export type SpaceType = 'commercial' | 'private_house' | 'apartment_bay' | 'gated_compound';
+
+export function isPrivateSpaceType(spaceType?: SpaceType | string): boolean {
+  return spaceType === 'private_house' || spaceType === 'apartment_bay' || spaceType === 'gated_compound';
+}
 
 export interface ParkingSpaceAmenities {
   evCharging: boolean;
@@ -125,10 +184,15 @@ export interface ParkingSpace {
   regionId: string;
   totalCapacity: number;
   vehicleTypes: VehicleType[];
+  spaceType?: SpaceType;
+  entryInstructions?: string;
   amenities: ParkingSpaceAmenities;
   pricing: PricingInfo;
   availabilitySchedule: TimeSlot[];
   photoUrls: string[];
+  ownershipProofUrl?: string;
+  reviewNotes?: string;
+  verifiedAt?: string;
   status: SpaceStatus;
   createdAt: string;
   updatedAt: string;
@@ -166,10 +230,18 @@ export interface Booking {
   currency: Currency;
   paymentId?: string;
   qrToken?: string;
+  gateCode?: string;
+  checkedInAt?: string;
+  checkedOutAt?: string;
+  leavingNotifiedAt?: string;
+  overstayMinutes?: number;
+  overstayAmount?: number;
   space?: {
     id: string;
     name: string;
     address: string;
+    spaceType?: SpaceType;
+    entryInstructions?: string;
     hourlyRate?: number;
     latitude?: number;
     longitude?: number;
@@ -275,6 +347,7 @@ export type LocationInput =
 export interface FilterSet {
   priceRange?: { min: number; max: number };
   vehicleType?: VehicleType;
+  spaceType?: SpaceType | 'private';
   evCharging?: boolean;
   coveredParking?: boolean;
   securityLevel?: SecurityLevel;
@@ -302,6 +375,8 @@ export interface ParkingSpaceResult {
   id: string;
   hostId?: string;
   name: string;
+  spaceType?: SpaceType;
+  entryInstructions?: string;
   address: string;
   coordinates: Coordinates;
   distance: { value: number; unit: 'km' | 'm' };
@@ -419,6 +494,8 @@ export interface PricingResult {
 export type ParklyEventType =
   | 'BookingCreated'
   | 'BookingConfirmed'
+  | 'BookingCheckedIn'
+  | 'BookingLeavingSoon'
   | 'BookingCancelled'
   | 'BookingCompleted'
   | 'BookingExtended'
